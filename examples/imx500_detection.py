@@ -101,7 +101,7 @@ def draw_boxes(detection, m, labels):
 
 def process_detections(request, stream="main"):
     """Draw the detections for this request onto the ISP output."""
-    os.makedirs("bird_detections", exist_ok=True)
+    
     
     detections = last_results
     if detections is None:
@@ -121,6 +121,7 @@ def process_detections(request, stream="main"):
                 time = datetime.now()
 
                 if species:
+                    os.makedirs(f"/home/stefan/Pictures/bird_detections/{species}/", exist_ok=True)
                     cv2.imwrite(f"/home/stefan/Pictures/bird_detections/{species}/{time}.png", img)
 
             draw_boxes(detection, m, labels)
