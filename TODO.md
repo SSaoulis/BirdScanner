@@ -1,0 +1,5 @@
+- bounding boxes bigger
+- Faster queueing/processing
+    - Single vs multithreading
+- Better classification model
+- aggregate predictions over time
