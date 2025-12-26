@@ -166,7 +166,7 @@ def process_detections(request, stream="main"):
                 # Only pass what's needed: image, detection_id, detection object, labels, class
                 classification_queue.put((full_img, detection_id, detection, labels, classifier_class))
 
-            
+    
 
 
 
