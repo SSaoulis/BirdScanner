@@ -125,12 +125,14 @@ def process_detections(request, stream="main"):
             if classifier_class.lower() == "bird":
                 species = run_bird_classification(img)
 
-            detections = draw_boxes(detection, m, labels, species)
+            image_with_boxes = draw_boxes(detection, m, labels, species)
 
             if classifier_class.lower() == "bird" and species:
                 time = datetime.now()
                 os.makedirs(f"/home/stefan/Pictures/bird_detections/{species}/", exist_ok=True)
-                cv2.imwrite(f"/home/stefan/Pictures/bird_detections/{species}/{time}.png", detections)
+                # Convert RGB to BGR for OpenCV, or use the array directly if already BGR
+                output_image = cv2.cvtColor(image_with_boxes, cv2.COLOR_RGB2BGR)
+                cv2.imwrite(f"/home/stefan/Pictures/bird_detections/{species}/{time}.png", output_image)
 
             
             
