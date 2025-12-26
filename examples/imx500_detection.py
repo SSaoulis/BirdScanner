@@ -1,6 +1,7 @@
 import argparse
 import sys
 from functools import lru_cache
+from datetime import datetime
 
 import cv2
 import numpy as np
@@ -67,47 +68,68 @@ def get_labels():
     return labels
 
 
+def run_bird_classification(image):
+    # Placeholder for bird classification logic
+    # This function should return the classification result
+    return "Bird Species"
+
+def draw_boxes(detection, m, labels):
+    x, y, w, h = detection.box
+    # Create a copy of the array to draw the background with opacity
+    overlay = m.array.copy()
+
+    label = f"{labels[int(detection.category)]} ({detection.conf:.2f})"
+
+    # Calculate text size and position
+    (text_width, text_height), baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+    text_x = x + 5
+    text_y = y + 15
+    # Draw the background rectangle on the overlay
+    cv2.rectangle(overlay,
+                    (text_x, text_y - text_height),
+                    (text_x + text_width, text_y + baseline),
+                    (255, 255, 255),  # Background color (white)
+                    cv2.FILLED)
+
+    alpha = 0.30
+    cv2.addWeighted(overlay, alpha, m.array, 1 - alpha, 0, m.array)
+
+    # Draw text on top of the background
+    cv2.putText(m.array, label, (text_x, text_y),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+
+    # Draw detection box
+    cv2.rectangle(m.array, (x, y), (x + w, y + h), (0, 255, 0, 0), thickness=2)
+
+
+
 def draw_detections(request, stream="main"):
     """Draw the detections for this request onto the ISP output."""
+
     detections = last_results
     if detections is None:
         return
+    
     labels = get_labels()
+    
     with MappedArray(request, stream) as m:
         for detection in detections:
             x, y, w, h = detection.box
-            label = f"{labels[int(detection.category)]} ({detection.conf:.2f})"
-
-            # Calculate text size and position
-            (text_width, text_height), baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
-            text_x = x + 5
-            text_y = y + 15
 
             # Create a copy of the array to draw the background with opacity
             overlay = m.array.copy()
 
-            # Draw the background rectangle on the overlay
-            cv2.rectangle(overlay,
-                          (text_x, text_y - text_height),
-                          (text_x + text_width, text_y + baseline),
-                          (255, 255, 255),  # Background color (white)
-                          cv2.FILLED)
+            img = m.array.copy()[y:y+h, x:x+w]
 
-            alpha = 0.30
-            cv2.addWeighted(overlay, alpha, m.array, 1 - alpha, 0, m.array)
+            if detection.category == "bird":
 
-            # Draw text on top of the background
-            cv2.putText(m.array, label, (text_x, text_y),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+                species = run_bird_classification(img)
+                time = datetime.now()
 
-            # Draw detection box
-            cv2.rectangle(m.array, (x, y), (x + w, y + h), (0, 255, 0, 0), thickness=2)
+                if species:
+                    cv2.imwrite(f"bird_detections/{species}/{time}.png", img)
 
-        if intrinsics.preserve_aspect_ratio:
-            b_x, b_y, b_w, b_h = imx500.get_roi_scaled(request)
-            color = (255, 0, 0)  # red
-            cv2.putText(m.array, "ROI", (b_x + 5, b_y + 15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
-            cv2.rectangle(m.array, (b_x, b_y), (b_x + b_w, b_y + b_h), (255, 0, 0, 0))
+    
 
 
 def get_args():
