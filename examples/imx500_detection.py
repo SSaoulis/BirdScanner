@@ -114,7 +114,8 @@ def process_detections(request, stream="main"):
             x, y, w, h = detection.box
             img = m.array.copy()[y:y+h, x:x+w]
             classifier_class = labels[int(detection.category)]
-            if classifier_class == "bird":
+            print(classifier_class)
+            if classifier_class.lower() == "bird":
                 
                 species = run_bird_classification(img)
                 time = datetime.now()
