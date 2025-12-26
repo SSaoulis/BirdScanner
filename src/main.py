@@ -13,7 +13,7 @@ import numpy as np
 from picamera2 import MappedArray, Picamera2
 from picamera2.devices import IMX500
 from picamera2.devices.imx500 import (NetworkIntrinsics,)
-
+from picamera2.previews import DrmPreview
 
 from classification import Classifier, ONNXClassifier, build_preprocessing
 
@@ -105,7 +105,7 @@ def classification_worker():
 
             image_with_boxes = draw_boxes(image.copy(), detection, labels, species, confidence)
 
-            if classifier_class.lower() == "bird" and species:
+            if classifier_class.lower() == "bird" and species and confidence > 0.4:
                 time = datetime.now()
                 os.makedirs(f"/home/stefan/Pictures/bird_detections/{species}/", exist_ok=True)
 
@@ -240,6 +240,7 @@ if __name__ == "__main__":
 
     imx500.show_network_fw_progress_bar()
     picam2.start(config, show_preview=False)
+    picam2.start_preview(DrmPreview())
 
     if intrinsics.preserve_aspect_ratio:
         imx500.set_auto_aspect_ratio()
