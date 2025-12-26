@@ -23,7 +23,7 @@ classification_results = {}
 results_lock = threading.Lock()
 
 
-MODEL_PATH = "src/local/convnext_v2_tiny.onnx"
+MODEL_PATH = "local/convnext_v2_tiny.onnx"
 CLASS_TO_IDX_PATH = "assets/convnext_v2_tiny.onnx_class_to_idx.json"
 
 onnx_model = ONNXClassifier(str(MODEL_PATH))
