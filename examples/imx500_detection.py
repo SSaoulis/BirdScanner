@@ -3,6 +3,8 @@ import sys
 from functools import lru_cache
 from datetime import datetime
 import os
+import threading
+from queue import Queue
 
 import cv2
 import numpy as np
@@ -13,6 +15,9 @@ from picamera2.devices.imx500 import (NetworkIntrinsics,
                                       postprocess_nanodet_detection)
 
 last_detections = []
+classification_queue = Queue()
+classification_results = {}
+results_lock = threading.Lock()
 
 
 class Detection:
@@ -67,6 +72,25 @@ def run_bird_classification(image):
     return "Bird Species"
 
 
+def classification_worker():
+    """Worker thread that processes images from the classification queue."""
+    while True:
+        try:
+            item = classification_queue.get(timeout=1)
+            if item is None:  # Sentinel value to stop the thread
+                break
+            
+            image, image_id, detection_id = item
+            species = run_bird_classification(image)
+            
+            with results_lock:
+                classification_results[detection_id] = species
+            
+            classification_queue.task_done()
+        except:
+            pass
+
+
 
 
 def draw_boxes(detection, m, labels, species=None):
@@ -92,20 +116,20 @@ def draw_boxes(detection, m, labels, species=None):
     alpha = 0.30
     cv2.addWeighted(overlay, alpha, m.array, 1 - alpha, 0, m.array)
 
+    # Draw detection box
+    cv2.rectangle(m.array, (x, y), (x + w, y + h), (0, 255, 0, 0), thickness=2)
+    
     # Draw text on top of the background
     cv2.putText(m.array, label, (text_x, text_y),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
 
-    # Draw detection box
-    cv2.rectangle(m.array, (x, y), (x + w, y + h), (0, 255, 0, 0), thickness=2)
-    
+
     return m.array
 
 
 
 def process_detections(request, stream="main"):
     """Draw the detections for this request onto the ISP output."""
-    
     
     detections = last_results
     if detections is None:
@@ -114,23 +138,28 @@ def process_detections(request, stream="main"):
     labels = get_labels()
     
     with MappedArray(request, stream) as m:
-        for detection in detections:
+        for detection_id, detection in enumerate(detections):
             x, y, w, h = detection.box
             img = m.array.copy()[y:y+h, x:x+w, :]
 
             classifier_class = labels[int(detection.category)]
-            print(classifier_class)
 
             species = None
             if classifier_class.lower() == "bird":
-                species = run_bird_classification(img)
+                # Add image to queue for classification on another thread
+                classification_queue.put((img.copy(), detection_id, detection_id))
+                
+                # Check if classification result is ready
+                with results_lock:
+                    if detection_id in classification_results:
+                        species = classification_results.pop(detection_id)
 
             image_with_boxes = draw_boxes(detection, m, labels, species)
 
             if classifier_class.lower() == "bird" and species:
                 time = datetime.now()
                 os.makedirs(f"/home/stefan/Pictures/bird_detections/{species}/", exist_ok=True)
-                # Convert RGB to BGR for OpenCV, or use the array directly if already BGR
+
                 output_image = cv2.cvtColor(image_with_boxes, cv2.COLOR_RGB2BGR)
                 cv2.imwrite(f"/home/stefan/Pictures/bird_detections/{species}/{time}.png", output_image)
 
@@ -199,7 +228,15 @@ if __name__ == "__main__":
     if intrinsics.preserve_aspect_ratio:
         imx500.set_auto_aspect_ratio()
 
+    # Start classification worker thread
+    worker_thread = threading.Thread(target=classification_worker, daemon=True)
+    worker_thread.start()
+
     last_results = None
     picam2.pre_callback = process_detections
-    while True:
-        last_results = parse_detections(picam2.capture_metadata())
+    try:
+        while True:
+            last_results = parse_detections(picam2.capture_metadata())
+    except KeyboardInterrupt:
+        # Stop the worker thread gracefully
+        classification_queue.put(None)
