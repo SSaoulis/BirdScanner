@@ -2,6 +2,7 @@ import argparse
 import sys
 from functools import lru_cache
 from datetime import datetime
+import os
 
 import cv2
 import numpy as np
@@ -56,9 +57,7 @@ def parse_detections(metadata: dict):
 @lru_cache
 def get_labels():
     labels = intrinsics.labels
-
-    if intrinsics.ignore_dash_labels:
-        labels = [label for label in labels if label and label != "-"]
+    labels = [label for label in labels if label and label != "-"]
     return labels
 
 
@@ -102,7 +101,8 @@ def draw_boxes(detection, m, labels):
 
 def process_detections(request, stream="main"):
     """Draw the detections for this request onto the ISP output."""
-
+    os.makedirs("bird_detections", exist_ok=True)
+    
     detections = last_results
     if detections is None:
         return
@@ -122,7 +122,6 @@ def process_detections(request, stream="main"):
                 if species:
                     cv2.imwrite(f"bird_detections/{species}/{time}.png", img)
 
-    
             draw_boxes(detection, m, labels)
             
 
