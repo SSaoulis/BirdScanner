@@ -11,8 +11,7 @@ import numpy as np
 
 from picamera2 import MappedArray, Picamera2
 from picamera2.devices import IMX500
-from picamera2.devices.imx500 import (NetworkIntrinsics,
-                                      postprocess_nanodet_detection)
+from picamera2.devices.imx500 import (NetworkIntrinsics,)
 
 last_detections = []
 classification_queue = Queue()
@@ -68,8 +67,11 @@ def get_labels():
 
 def run_bird_classification(image):
     # Placeholder for bird classification logic
-    # This function should return the classification result
-    return "Bird Species"
+    # This function should return the classification result and confidence score
+    return "Bird Species", 0.95
+
+
+
 
 
 def classification_worker():
@@ -80,11 +82,25 @@ def classification_worker():
             if item is None:  # Sentinel value to stop the thread
                 break
             
-            image, image_id, detection_id = item
-            species = run_bird_classification(image)
+            image, detection_id, detection, labels, classifier_class = item
+            
+            x, y, w, h = detection.box
+            roi = image[y:y+h, x:x+w]
+
+            species, confidence = run_bird_classification(roi)
+
+            image_with_boxes = draw_boxes(image.copy(), detection, labels, species, confidence)
+
+            if classifier_class.lower() == "bird" and species:
+                time = datetime.now()
+                os.makedirs(f"/home/stefan/Pictures/bird_detections/{species}/", exist_ok=True)
+
+                output_image = cv2.cvtColor(image_with_boxes, cv2.COLOR_RGB2BGR)
+                cv2.imwrite(f"/home/stefan/Pictures/bird_detections/{species}/{time}.png", output_image)
+
             
             with results_lock:
-                classification_results[detection_id] = species
+                classification_results[detection_id] = (species, confidence)
             
             classification_queue.task_done()
         except:
@@ -93,12 +109,16 @@ def classification_worker():
 
 
 
-def draw_boxes(detection, m, labels, species=None):
+def draw_boxes(image_array, detection, labels, species=None, confidence=None):
+    """Draw detection boxes on image array (not on MappedArray)."""
     x, y, w, h = detection.box
     # Create a copy of the array to draw the background with opacity
-    overlay = m.array.copy()
+    overlay = image_array.copy()
 
     label = f"{labels[int(detection.category)]} ({detection.conf:.2f})"
+
+    if confidence is not None:
+        label += f" - {confidence:.2f}"
     if species:
         label += f" - {species}"
 
@@ -114,17 +134,16 @@ def draw_boxes(detection, m, labels, species=None):
                     cv2.FILLED)
 
     alpha = 0.30
-    cv2.addWeighted(overlay, alpha, m.array, 1 - alpha, 0, m.array)
+    cv2.addWeighted(overlay, alpha, image_array, 1 - alpha, 0, image_array)
 
     # Draw detection box
-    cv2.rectangle(m.array, (x, y), (x + w, y + h), (0, 255, 0, 0), thickness=2)
+    cv2.rectangle(image_array, (x, y), (x + w, y + h), (0, 255, 0, 0), thickness=2)
     
     # Draw text on top of the background
-    cv2.putText(m.array, label, (text_x, text_y),
+    cv2.putText(image_array, label, (text_x, text_y),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
 
-
-    return m.array
+    return image_array
 
 
 
@@ -139,31 +158,14 @@ def process_detections(request, stream="main"):
     
     with MappedArray(request, stream) as m:
         for detection_id, detection in enumerate(detections):
-            x, y, w, h = detection.box
-            img = m.array.copy()[y:y+h, x:x+w, :]
-
+            # Extract the region of interest as a numpy array
+            full_img = m.array.copy()
             classifier_class = labels[int(detection.category)]
-
-            species = None
             if classifier_class.lower() == "bird":
-                # Add image to queue for classification on another thread
-                classification_queue.put((img.copy(), detection_id, detection_id))
-                
-                # Check if classification result is ready
-                with results_lock:
-                    if detection_id in classification_results:
-                        species = classification_results.pop(detection_id)
+                # Add image data to queue for classification on another thread
+                # Only pass what's needed: image, detection_id, detection object, labels, class
+                classification_queue.put((full_img, detection_id, detection, labels, classifier_class))
 
-            image_with_boxes = draw_boxes(detection, m, labels, species)
-
-            if classifier_class.lower() == "bird" and species:
-                time = datetime.now()
-                os.makedirs(f"/home/stefan/Pictures/bird_detections/{species}/", exist_ok=True)
-
-                output_image = cv2.cvtColor(image_with_boxes, cv2.COLOR_RGB2BGR)
-                cv2.imwrite(f"/home/stefan/Pictures/bird_detections/{species}/{time}.png", output_image)
-
-            
             
 
 
