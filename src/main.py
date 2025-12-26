@@ -82,6 +82,74 @@ def get_labels():
     return labels
 
 
+def preprocess_roi(image, box):
+    """
+    Preprocess the region of interest by:
+    1. Padding it to a square
+    2. Expanding by 10% through the center
+    3. Clamping to image boundaries while maintaining square shape
+    """
+    x, y, w, h = box
+    img_h, img_w = image.shape[:2]
+    
+    # Step 1: Make it square by using the maximum side
+    max_side = max(w, h)
+    
+    # Center the smaller dimension
+    x_offset = (max_side - w) // 2
+    y_offset = (max_side - h) // 2
+    
+    x1 = x - x_offset
+    y1 = y - y_offset
+    x2 = x1 + max_side
+    y2 = y1 + max_side
+    
+    # Step 2: Expand by 10% from center
+    expansion = int(max_side * 0.1 / 2)  # 5% on each side
+    
+    x1 -= expansion
+    y1 -= expansion
+    x2 += expansion
+    y2 += expansion
+    
+    expanded_size = x2 - x1
+    
+    # Step 3: Clamp to image boundaries while keeping it square
+    if x1 < 0:
+        x1 = 0
+        x2 = expanded_size
+    if y1 < 0:
+        y1 = 0
+        y2 = expanded_size
+    if x2 > img_w:
+        x2 = img_w
+        x1 = max(0, x2 - expanded_size)
+    if y2 > img_h:
+        y2 = img_h
+        y1 = max(0, y2 - expanded_size)
+    
+    # Ensure square: take the smaller of the two clamped dimensions
+    final_size = min(x2 - x1, y2 - y1)
+    
+    # Re-center if we had to clamp
+    if final_size < expanded_size:
+        cx = (x1 + x2) / 2
+        cy = (y1 + y2) / 2
+        x1 = int(cx - final_size / 2)
+        y1 = int(cy - final_size / 2)
+        x2 = x1 + final_size
+        y2 = y1 + final_size
+        
+        # Final clamp to image boundaries
+        x1 = max(0, min(x1, img_w - final_size))
+        y1 = max(0, min(y1, img_h - final_size))
+        x2 = min(x1 + final_size, img_w)
+        y2 = min(y1 + final_size, img_h)
+    
+    roi = image[y1:y2, x1:x2]
+    return roi, (x1, y1, final_size, final_size)
+
+
 def run_bird_classification(image):
     # Placeholder for bird classification logic
     # This function should return the classification result and confidence score
@@ -98,12 +166,11 @@ def classification_worker():
             
             image, detection_id, detection, labels, classifier_class = item
             
-            x, y, w, h = detection.box
-            roi = image[y:y+h, x:x+w]
+            roi, coords = preprocess_roi(image, detection.box)
 
             species, confidence = run_bird_classification(roi)
 
-            image_with_boxes = draw_boxes(image.copy(), detection, labels, species, confidence)
+            image_with_boxes = draw_boxes(image.copy(), coords, detection, labels, species, confidence)
 
             if classifier_class.lower() == "bird" and species and confidence > 0.4:
                 time = datetime.now()
@@ -123,9 +190,9 @@ def classification_worker():
 
 
 
-def draw_boxes(image_array, detection, labels, species=None, confidence=None):
+def draw_boxes(image_array, coords, detection, labels, species=None, confidence=None):
     """Draw detection boxes on image array (not on MappedArray)."""
-    x, y, w, h = detection.box
+    x, y, w, h = coords
     # Create a copy of the array to draw the background with opacity
     overlay = image_array.copy()
 
@@ -174,6 +241,11 @@ def process_detections(request, stream="main"):
         for detection_id, detection in enumerate(detections):
             # Extract the region of interest as a numpy array
             full_img = m.array.copy()
+
+            _, coords = preprocess_roi(full_img, detection.box)
+            image_with_boxes = draw_boxes(full_img.copy(), coords, detection, labels)
+            m.array[:] = image_with_boxes
+            
             classifier_class = labels[int(detection.category)]
             if classifier_class.lower() == "bird":
                 # Add image data to queue for classification on another thread
