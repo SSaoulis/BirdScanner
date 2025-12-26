@@ -28,28 +28,22 @@ def parse_detections(metadata: dict):
     bbox_normalization = intrinsics.bbox_normalization
     bbox_order = intrinsics.bbox_order
     threshold = args.threshold
-    iou = args.iou
-    max_detections = args.max_detections
+
 
     np_outputs = imx500.get_outputs(metadata, add_batch=True)
     input_w, input_h = imx500.get_input_size()
     if np_outputs is None:
         return last_detections
-    if intrinsics.postprocess == "nanodet":
-        boxes, scores, classes = \
-            postprocess_nanodet_detection(outputs=np_outputs[0], conf=threshold, iou_thres=iou,
-                                          max_out_dets=max_detections)[0]
-        from picamera2.devices.imx500.postprocess import scale_boxes
-        boxes = scale_boxes(boxes, 1, 1, input_h, input_w, False, False)
-    else:
-        boxes, scores, classes = np_outputs[0][0], np_outputs[1][0], np_outputs[2][0]
-        if bbox_normalization:
-            boxes = boxes / input_h
 
-        if bbox_order == "xy":
-            boxes = boxes[:, [1, 0, 3, 2]]
-        boxes = np.array_split(boxes, 4, axis=1)
-        boxes = zip(*boxes)
+    boxes, scores, classes = np_outputs[0][0], np_outputs[1][0], np_outputs[2][0]
+
+    if bbox_normalization:
+        boxes = boxes / input_h
+
+    if bbox_order == "xy":
+        boxes = boxes[:, [1, 0, 3, 2]]
+    boxes = np.array_split(boxes, 4, axis=1)
+    boxes = zip(*boxes)
 
     last_detections = [
         Detection(box, category, score, metadata)
@@ -72,6 +66,9 @@ def run_bird_classification(image):
     # Placeholder for bird classification logic
     # This function should return the classification result
     return "Bird Species"
+
+
+
 
 def draw_boxes(detection, m, labels):
     x, y, w, h = detection.box
@@ -103,7 +100,7 @@ def draw_boxes(detection, m, labels):
 
 
 
-def draw_detections(request, stream="main"):
+def process_detections(request, stream="main"):
     """Draw the detections for this request onto the ISP output."""
 
     detections = last_results
@@ -115,12 +112,8 @@ def draw_detections(request, stream="main"):
     with MappedArray(request, stream) as m:
         for detection in detections:
             x, y, w, h = detection.box
-
-            # Create a copy of the array to draw the background with opacity
-            overlay = m.array.copy()
-
             img = m.array.copy()[y:y+h, x:x+w]
-
+            
             if detection.category == "bird":
 
                 species = run_bird_classification(img)
@@ -130,6 +123,9 @@ def draw_detections(request, stream="main"):
                     cv2.imwrite(f"bird_detections/{species}/{time}.png", img)
 
     
+            draw_boxes(detection, m, labels)
+            
+
 
 
 def get_args():
@@ -141,11 +137,8 @@ def get_args():
     parser.add_argument("--bbox-order", choices=["yx", "xy"], default="yx",
                         help="Set bbox order yx -> (y0, x0, y1, x1) xy -> (x0, y0, x1, y1)")
     parser.add_argument("--threshold", type=float, default=0.55, help="Detection threshold")
-    parser.add_argument("--iou", type=float, default=0.65, help="Set iou threshold")
-    parser.add_argument("--max-detections", type=int, default=10, help="Set max detections")
     parser.add_argument("--ignore-dash-labels", action=argparse.BooleanOptionalAction, help="Remove '-' labels ")
-    parser.add_argument("--postprocess", choices=["", "nanodet"],
-                        default=None, help="Run post process of type")
+
     parser.add_argument("-r", "--preserve-aspect-ratio", action=argparse.BooleanOptionalAction,
                         help="preserve the pixel aspect ratio of the input tensor")
     parser.add_argument("--labels", type=str,
@@ -196,6 +189,6 @@ if __name__ == "__main__":
         imx500.set_auto_aspect_ratio()
 
     last_results = None
-    picam2.pre_callback = draw_detections
+    picam2.pre_callback = process_detections
     while True:
         last_results = parse_detections(picam2.capture_metadata())
