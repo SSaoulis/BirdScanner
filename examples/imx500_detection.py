@@ -121,7 +121,7 @@ def process_detections(request, stream="main"):
                 time = datetime.now()
 
                 if species:
-                    cv2.imwrite(f"bird_detections/{species}/{time}.png", img)
+                    cv2.imwrite(f"/home/stefan/Pictures/bird_detections/{species}/{time}.png", img)
 
             draw_boxes(detection, m, labels)
             
