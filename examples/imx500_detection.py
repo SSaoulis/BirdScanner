@@ -83,7 +83,11 @@ def classification_worker():
                 break
             
             image, detection_id, detection, labels, classifier_class = item
-            species, confidence = run_bird_classification(image)
+            
+            x, y, w, h = detection.box
+            roi = image[y:y+h, x:x+w]
+
+            species, confidence = run_bird_classification(roi)
 
             image_with_boxes = draw_boxes(image.copy(), detection, labels, species, confidence)
 
@@ -154,15 +158,13 @@ def process_detections(request, stream="main"):
     
     with MappedArray(request, stream) as m:
         for detection_id, detection in enumerate(detections):
-            x, y, w, h = detection.box
             # Extract the region of interest as a numpy array
-            img = m.array[y:y+h, x:x+w, :].copy()
-
+            full_img = m.array.copy()
             classifier_class = labels[int(detection.category)]
             if classifier_class.lower() == "bird":
                 # Add image data to queue for classification on another thread
                 # Only pass what's needed: image, detection_id, detection object, labels, class
-                classification_queue.put((img, detection_id, detection, labels, classifier_class))
+                classification_queue.put((full_img, detection_id, detection, labels, classifier_class))
 
             
 
