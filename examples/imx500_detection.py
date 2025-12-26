@@ -69,12 +69,14 @@ def run_bird_classification(image):
 
 
 
-def draw_boxes(detection, m, labels):
+def draw_boxes(detection, m, labels, species=None):
     x, y, w, h = detection.box
     # Create a copy of the array to draw the background with opacity
     overlay = m.array.copy()
 
     label = f"{labels[int(detection.category)]} ({detection.conf:.2f})"
+    if species:
+        label += f" - {species}"
 
     # Calculate text size and position
     (text_width, text_height), baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
@@ -96,6 +98,8 @@ def draw_boxes(detection, m, labels):
 
     # Draw detection box
     cv2.rectangle(m.array, (x, y), (x + w, y + h), (0, 255, 0, 0), thickness=2)
+    
+    return m.array
 
 
 
@@ -112,19 +116,23 @@ def process_detections(request, stream="main"):
     with MappedArray(request, stream) as m:
         for detection in detections:
             x, y, w, h = detection.box
-            img = m.array.copy()[y:y+h, x:x+w]
+            img = m.array.copy()[y:y+h, x:x+w, :]
+
             classifier_class = labels[int(detection.category)]
             print(classifier_class)
+
+            species = None
             if classifier_class.lower() == "bird":
-                
                 species = run_bird_classification(img)
+
+            detections = draw_boxes(detection, m, labels, species)
+
+            if classifier_class.lower() == "bird" and species:
                 time = datetime.now()
+                os.makedirs(f"/home/stefan/Pictures/bird_detections/{species}/", exist_ok=True)
+                cv2.imwrite(f"/home/stefan/Pictures/bird_detections/{species}/{time}.png", detections)
 
-                if species:
-                    os.makedirs(f"/home/stefan/Pictures/bird_detections/{species}/", exist_ok=True)
-                    cv2.imwrite(f"/home/stefan/Pictures/bird_detections/{species}/{time}.png", img)
-
-            draw_boxes(detection, m, labels)
+            
             
 
 
