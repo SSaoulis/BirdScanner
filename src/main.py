@@ -12,9 +12,9 @@ from object_detection import (
     parse_detections,
     get_labels,
     process_detections,
+    setup_classifier,
+    ClassificationManager,
 )
-from threading_logic import ClassificationManager
-from classification import setup_classifier
 
 
 def get_args():

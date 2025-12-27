@@ -3,17 +3,30 @@
 import os
 import threading
 from datetime import datetime
-from functools import lru_cache
 
 import cv2
 import numpy as np
 from picamera2 import MappedArray
+
+from classification import Classifier, ONNXClassifier, build_preprocessing
 
 
 # Global state
 last_detections = []
 classification_results = {}
 last_bird_classification = None  # (box, species, confidence) for temporal filtering
+
+
+def setup_classifier(model_path: str, class_to_idx_path: str):
+    """Initialize the ONNX classifier with preprocessing."""
+    onnx_model = ONNXClassifier(str(model_path))
+    preprocessing = build_preprocessing({
+        "size": (384, 384),
+        "rgb_values": {"mean": [0.485, 0.456, 0.406], "std": [0.229, 0.224, 0.225]},
+        "center_crop": 1.0,
+        "simple_crop": False,
+    })
+    return Classifier(onnx_model, class_to_idx_path, preprocessing=preprocessing)
 
 
 def iou(box1, box2):
@@ -102,7 +115,6 @@ def parse_detections(metadata: dict, imx500, intrinsics, threshold: float, picam
     
     return last_detections
 
-@lru_cache(maxsize=128)
 def get_labels(intrinsics) -> list:
     """Get labels from intrinsics, filtering empty ones."""
     labels = intrinsics.labels
@@ -275,3 +287,57 @@ def process_detections(request, stream, last_results, manager, labels, full_img_
             classifier_class = labels[int(detection.category)]
             if classifier_class.lower() == "bird":
                 manager.process((full_img, detection_id, detection, labels, classifier_class))
+
+
+class ClassificationManager:
+    """Manages bird classification processing with optional multithreading."""
+    
+    def __init__(self, classifier, *, use_multithreading: bool = False, queue_maxsize: int = 0):
+        self.classifier = classifier
+        self.use_multithreading = use_multithreading
+        self._results_lock = None
+        self._queue = None
+        self._thread = None
+        self._stop_event = None
+
+        if self.use_multithreading:
+            from queue import Queue
+            self._stop_event = threading.Event()
+            self._queue = Queue(maxsize=queue_maxsize)
+            self._thread = threading.Thread(target=self._worker_loop, daemon=True)
+            self._thread.start()
+
+    def set_results_lock(self, results_lock):
+        """Set the lock for thread-safe results access."""
+        self._results_lock = results_lock
+
+    def process(self, item):
+        """Process a detection item synchronously or queue it for async processing."""
+        if not self.use_multithreading:
+            process_single_detection(item, results_lock=self._results_lock, classifier=self.classifier)
+            return
+
+        from queue import Full
+        try:
+            self._queue.put_nowait(item)
+        except Full:
+            # Drop frame if queue is full.
+            return
+
+    def _worker_loop(self):
+        """Worker thread main loop for processing queued detections."""
+        while not self._stop_event.is_set():
+            item = self._queue.get()
+            if item is None:
+                self._queue.task_done()
+                break
+            process_single_detection(item, results_lock=self._results_lock, classifier=self.classifier)
+            self._queue.task_done()
+
+    def stop(self):
+        """Stop the worker thread gracefully."""
+        if not self.use_multithreading:
+            return
+        self._stop_event.set()
+        self._queue.put(None)
+        self._thread.join(timeout=5)
