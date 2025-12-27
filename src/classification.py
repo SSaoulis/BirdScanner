@@ -182,3 +182,14 @@ def build_preprocessing(config: Dict[str, Any]) -> Callable[[Any], np.ndarray]:
 
     return preprocessing_fn
 
+
+def setup_classifier(model_path: str, class_to_idx_path: str):
+    """Initialize the ONNX classifier with preprocessing."""
+    onnx_model = ONNXClassifier(str(model_path))
+    preprocessing = build_preprocessing({
+        "size": (384, 384),
+        "rgb_values": {"mean": [0.485, 0.456, 0.406], "std": [0.229, 0.224, 0.225]},
+        "center_crop": 1.0,
+        "simple_crop": False,
+    })
+    return Classifier(onnx_model, class_to_idx_path, preprocessing=preprocessing)
