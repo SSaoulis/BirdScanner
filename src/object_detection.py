@@ -348,7 +348,7 @@ def process_single_detection(
     confidence = None
     
     for last_box, last_species, last_confidence in last_detection_classifications:
-        if iou(detection.box, last_box) > 0.8:
+        if iou(detection.box, last_box) > 0.6:
             # Reuse classification from previous frame
             species = last_species
             confidence = last_confidence
@@ -363,7 +363,7 @@ def process_single_detection(
     image_with_boxes = draw_boxes(image.copy(), coords, detection, labels, species, confidence)
 
     if classifier_class.lower() == "bird" and species and confidence:
-        if confidence > 0.4:
+        if confidence > 0.6:
             time = datetime.now()
             os.makedirs(f"/home/stefan/Pictures/bird_detections/{species}/", exist_ok=True)
             output_image = cv2.cvtColor(image_with_boxes, cv2.COLOR_RGB2BGR)
