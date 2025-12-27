@@ -8,7 +8,7 @@ from src.classification import ONNXClassifier, Classifier, build_preprocessing
 
 # Paths
 MODEL_PATH = Path(__file__).parent.parent / "examples/models/convnext_v2_tiny.onnx"
-CLASS_TO_IDX_PATH = Path(__file__).parent.parent / "examples/models/convnext_v2_tiny.onnx_class_to_idx.json"
+CLASS_TO_IDX_PATH = Path(__file__).parent.parent / "src/assets/convnext_v2_tiny.onnx_class_to_idx.json"
 IMAGES_DIR = Path(__file__).parent / "bird_species"
 
 

@@ -9,8 +9,8 @@ from pathlib import Path
 
 
 # REAL MODEL PATH
-MODEL_PATH = Path(__file__).parent.parent / "examples/models/convnext_v2_tiny.onnx"
-CLASS_TO_IDX_PATH = Path(__file__).parent.parent / "examples/models/convnext_v2_tiny.onnx_class_to_idx.json"
+MODEL_PATH = Path(__file__).parent.parent / "examples/models/convnext_v2_tiny_int8.onnx"
+CLASS_TO_IDX_PATH = Path(__file__).parent.parent / "src/assets/convnext_v2_tiny.onnx_class_to_idx.json"
 
 # test a simple prediction with the real model and random data of size 384x384x3
 def test_onnx_classifier_prediction():
