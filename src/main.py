@@ -5,10 +5,9 @@ from datetime import datetime
 import os
 import cv2
 import numpy as np
-from picamera2 import MappedArray, Picamera2
-from picamera2.devices import IMX500
-from picamera2.devices.imx500 import (NetworkIntrinsics,)
-from picamera2.previews import DrmPreview
+from picamera2 import MappedArray, Picamera2 # type: ignore
+from picamera2.devices import IMX500 # type: ignore
+from picamera2.devices.imx500 import (NetworkIntrinsics,) # type: ignore
 from classification import Classifier, ONNXClassifier, build_preprocessing
 
 last_detections = []
@@ -209,7 +208,7 @@ def process_single_detection(item, *, results_lock):
     confidence = None
     
     if last_bird_classification is not None:
-        last_box, last_species, last_confidence = last_bird_classification
+        last_box, last_species, last_confidence = last_bird_classification # type: ignore
         if iou(detection.box, last_box) > 0.8:
             # Reuse classification from previous frame
             species = last_species
@@ -264,26 +263,28 @@ class ClassificationManager:
         from queue import Full
 
         try:
-            self._queue.put_nowait(item)
+            self._queue.put_nowait(item) # type: ignore
+
+
         except Full:
             # Drop frame if queue is full.
             return
 
     def _worker_loop(self):
-        while not self._stop_event.is_set():
-            item = self._queue.get()
+        while not self._stop_event.is_set():# type: ignore
+            item = self._queue.get()# type: ignore
             if item is None:
-                self._queue.task_done()
+                self._queue.task_done()# type: ignore
                 break
             process_single_detection(item, results_lock=self._results_lock)
-            self._queue.task_done()
+            self._queue.task_done()# type: ignore
 
     def stop(self):
         if not self.use_multithreading:
             return
-        self._stop_event.set()
-        self._queue.put(None)
-        self._thread.join(timeout=5)
+        self._stop_event.set()# type: ignore
+        self._queue.put(None)# type: ignore
+        self._thread.join(timeout=5)# type: ignore
 
 
 def process_detections(request, stream="main"):
