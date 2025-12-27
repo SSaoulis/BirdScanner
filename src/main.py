@@ -14,7 +14,9 @@ from object_detection import (
     process_detections,
     setup_classifier,
     ClassificationManager,
+    update_detection_classifications_cache,
 )
+import object_detection
 
 
 def get_args():
@@ -131,6 +133,8 @@ def main():
                 args.threshold,
                 picam2,
             )
+            # Update the detection classifications cache for temporal filtering
+            update_detection_classifications_cache(last_results, object_detection.classification_results)
     except KeyboardInterrupt:
         manager.stop()
 

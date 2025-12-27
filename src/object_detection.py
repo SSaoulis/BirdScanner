@@ -15,7 +15,7 @@ from classification import Classifier, ONNXClassifier, build_preprocessing
 # Global state
 last_detections = []
 classification_results = {}
-last_bird_classification = None  # (box, species, confidence) for temporal filtering
+last_detection_classifications = []  # List of (box, species, confidence) tuples for temporal filtering
 
 
 def setup_classifier(model_path: str, class_to_idx_path: str) -> Classifier:
@@ -340,27 +340,24 @@ def process_single_detection(
         results_lock: Thread lock for safe results dictionary access.
         classifier: Classifier instance for bird species classification.
     """
-    global last_bird_classification
+    global last_detection_classifications
     image, detection_id, detection, labels, classifier_class = item
 
-    # Temporal filtering: reuse classification if box overlaps significantly with last detection
+    # Temporal filtering: reuse classification if box overlaps significantly with any detection from last frame
     species = None
     confidence = None
     
-    if last_bird_classification is not None:
-        last_box, last_species, last_confidence = last_bird_classification # type: ignore
+    for last_box, last_species, last_confidence in last_detection_classifications:
         if iou(detection.box, last_box) > 0.8:
             # Reuse classification from previous frame
             species = last_species
             confidence = last_confidence
+            break
     
     # Run classification only if we didn't reuse
     if species is None:
         roi, coords = preprocess_roi(image, detection.box)
         species, confidence = run_bird_classification(classifier, roi)
-        # Update last classification for next frame
-        with results_lock:
-            last_bird_classification = (detection.box, species, confidence)
     
     roi, coords = preprocess_roi(image, detection.box)
     image_with_boxes = draw_boxes(image.copy(), coords, detection, labels, species, confidence)
@@ -374,6 +371,32 @@ def process_single_detection(
     
     with results_lock:
         classification_results[detection_id] = (species, confidence)
+
+
+def update_detection_classifications_cache(
+    detections: list,
+    classification_results: dict,
+) -> None:
+    """Update the cache of detection classifications for the current frame.
+    
+    Builds a list of (box, species, confidence) tuples from the current
+    detections and their classification results, replacing the previous
+    frame's cache.
+    
+    Args:
+        detections: List of Detection objects from current frame.
+        classification_results: Dictionary mapping detection_id to (species, confidence).
+    """
+    global last_detection_classifications
+    
+    new_classifications = []
+    for detection_id, detection in enumerate(detections):
+        if detection_id in classification_results:
+            species, confidence = classification_results[detection_id]
+            if species and confidence:
+                new_classifications.append((detection.box, species, confidence))
+    
+    last_detection_classifications = new_classifications
 
 
 def process_detections(
@@ -490,7 +513,7 @@ class ClassificationManager:
                 self._queue.task_done()# type: ignore
                 break
             process_single_detection(item, results_lock=self._results_lock, classifier=self.classifier)# type: ignore
-            self._queue.task_done()# type: ignorel
+            self._queue.task_done()# type: ignore
 
     def stop(self) -> None:
         """Stop the worker thread gracefully.
