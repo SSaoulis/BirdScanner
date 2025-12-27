@@ -17,8 +17,19 @@ classification_results = {}
 last_bird_classification = None  # (box, species, confidence) for temporal filtering
 
 
-def setup_classifier(model_path: str, class_to_idx_path: str):
-    """Initialize the ONNX classifier with preprocessing."""
+def setup_classifier(model_path: str, class_to_idx_path: str) -> Classifier:
+    """Initialize the ONNX classifier with preprocessing.
+    
+    Creates an ONNX-based bird species classifier with standard ImageNet
+    preprocessing (normalization and resizing to 384x384).
+    
+    Args:
+        model_path: Path to the ONNX model file.
+        class_to_idx_path: Path to the class-to-index mapping JSON file.
+        
+    Returns:
+        Classifier: Configured classifier instance ready for inference.
+    """
     onnx_model = ONNXClassifier(str(model_path))
     preprocessing = build_preprocessing({
         "size": (384, 384),
@@ -29,9 +40,18 @@ def setup_classifier(model_path: str, class_to_idx_path: str):
     return Classifier(onnx_model, class_to_idx_path, preprocessing=preprocessing)
 
 
-def iou(box1, box2):
+def iou(box1: tuple, box2: tuple) -> float:
     """Calculate Intersection over Union (IoU) between two boxes.
-    Boxes are in format (x, y, w, h).
+    
+    Computes the IoU metric for two bounding boxes, commonly used for
+    overlap detection and temporal filtering.
+    
+    Args:
+        box1: Bounding box in format (x, y, w, h).
+        box2: Bounding box in format (x, y, w, h).
+        
+    Returns:
+        float: IoU score between 0.0 and 1.0, where 1.0 indicates complete overlap.
     """
     x1, y1, w1, h1 = box1
     x2, y2, w2, h2 = box2
@@ -61,14 +81,14 @@ def iou(box1, box2):
 class Detection:
     """Represents a detected object with bounding box and category."""
     
-    def __init__(self, coords, category, conf, metadata):
+    def __init__(self, coords: np.ndarray, category: int, conf: float, metadata: dict) -> None:
         """Create a Detection object, recording the bounding box, category and confidence.
         
         Args:
-            coords: Normalized coordinates from inference
-            category: Object category index
-            conf: Confidence score
-            metadata: Camera metadata for coordinate conversion
+            coords: Normalized coordinates from inference as numpy array.
+            category: Object category index from model output.
+            conf: Confidence score from model (0.0 to 1.0).
+            metadata: Camera metadata for coordinate conversion.
         """
         self.category = category
         self.conf = conf
@@ -77,13 +97,38 @@ class Detection:
         self._metadata = metadata
         self.box = None  # Will be set by set_box() after IMX500 is available
 
-    def set_box(self, box):
-        """Set the box after coordinate conversion."""
+    def set_box(self, box: tuple) -> None:
+        """Set the box after coordinate conversion.
+        
+        Args:
+            box: Converted bounding box in format (x, y, w, h).
+        """
         self.box = box
 
 
-def parse_detections(metadata: dict, imx500, intrinsics, threshold: float, picam2):
-    """Parse the output tensor into a number of detected objects, scaled to the ISP output."""
+def parse_detections(
+    metadata: dict,
+    imx500,
+    intrinsics,
+    threshold: float,
+    picam2,
+) -> list:
+    """Parse the output tensor into detected objects scaled to ISP output.
+    
+    Extracts bounding boxes, confidence scores, and class indices from the
+    IMX500 inference output, filters by confidence threshold, and converts
+    normalized coordinates to ISP output coordinates.
+    
+    Args:
+        metadata: Camera metadata containing inference output tensors.
+        imx500: IMX500 device instance for coordinate conversion.
+        intrinsics: Network intrinsics with bbox normalization and order settings.
+        threshold: Confidence threshold for filtering detections.
+        picam2: Picamera2 instance for coordinate system reference.
+        
+    Returns:
+        list: List of Detection objects with converted coordinates.
+    """
     global last_detections
     
     bbox_normalization = intrinsics.bbox_normalization
@@ -116,18 +161,37 @@ def parse_detections(metadata: dict, imx500, intrinsics, threshold: float, picam
     return last_detections
 
 def get_labels(intrinsics) -> list:
-    """Get labels from intrinsics, filtering empty ones."""
+    """Get labels from intrinsics, filtering empty ones.
+    
+    Extracts and filters the class labels from network intrinsics,
+    removing empty strings and placeholder '-' labels.
+    
+    Args:
+        intrinsics: Network intrinsics containing label information.
+        
+    Returns:
+        list: Filtered list of class label strings.
+    """
     labels = intrinsics.labels
     labels = [label for label in labels if label and label != "-"]
     return labels
 
 
-def preprocess_roi(image, box):
-    """
-    Preprocess the region of interest by:
-    1. Padding it to a square
-    2. Expanding by 10% through the center
+def preprocess_roi(image: np.ndarray, box: tuple) -> tuple:
+    """Preprocess the region of interest for classification.
+    
+    Extracts and preprocesses a detection region by:
+    1. Converting to square by using the larger dimension
+    2. Expanding by 20% (10% on each side) through the center
     3. Clamping to image boundaries while maintaining square shape
+    
+    Args:
+        image: Input image as numpy array.
+        box: Bounding box in format (x, y, w, h).
+        
+    Returns:
+        tuple: (roi, coords) where roi is the preprocessed image patch
+            and coords is the final box in format (x, y, size, size).
     """
     x, y, w, h = box
     img_h, img_w = image.shape[:2]
@@ -190,13 +254,47 @@ def preprocess_roi(image, box):
     return roi, (x1, y1, final_size, final_size)
 
 
-def run_bird_classification(classifier, image):
-    """Run bird classification on the given image."""
+def run_bird_classification(classifier: Classifier, image: np.ndarray) -> tuple:
+    """Run bird classification on the given image.
+    
+    Performs species classification on a bird image using the configured
+    ONNX classifier.
+    
+    Args:
+        classifier: Classifier instance for inference.
+        image: Input bird image as numpy array.
+        
+    Returns:
+        tuple: (species, confidence) where species is a string and
+            confidence is a float between 0.0 and 1.0.
+    """
     return classifier.classify(image)
 
 
-def draw_boxes(image_array, coords, detection, labels, species=None, confidence=None):
-    """Draw detection boxes on image array (not on MappedArray)."""
+def draw_boxes(
+    image_array: np.ndarray,
+    coords: tuple,
+    detection: Detection,
+    labels: list,
+    species: str = None,
+    confidence: float = None,
+) -> np.ndarray:
+    """Draw detection boxes and labels on image array.
+    
+    Draws bounding boxes, class labels, and optional classification results
+    on the image. Includes a semi-transparent background for text readability.
+    
+    Args:
+        image_array: Input image as numpy array (modified in-place).
+        coords: Box coordinates in format (x, y, w, h).
+        detection: Detection object with category and confidence.
+        labels: List of class label strings.
+        species: Optional species name from classification.
+        confidence: Optional classification confidence score.
+        
+    Returns:
+        np.ndarray: The modified image array with drawn boxes and labels.
+    """
     x, y, w, h = coords
     overlay = image_array.copy()
     label = f"{labels[int(detection.category)]} ({detection.conf:.2f})"
@@ -224,8 +322,23 @@ def draw_boxes(image_array, coords, detection, labels, species=None, confidence=
     return image_array
 
 
-def process_single_detection(item, *, results_lock, classifier):
-    """Process one detection item (sync or async depending on manager)."""
+def process_single_detection(
+    item: tuple,
+    *,
+    results_lock: threading.Lock,
+    classifier: Classifier,
+) -> None:
+    """Process one detection item and optionally save high-confidence results.
+    
+    Performs bird species classification on a detection, applies temporal
+    filtering to reuse previous classifications when boxes overlap, and
+    saves high-confidence detections to disk.
+    
+    Args:
+        item: Tuple of (image, detection_id, detection, labels, classifier_class).
+        results_lock: Thread lock for safe results dictionary access.
+        classifier: Classifier instance for bird species classification.
+    """
     global last_bird_classification
     image, detection_id, detection, labels, classifier_class = item
 
@@ -262,16 +375,27 @@ def process_single_detection(item, *, results_lock, classifier):
         classification_results[detection_id] = (species, confidence)
 
 
-def process_detections(request, stream, last_results, manager, labels, full_img_processor=None):
-    """Draw the detections for this request onto the ISP output.
+def process_detections(
+    request,
+    stream: str,
+    last_results: list,
+    manager: 'ClassificationManager',
+    labels: list,
+    full_img_processor=None,
+) -> None:
+    """Draw detections onto ISP output and queue for classification.
+    
+    Processes all detections from the current frame by drawing boxes on
+    the preview stream and queuing bird detections for asynchronous
+    species classification.
     
     Args:
-        request: Camera request object
-        stream: Stream name
-        last_results: List of Detection objects
-        manager: ClassificationManager instance
-        labels: List of label strings
-        full_img_processor: Optional callback to process full image before detection processing
+        request: Camera request object with frame data.
+        stream: ISP output stream name (e.g., 'main').
+        last_results: List of Detection objects from current frame.
+        manager: ClassificationManager instance for async processing.
+        labels: List of class label strings.
+        full_img_processor: Optional callback to process full image before detection processing.
     """
     if last_results is None:
         return
@@ -292,7 +416,24 @@ def process_detections(request, stream, last_results, manager, labels, full_img_
 class ClassificationManager:
     """Manages bird classification processing with optional multithreading."""
     
-    def __init__(self, classifier, *, use_multithreading: bool = False, queue_maxsize: int = 0):
+    def __init__(
+        self,
+        classifier: Classifier,
+        *,
+        use_multithreading: bool = False,
+        queue_maxsize: int = 0,
+    ) -> None:
+        """Initialize the ClassificationManager.
+        
+        Creates a classification processor that can operate in synchronous or
+        asynchronous mode. In async mode, detections are queued for processing
+        by a background worker thread.
+        
+        Args:
+            classifier: Classifier instance for bird species classification.
+            use_multithreading: If True, enable async processing with background thread.
+            queue_maxsize: Maximum queue size for async processing. 0 means unlimited.
+        """
         self.classifier = classifier
         self.use_multithreading = use_multithreading
         self._results_lock = None
@@ -307,12 +448,24 @@ class ClassificationManager:
             self._thread = threading.Thread(target=self._worker_loop, daemon=True)
             self._thread.start()
 
-    def set_results_lock(self, results_lock):
-        """Set the lock for thread-safe results access."""
+    def set_results_lock(self, results_lock: threading.Lock) -> None:
+        """Set the lock for thread-safe results access.
+        
+        Args:
+            results_lock: Threading lock for synchronizing results dictionary access.
+        """
         self._results_lock = results_lock
 
-    def process(self, item):
-        """Process a detection item synchronously or queue it for async processing."""
+    def process(self, item: tuple) -> None:
+        """Process a detection item synchronously or queue it for async processing.
+        
+        In synchronous mode, the detection is processed immediately on the
+        calling thread. In async mode, it is queued for the background worker.
+        If the queue is full, the item is dropped to prevent frame blocking.
+        
+        Args:
+            item: Detection item tuple to process.
+        """
         if not self.use_multithreading:
             process_single_detection(item, results_lock=self._results_lock, classifier=self.classifier)
             return
@@ -324,8 +477,12 @@ class ClassificationManager:
             # Drop frame if queue is full.
             return
 
-    def _worker_loop(self):
-        """Worker thread main loop for processing queued detections."""
+    def _worker_loop(self) -> None:
+        """Worker thread main loop for processing queued detections.
+        
+        Continuously retrieves items from the queue and processes them
+        until a None sentinel value is received, indicating shutdown.
+        """
         while not self._stop_event.is_set():
             item = self._queue.get()
             if item is None:
@@ -334,8 +491,12 @@ class ClassificationManager:
             process_single_detection(item, results_lock=self._results_lock, classifier=self.classifier)
             self._queue.task_done()
 
-    def stop(self):
-        """Stop the worker thread gracefully."""
+    def stop(self) -> None:
+        """Stop the worker thread gracefully.
+        
+        Signals the worker thread to stop and waits for it to finish
+        with a 5-second timeout. In synchronous mode, this is a no-op.
+        """
         if not self.use_multithreading:
             return
         self._stop_event.set()
