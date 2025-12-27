@@ -88,7 +88,7 @@ def main():
 
     # Initialize classifier
     classifier = setup_classifier(
-        "local/convnext_v2_tiny.onnx",
+        "local/convnext_v2_tiny_int8.onnx",
         "assets/convnext_v2_tiny.onnx_class_to_idx.json",
     )
 
