@@ -3,10 +3,11 @@
 import os
 import threading
 from datetime import datetime
+from typing import Optional
 
 import cv2
 import numpy as np
-from picamera2 import MappedArray
+from picamera2 import MappedArray # type: ignore
 
 from classification import Classifier, ONNXClassifier, build_preprocessing
 
@@ -154,7 +155,7 @@ def parse_detections(
     last_detections = []
     for box, score, category in zip(boxes, scores, classes):
         if score > threshold:
-            detection = Detection(box, category, score, metadata)
+            detection = Detection(box, category, score, metadata) # type: ignore
             detection.set_box(imx500.convert_inference_coords(box, metadata, picam2))
             last_detections.append(detection)
     
@@ -276,8 +277,8 @@ def draw_boxes(
     coords: tuple,
     detection: Detection,
     labels: list,
-    species: str = None,
-    confidence: float = None,
+    species: Optional[str] = None,
+    confidence: Optional[float] = None,
 ) -> np.ndarray:
     """Draw detection boxes and labels on image array.
     
@@ -467,12 +468,12 @@ class ClassificationManager:
             item: Detection item tuple to process.
         """
         if not self.use_multithreading:
-            process_single_detection(item, results_lock=self._results_lock, classifier=self.classifier)
+            process_single_detection(item, results_lock=self._results_lock, classifier=self.classifier) # type: ignore
             return
 
         from queue import Full
         try:
-            self._queue.put_nowait(item)
+            self._queue.put_nowait(item) # type: ignore
         except Full:
             # Drop frame if queue is full.
             return
@@ -483,13 +484,13 @@ class ClassificationManager:
         Continuously retrieves items from the queue and processes them
         until a None sentinel value is received, indicating shutdown.
         """
-        while not self._stop_event.is_set():
-            item = self._queue.get()
+        while not self._stop_event.is_set():# type: ignore
+            item = self._queue.get()# type: ignore
             if item is None:
-                self._queue.task_done()
+                self._queue.task_done()# type: ignore
                 break
-            process_single_detection(item, results_lock=self._results_lock, classifier=self.classifier)
-            self._queue.task_done()
+            process_single_detection(item, results_lock=self._results_lock, classifier=self.classifier)# type: ignore
+            self._queue.task_done()# type: ignorel
 
     def stop(self) -> None:
         """Stop the worker thread gracefully.
@@ -499,6 +500,6 @@ class ClassificationManager:
         """
         if not self.use_multithreading:
             return
-        self._stop_event.set()
-        self._queue.put(None)
-        self._thread.join(timeout=5)
+        self._stop_event.set()# type: ignore
+        self._queue.put(None)# type: ignore
+        self._thread.join(timeout=5)# type: ignore
