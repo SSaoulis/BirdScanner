@@ -188,7 +188,7 @@ def process_single_detection(item, *, results_lock):
 
 
 class ClassificationManager:
-    def __init__(self, *, use_multithreading: bool = False, queue_maxsize: int = 5):
+    def __init__(self, *, use_multithreading: bool = False, queue_maxsize: int = 0):
         self.use_multithreading = use_multithreading
         self._results_lock = None
         self._queue = None
