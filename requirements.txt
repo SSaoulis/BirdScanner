@@ -20,7 +20,6 @@ numpy==2.2.6
 onnxruntime>=1.17.0
 numpy>=1.26.0
 pillow>=10.0.0
-opencv-python==4.12.0.88
 packaging==25.0
 pillow==12.0.0
 pluggy==1.6.0

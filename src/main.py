@@ -13,6 +13,8 @@ from classification import Classifier, ONNXClassifier, build_preprocessing
 
 last_detections = []
 classification_results = {}
+last_bird_classification = None  # (box, species, confidence) for temporal filtering
+OUTPUT_DIR = "/home/stefan/Pictures/bird_detections"
 
 MODEL_PATH = "local/convnext_v2_tiny.onnx"
 CLASS_TO_IDX_PATH = "assets/convnext_v2_tiny.onnx_class_to_idx.json"
@@ -25,6 +27,35 @@ preprocessing = build_preprocessing({
     "simple_crop": False,
 })
 classifier = Classifier(onnx_model, CLASS_TO_IDX_PATH, preprocessing=preprocessing)
+
+
+def iou(box1, box2):
+    """Calculate Intersection over Union (IoU) between two boxes.
+    Boxes are in format (x, y, w, h).
+    """
+    x1, y1, w1, h1 = box1
+    x2, y2, w2, h2 = box2
+    
+    # Convert to (x1, y1, x2, y2) format
+    box1_x1, box1_y1, box1_x2, box1_y2 = x1, y1, x1 + w1, y1 + h1
+    box2_x1, box2_y1, box2_x2, box2_y2 = x2, y2, x2 + w2, y2 + h2
+    
+    # Calculate intersection
+    inter_x1 = max(box1_x1, box2_x1)
+    inter_y1 = max(box1_y1, box2_y1)
+    inter_x2 = min(box1_x2, box2_x2)
+    inter_y2 = min(box1_y2, box2_y2)
+    
+    inter_area = max(0, inter_x2 - inter_x1) * max(0, inter_y2 - inter_y1)
+    
+    # Calculate union
+    box1_area = w1 * h1
+    box2_area = w2 * h2
+    union_area = box1_area + box2_area - inter_area
+    
+    if union_area == 0:
+        return 0.0
+    return inter_area / union_area
 
 
 class Detection:
@@ -88,10 +119,10 @@ def preprocess_roi(image, box):
     y1 = y - y_offset
     x2 = x1 + max_side
     y2 = y1 + max_side
-
-    # Step 2: Expand by 10% from center
-    expansion = int(max_side * 0.1 / 2)  # 5% on each side
-
+    
+    # Step 2: Expand by 20% from center
+    expansion = int(max_side * 0.2 / 2)  # 10% on each side
+    
     x1 -= expansion
     y1 -= expansion
     x2 += expansion
@@ -170,19 +201,37 @@ def draw_boxes(image_array, coords, detection, labels, species=None, confidence=
 
 def process_single_detection(item, *, results_lock):
     """Process one detection item (sync or async depending on manager)."""
+    global last_bird_classification
     image, detection_id, detection, labels, classifier_class = item
 
+    # Temporal filtering: reuse classification if box overlaps significantly with last detection
+    species = None
+    confidence = None
+    
+    if last_bird_classification is not None:
+        last_box, last_species, last_confidence = last_bird_classification
+        if iou(detection.box, last_box) > 0.8:
+            # Reuse classification from previous frame
+            species = last_species
+            confidence = last_confidence
+    
+    # Run classification only if we didn't reuse
+    if species is None:
+        roi, coords = preprocess_roi(image, detection.box)
+        species, confidence = run_bird_classification(roi)
+        # Update last classification for next frame
+        with results_lock:
+            last_bird_classification = (detection.box, species, confidence)
+    
     roi, coords = preprocess_roi(image, detection.box)
-    species, confidence = run_bird_classification(roi)
-
     image_with_boxes = draw_boxes(image.copy(), coords, detection, labels, species, confidence)
 
-    if classifier_class.lower() == "bird" and species and confidence > 0.4:
-        time = datetime.now()
-        os.makedirs(f"/home/stefan/Pictures/bird_detections/{species}/", exist_ok=True)
-        output_image = cv2.cvtColor(image_with_boxes, cv2.COLOR_RGB2BGR)
-        cv2.imwrite(f"/home/stefan/Pictures/bird_detections/{species}/{time}.png", output_image)
-
+    if classifier_class.lower() == "bird" and species and confidence:
+        if confidence > 0.4:
+            time = datetime.now()
+            os.makedirs(f"/home/stefan/Pictures/bird_detections/{species}/", exist_ok=True)
+            output_image = cv2.cvtColor(image_with_boxes, cv2.COLOR_RGB2BGR)
+            cv2.imwrite(f"/home/stefan/Pictures/bird_detections/{species}/{time}.png", output_image)
     with results_lock:
         classification_results[detection_id] = (species, confidence)
 
@@ -247,8 +296,8 @@ def process_detections(request, stream="main"):
     labels = get_labels()
 
     with MappedArray(request, stream) as m:
+        full_img = m.array.copy()
         for detection_id, detection in enumerate(detections):
-            full_img = m.array.copy()
             _, coords = preprocess_roi(full_img, detection.box)
             image_with_boxes = draw_boxes(full_img.copy(), coords, detection, labels)
             m.array[:] = image_with_boxes
