@@ -1,6 +1,7 @@
 """Main entry point for bird detection and classification application."""
 
 import argparse
+import logging
 import sys
 import threading
 
@@ -15,6 +16,7 @@ from object_detection import (
     setup_classifier,
     ClassificationManager,
     update_detection_classifications_cache,
+    StableDetectionTracker,
 )
 import object_detection
 
@@ -51,6 +53,21 @@ def get_args():
         action="store_true",
         help="Enable background processing thread for classification",
     )
+    parser.add_argument(
+        "--object-duration-threshold",
+        dest="object_duration_threshold",
+        type=float,
+        default=0.2,
+        help=(
+            "Total time (seconds) a track must be stable (IoU>0.6 across frames) before running bird "
+            "classification. Set to 0 to revert to legacy per-frame logic."
+        ),
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable debug logging for track lifecycle events",
+    )
     return parser.parse_args()
 
 
@@ -58,6 +75,10 @@ def main():
     """Main application entry point."""
     args = get_args()
 
+    logging.basicConfig(
+        level=logging.DEBUG if args.debug else logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+    )
     # Initialize IMX500 device (must be called before instantiation of Picamera2)
     imx500 = IMX500(args.model)
     intrinsics = imx500.network_intrinsics
@@ -94,9 +115,37 @@ def main():
         "assets/convnext_v2_tiny.onnx_class_to_idx.json",
     )
 
+    # Configure new stable-track gating.
+    # - If duration == 0 => revert to legacy behaviour.
+    # - Otherwise compute min_stable_frames from duration * fps (ceil, min 1).
+    # Prefer args.fps if supplied; fall back to intrinsics inference rate.
+    fps = args.fps or int(getattr(intrinsics, "inference_rate", 0) or 0) or 1
+    if args.object_duration_threshold and args.object_duration_threshold > 0:
+        min_stable_frames = max(1, int((args.object_duration_threshold * fps) + 0.9999))
+        use_stable_tracks = True
+
+        from logging import on_track_became_stable, on_track_deleted
+
+        tracker = StableDetectionTracker(
+            iou_threshold=0.6,
+            min_stable_frames=min_stable_frames,
+            # Reasonable default; can be promoted to a CLI arg later.
+            max_missing_frames=max(1, int(1.0 * fps)),
+            on_track_became_stable=on_track_became_stable,
+            on_track_deleted=on_track_deleted,
+        )
+    else:
+        use_stable_tracks = False
+        tracker = None
+
     # Initialize camera and classification manager
     results_lock = threading.Lock()
-    manager = ClassificationManager(classifier, use_multithreading=args.multithread)
+    manager = ClassificationManager(
+        classifier,
+        use_multithreading=args.multithread,
+        use_stable_track_gating=use_stable_tracks,
+        tracker=tracker,
+    )
     manager.set_results_lock(results_lock)
 
     picam2 = Picamera2(imx500.camera_num)
@@ -119,6 +168,11 @@ def main():
     def detection_callback(request):
         """Callback for processing detections on each frame."""
         nonlocal last_results
+
+        # Update tracker state once per frame (before enqueuing items).
+        if use_stable_tracks and tracker is not None:
+            tracker.update_frame(last_results or [])
+
         process_detections(request, "main", last_results, manager, labels)
 
     picam2.pre_callback = detection_callback

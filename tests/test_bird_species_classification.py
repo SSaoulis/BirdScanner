@@ -5,6 +5,10 @@ from PIL import Image
 import re
 
 from src.classification import ONNXClassifier, Classifier, build_preprocessing
+# add src to path
+import sys
+from pathlib import Path
+sys.path.append(str(Path(__file__).parent.parent / "src"))  # noqa: E
 
 # Paths
 MODEL_PATH = Path(__file__).parent.parent / "examples/models/convnext_v2_tiny.onnx"
