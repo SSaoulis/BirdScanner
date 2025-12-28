@@ -75,10 +75,17 @@ def main():
     """Main application entry point."""
     args = get_args()
 
-    logging.basicConfig(
-        level=logging.DEBUG if args.debug else logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(message)s",
-    )
+
+    tracking_logger = logging.getLogger("tracking")
+    tracking_logger.setLevel(logging.DEBUG if args.debug else logging.INFO)
+    handler = logging.StreamHandler(sys.stdout)
+    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    handler.setFormatter(formatter)
+    tracking_logger.addHandler(handler)
+
+    
+    
+
     # Initialize IMX500 device (must be called before instantiation of Picamera2)
     imx500 = IMX500(args.model)
     intrinsics = imx500.network_intrinsics
@@ -124,15 +131,16 @@ def main():
         min_stable_frames = max(1, int((args.object_duration_threshold * fps) + 0.9999))
         use_stable_tracks = True
 
-        from track_logging import on_track_became_stable, on_track_deleted
+        from track_logging import TrackingLogger
+        logger = TrackingLogger()
 
         tracker = StableDetectionTracker(
             iou_threshold=0.6,
             min_stable_frames=min_stable_frames,
             # Reasonable default; can be promoted to a CLI arg later.
             max_missing_frames=max(1, int(1.0 * fps)),
-            on_track_became_stable=on_track_became_stable,
-            on_track_deleted=on_track_deleted,
+            on_track_became_stable=logger.log_stable_track,
+            on_track_deleted=logger.log_deleted_track,
         )
     else:
         use_stable_tracks = False
