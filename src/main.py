@@ -124,7 +124,7 @@ def main():
         min_stable_frames = max(1, int((args.object_duration_threshold * fps) + 0.9999))
         use_stable_tracks = True
 
-        from logging import on_track_became_stable, on_track_deleted
+        from track_logging import on_track_became_stable, on_track_deleted
 
         tracker = StableDetectionTracker(
             iou_threshold=0.6,
