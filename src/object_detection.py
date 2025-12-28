@@ -263,7 +263,7 @@ def process_single_detection_with_stable_tracks(
     image_with_boxes = draw_boxes(image.copy(), coords, detection, labels, species, confidence)
 
     # Save only after a classification actually happened.
-    if classifier_class.lower() == "bird" and species and confidence and confidence > 0.6:
+    if classifier_class.lower() == "bird" and species and confidence and confidence > 0.4:
         time = datetime.now()
         os.makedirs(f"/home/stefan/Pictures/bird_detections/{species}/", exist_ok=True)
         output_image = cv2.cvtColor(image_with_boxes, cv2.COLOR_RGB2BGR)
@@ -623,7 +623,7 @@ def process_single_detection(
     image_with_boxes = draw_boxes(image.copy(), coords, detection, labels, species, confidence)
 
     if classifier_class.lower() == "bird" and species and confidence:
-        if confidence > 0.6:
+        if confidence > 0.4:
             time = datetime.now()
             os.makedirs(f"/home/stefan/Pictures/bird_detections/{species}/", exist_ok=True)
             output_image = cv2.cvtColor(image_with_boxes, cv2.COLOR_RGB2BGR)
