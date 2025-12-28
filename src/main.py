@@ -190,7 +190,7 @@ def main():
         if use_stable_tracks and tracker is not None:
             tracker.update_frame(
                 last_results or [],
-                keep_detection=lambda d: labels[int(d.category)].lower() == "bird",  # type: ignore[attr-defined]
+                # keep_detection=lambda d: labels[int(d.category)].lower() == "bird",  # type: ignore[attr-defined]
             )
 
         process_detections(request, "main", last_results, manager, labels)
