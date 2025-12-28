@@ -186,8 +186,12 @@ def main():
         nonlocal last_results
 
         # Update tracker state once per frame (before enqueuing items).
+        # Restrict tracking to detections classified as 'bird' by the detection/segmentation model.
         if use_stable_tracks and tracker is not None:
-            tracker.update_frame(last_results or [])
+            tracker.update_frame(
+                last_results or [],
+                keep_detection=lambda d: labels[int(d.category)].lower() == "bird",  # type: ignore[attr-defined]
+            )
 
         process_detections(request, "main", last_results, manager, labels)
 

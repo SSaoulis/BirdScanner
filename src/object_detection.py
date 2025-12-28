@@ -145,10 +145,27 @@ class StableDetectionTracker:
         self._tracks: list[StableTrack] = []
         self._last_per_det_track: dict[int, StableTrack] = {}
 
-    def update_frame(self, detections: list) -> None:
-        """Update tracker state with a list of Detection-like objects (must have .box)."""
+    def update_frame(
+        self,
+        detections: list,
+        *,
+        keep_detection: Optional[Callable[[object], bool]] = None,
+    ) -> None:
+        """Update tracker state with a list of Detection-like objects.
 
-        boxes = [d.box for d in detections]
+        Args:
+            detections: List of Detection-like objects (must have .box).
+            keep_detection: Optional predicate; only detections for which this returns True
+                contribute to tracking.
+        """
+
+        filtered = (
+            [d for d in detections if keep_detection(d)]
+            if keep_detection is not None
+            else detections
+        )
+
+        boxes = [d.box for d in filtered]
 
         # Snapshot which tracks were already stable so we can detect first-time stability.
         previously_stable_ids = {

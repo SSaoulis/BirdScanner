@@ -320,3 +320,53 @@ def test_track_reappearing_after_deletion_is_treated_as_new_and_needs_stability_
     # Frame 5: A is seen again -> now it reaches min_stable_frames=2.
     tracker.update_frame([DummyDet((10, 10, 20, 20))])
     assert _stable_set_after_update(tracker) == {0}
+
+
+def test_update_frame_can_filter_to_only_bird_detections():
+    """The tracker should only create/maintain tracks for detections that pass keep_detection.
+
+    This matches the runtime behavior where we only want to track detections that the model
+    labels as 'bird'.
+
+    Steps:
+      1) Provide a frame with one 'bird' and one 'cat'. Only the bird should become a track.
+      2) Provide a second frame with the same boxes. Bird track stability increments.
+      3) Provide a third frame with only the non-bird; bird track becomes missing but is retained
+         (default max_missing_frames=0 means no deletion).
+    """
+
+    class DetWithCategory(DummyDet):
+        def __init__(self, box, category: str):
+            super().__init__(box)
+            self.category = category
+
+    tracker = StableDetectionTracker(iou_threshold=0.6, min_stable_frames=2)
+
+    # Frame 1: both appear, but we only keep 'bird'.
+    tracker.update_frame(
+        [
+            DetWithCategory((10, 10, 20, 20), "bird"),
+            DetWithCategory((50, 50, 20, 20), "cat"),
+        ],
+        keep_detection=lambda d: getattr(d, "category") == "bird",
+    )
+    assert tracker.track_count() == 1
+
+    # Frame 2: bird is still there; stability increments to 2 -> becomes eligible.
+    tracker.update_frame(
+        [
+            DetWithCategory((10, 10, 20, 20), "bird"),
+            DetWithCategory((50, 50, 20, 20), "cat"),
+        ],
+        keep_detection=lambda d: getattr(d, "category") == "bird",
+    )
+    assert tracker.track_count() == 1
+    assert len(_stable_set_after_update(tracker)) == 1
+
+    # Frame 3: only non-bird detections. Since we filter them out, the tracker receives
+    # an empty detection list.
+    tracker.update_frame(
+        [DetWithCategory((50, 50, 20, 20), "cat")],
+        keep_detection=lambda d: getattr(d, "category") == "bird",
+    )
+    assert tracker.track_count() == 1
