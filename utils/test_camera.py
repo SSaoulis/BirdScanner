@@ -7,6 +7,7 @@ import argparse
 import os
 from datetime import datetime
 from pathlib import Path
+import libcamera
 
 try:
     from picamera2 import Picamera2
@@ -41,7 +42,8 @@ def take_photo(output_dir: str = ".", filename: str = None) -> str:
     camera = Picamera2()
     
     # Configure camera
-    config = camera.create_preview_configuration(transform=3)  # 2=Vertical Flip. Use 3 (ROT180) if needed.
+    config = camera.create_preview_configuration(        transform=libcamera.Transform(vflip=True, hflip=True),
+    ) # 2=Vertical Flip. Use 3 (ROT180) if needed.
     camera.configure(config)
     
     # Start camera
