@@ -5,6 +5,7 @@ import logging
 import sys
 import threading
 
+import libcamera
 from picamera2 import Picamera2  # type: ignore
 from picamera2.devices import IMX500  # type: ignore
 from picamera2.devices.imx500 import NetworkIntrinsics  # type: ignore
@@ -166,6 +167,7 @@ def main():
     config = picam2.create_preview_configuration(
         controls={"FrameRate": intrinsics.inference_rate},
         buffer_count=12,
+        transform=libcamera.Transform(vflip=True, hflip=True)
     )
     imx500.show_network_fw_progress_bar()
     picam2.start(config, show_preview=args.preview)
