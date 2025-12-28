@@ -68,6 +68,12 @@ def get_args():
         action="store_true",
         help="Enable debug logging for track lifecycle events",
     )
+    # add flag to turn on preview
+    parser.add_argument(
+        "--preview",
+        action="store_true",
+        help="Enable camera preview window",
+    )
     return parser.parse_args()
 
 
@@ -162,7 +168,7 @@ def main():
         buffer_count=12,
     )
     imx500.show_network_fw_progress_bar()
-    picam2.start(config, show_preview=True)
+    picam2.start(config, show_preview=args.preview)
 
     if intrinsics.preserve_aspect_ratio:
         imx500.set_auto_aspect_ratio()
