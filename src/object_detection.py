@@ -31,6 +31,18 @@ class StableTrack:
     classified: bool = False
     frames_since_seen: int = 0
     species: Optional[str] = None
+    # Stores ROI and detection confidence from each frame for aggregated classification
+    frame_rois: list = None  # List of (roi_image, detection_conf) tuples
+    classification_results: list = None  # List of (species, conf) from classifying each frame
+    aggregated_species: Optional[str] = None  # Final aggregated species after post-processing
+    aggregated_confidence: Optional[float] = None  # Final aggregated confidence
+
+    def __post_init__(self) -> None:
+        """Initialize mutable default values."""
+        if self.frame_rois is None:
+            self.frame_rois = []
+        if self.classification_results is None:
+            self.classification_results = []
 
 
 def match_detection_to_track(
@@ -136,12 +148,14 @@ class StableDetectionTracker:
         max_missing_frames: int = 0,
         on_track_became_stable: Optional[Callable[[StableTrack], None]] = None,
         on_track_deleted: Optional[Callable[[StableTrack], None]] = None,
+        aggregation_method: str = "median",
     ) -> None:
         self.iou_threshold = iou_threshold
         self.min_stable_frames = min_stable_frames
         self.max_missing_frames = max_missing_frames
         self.on_track_became_stable = on_track_became_stable
         self.on_track_deleted = on_track_deleted
+        self.aggregation_method = aggregation_method
         self._tracks: list[StableTrack] = []
         self._last_per_det_track: dict[int, StableTrack] = {}
 
@@ -200,6 +214,22 @@ class StableDetectionTracker:
                     t.species = species
                 return
 
+    def finalize_track_classification(self, track_id: int) -> None:
+        """Aggregate all classification results for a track and compute final prediction.
+
+        Called when a track becomes stable to aggregate predictions from all
+        frames in the track.
+        """
+        for t in self._tracks:
+            if t.track_id == track_id and t.classification_results:
+                species, confidence = aggregate_classifications(
+                    t.classification_results,
+                    aggregation_method=self.aggregation_method,
+                )
+                t.aggregated_species = species
+                t.aggregated_confidence = confidence
+                return
+
     def track_count(self) -> int:
         """Test helper: the number of currently active tracks."""
 
@@ -208,7 +238,11 @@ class StableDetectionTracker:
 
 # Global tracker instance used by default in the live pipeline.
 # Tests can instantiate StableDetectionTracker directly.
-stable_detection_tracker = StableDetectionTracker(iou_threshold=0.6, min_stable_frames=3)
+stable_detection_tracker = StableDetectionTracker(
+    iou_threshold=0.6,
+    min_stable_frames=3,
+    aggregation_method="median",
+)
 
 
 def should_run_bird_classification_for_detection(
@@ -232,10 +266,10 @@ def process_single_detection_with_stable_tracks(
     tracker: StableDetectionTracker,
     classify_fn: Optional[Callable[[Classifier, np.ndarray], tuple]] = None,
 ) -> None:
-    """Process detection using the new multi-frame stable-track gating logic.
+    """Process detection using multi-frame aggregation over stable tracks.
 
-    The existing, older per-frame cache logic is intentionally left in
-    `process_single_detection` for reference.
+    Collects ROIs from all frames in a track, classifies each ROI, and when
+    the track becomes stable, aggregates predictions across frames.
     """
 
     if classify_fn is None:
@@ -243,34 +277,56 @@ def process_single_detection_with_stable_tracks(
 
     image, detection_id, detection, labels, classifier_class = item
 
+    track = tracker.track_for_detection_id(detection_id)
     species = None
     confidence = None
+    display_species = None
+    display_confidence = None
 
-    # Gate classification until stable over N frames.
-    if classifier_class.lower() == "bird" and should_run_bird_classification_for_detection(
-        detection_id, tracker=tracker
-    ):
+    if classifier_class.lower() == "bird" and track is not None:
         roi, coords = preprocess_roi(image, detection.box)
-        species, confidence = classify_fn(classifier, roi)
 
-        # Ensure we only classify a stable track once.
-        track = tracker.track_for_detection_id(detection_id)
-        if track is not None:
-            tracker.mark_classified(track.track_id, species=species)
+        # Always collect ROI and detection confidence
+        track.frame_rois.append((roi, detection.conf))
+
+        # Classify this frame's ROI and store result
+        frame_species, frame_confidence = classify_fn(classifier, roi)
+        track.classification_results.append((frame_species, frame_confidence))
+        species = frame_species
+        confidence = frame_confidence
+
+        # Once track is stable, aggregate all classifications and mark as done
+        if should_classify_track(track, min_stable_frames=tracker.min_stable_frames):
+            tracker.finalize_track_classification(track.track_id)
+            tracker.mark_classified(track.track_id)
+            # Use aggregated results for display and saving
+            display_species = track.aggregated_species
+            display_confidence = track.aggregated_confidence
 
     # Always draw boxes; include optional classification result.
     roi, coords = preprocess_roi(image, detection.box)
-    image_with_boxes = draw_boxes(image.copy(), coords, detection, labels, species, confidence)
+    image_with_boxes = draw_boxes(
+        image.copy(),
+        coords,
+        detection,
+        labels,
+        display_species or species,
+        display_confidence or confidence,
+    )
 
-    # Save only after a classification actually happened.
-    if classifier_class.lower() == "bird" and species and confidence and confidence > 0.4:
+    # Save only if we have a species and sufficient confidence.
+    save_species = display_species or species
+    save_confidence = display_confidence or confidence
+    if classifier_class.lower() == "bird" and save_species and save_confidence and save_confidence > 0.4:
         time = datetime.now()
-        os.makedirs(f"/home/stefan/Pictures/bird_detections/{species}/", exist_ok=True)
+        os.makedirs(f"/home/stefan/Pictures/bird_detections/{save_species}/", exist_ok=True)
         output_image = cv2.cvtColor(image_with_boxes, cv2.COLOR_RGB2BGR)
-        cv2.imwrite(f"/home/stefan/Pictures/bird_detections/{species}/{time}.png", output_image)
+        cv2.imwrite(f"/home/stefan/Pictures/bird_detections/{save_species}/{time}.png", output_image)
 
     with results_lock:
-        classification_results[detection_id] = (species, confidence)
+        # Store aggregated results if available, otherwise frame results
+        results = (display_species or species, display_confidence or confidence)
+        classification_results[detection_id] = results
 
 
 def setup_classifier(model_path: str, class_to_idx_path: str) -> Classifier:
@@ -296,6 +352,67 @@ def setup_classifier(model_path: str, class_to_idx_path: str) -> Classifier:
         }
     )
     return Classifier(onnx_model, class_to_idx_path, preprocessing=preprocessing)
+
+
+def aggregate_classifications(
+    results: list[tuple],
+    aggregation_method: str = "median",
+) -> tuple[Optional[str], Optional[float]]:
+    """Aggregate classification results from multiple frames.
+
+    Args:
+        results: List of (species, confidence) tuples from each frame.
+        aggregation_method: How to aggregate ("median", "mean", "max", "mode").
+
+    Returns:
+        Tuple of (aggregated_species, aggregated_confidence).
+        Returns (None, None) if no valid results.
+    """
+    if not results:
+        return None, None
+
+    # Group by species and collect confidences
+    species_confidences: dict[str, list[float]] = {}
+    for species, confidence in results:
+        if species is not None and confidence is not None:
+            if species not in species_confidences:
+                species_confidences[species] = []
+            species_confidences[species].append(confidence)
+
+    if not species_confidences:
+        return None, None
+
+    if aggregation_method == "mode":
+        # Species that appears most often
+        most_common_species = max(species_confidences.keys(), key=lambda s: len(species_confidences[s]))
+        confs = species_confidences[most_common_species]
+    else:
+        # Use the species with highest average/median/max confidence
+        species_scores = {}
+        for species, confs in species_confidences.items():
+            if aggregation_method == "median":
+                species_scores[species] = np.median(confs)
+            elif aggregation_method == "mean":
+                species_scores[species] = np.mean(confs)
+            elif aggregation_method == "max":
+                species_scores[species] = np.max(confs)
+            else:
+                species_scores[species] = np.median(confs)
+
+        most_common_species = max(species_scores.keys(), key=species_scores.get)
+        confs = species_confidences[most_common_species]
+
+    # Aggregate confidence for the selected species
+    if aggregation_method == "median":
+        agg_confidence = np.median(confs)
+    elif aggregation_method == "mean":
+        agg_confidence = np.mean(confs)
+    elif aggregation_method == "max":
+        agg_confidence = np.max(confs)
+    else:
+        agg_confidence = np.median(confs)
+
+    return most_common_species, float(agg_confidence)
 
 
 def iou(box1: tuple, box2: tuple) -> float:
