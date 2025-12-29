@@ -33,7 +33,7 @@ def take_photo(output_dir: str = ".", filename: str = None) -> str:
     # Generate filename if not provided
     if filename is None:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"photo_{timestamp}.jpg"
+        filename = f"photo_{timestamp}.png"
     
     filepath = os.path.join(output_dir, filename)
     
@@ -55,7 +55,7 @@ def take_photo(output_dir: str = ".", filename: str = None) -> str:
     
     # Capture photo
     print(f"Taking photo and saving to {filepath}...")
-    camera.capture_file(filepath)
+    camera.capture_file(filepath, quality="max")
     
     # Stop camera
     camera.stop()
