@@ -55,7 +55,7 @@ def take_photo(output_dir: str = ".", filename: str = None) -> str:
     
     # Capture photo
     print(f"Taking photo and saving to {filepath}...")
-    camera.capture_file(filepath, quality="max")
+    camera.capture_file(filepath)
     
     # Stop camera
     camera.stop()
