@@ -164,11 +164,33 @@ def main():
     manager.set_results_lock(results_lock)
 
     picam2 = Picamera2(imx500.camera_num)
+    SENSOR_W, SENSOR_H = 2028, 1520
+    CROP_W, CROP_H = 640, 640
+
+    ANCHOR_X_FRAC = 2 / 5
+    ANCHOR_Y_FRAC = 2 / 5
+
+    crop_x = int(SENSOR_W * ANCHOR_X_FRAC)
+    crop_y = int(SENSOR_H * ANCHOR_Y_FRAC)
+
+    # Clamp to sensor bounds
+    crop_x = max(0, min(crop_x, SENSOR_W - CROP_W))
+    crop_y = max(0, min(crop_y, SENSOR_H - CROP_H))
+
     config = picam2.create_preview_configuration(
-        controls={"FrameRate": intrinsics.inference_rate},
+        main={
+            "size": (640, 640),
+            "format": "RGB888"
+        },
+        controls={
+            "FrameRate": intrinsics.inference_rate,
+            "ScalerCrop": (crop_x, crop_y, CROP_W, CROP_H),
+        },
         buffer_count=12,
-        transform=libcamera.Transform(vflip=True, hflip=True)
+        transform=libcamera.Transform(vflip=True, hflip=True),
     )
+    print(f"ScalerCrop = ({crop_x}, {crop_y}, {CROP_W}, {CROP_H})")
+
     imx500.show_network_fw_progress_bar()
     picam2.start(config, show_preview=args.preview)
 
