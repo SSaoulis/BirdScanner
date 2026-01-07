@@ -45,7 +45,7 @@ def take_photo(output_dir: str = ".", filename: str = None) -> str:
     SENSOR_W, SENSOR_H = 4056, 3040
     CROP_W, CROP_H = 640, 640
 
-    ANCHOR_X_FRAC = 4 / 10
+    ANCHOR_X_FRAC = 4 / 12
     ANCHOR_Y_FRAC = 2 / 4  
 
     crop_x = int(SENSOR_W * ANCHOR_X_FRAC)
