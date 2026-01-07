@@ -41,7 +41,8 @@ def take_photo(output_dir: str = ".", filename: str = None) -> str:
     filepath = os.path.join(output_dir, filename)
 
     # ---- Crop configuration (EXACT SAME LOGIC) ----
-    SENSOR_W, SENSOR_H = 2028, 1520
+    # Raspberry Pi AI Camera (IMX500) in full resolution (4K): 4056x3040
+    SENSOR_W, SENSOR_H = 4056, 3040
     CROP_W, CROP_H = 640, 640
 
     ANCHOR_X_FRAC = 1 / 2  # Center horizontally
