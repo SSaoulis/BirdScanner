@@ -164,11 +164,11 @@ def main():
     manager.set_results_lock(results_lock)
 
     picam2 = Picamera2(imx500.camera_num)
-    SENSOR_W, SENSOR_H = 2028, 1520
-    CROP_W, CROP_H = 640, 640
+    SENSOR_W, SENSOR_H = 4056, 3040
+    CROP_W, CROP_H = 900, 900
 
-    ANCHOR_X_FRAC = 2 / 5
-    ANCHOR_Y_FRAC = 2 / 5
+    ANCHOR_X_FRAC = 4 / 13
+    ANCHOR_Y_FRAC = 5 / 10
 
     crop_x = int(SENSOR_W * ANCHOR_X_FRAC)
     crop_y = int(SENSOR_H * ANCHOR_Y_FRAC)
