@@ -41,11 +41,11 @@ def take_photo(output_dir: str = ".", filename: str = None) -> str:
     filepath = os.path.join(output_dir, filename)
 
     # ---- Crop configuration (EXACT SAME LOGIC) ----
-    SENSOR_W, SENSOR_H = 2028, 1520
+    SENSOR_W, SENSOR_H = 200, 1520
     CROP_W, CROP_H = 640, 640
 
-    ANCHOR_X_FRAC = 2 / 5
-    ANCHOR_Y_FRAC = 2 / 5
+    ANCHOR_X_FRAC = 4 / 9
+    ANCHOR_Y_FRAC = 4 / 5
 
     crop_x = int(SENSOR_W * ANCHOR_X_FRAC)
     crop_y = int(SENSOR_H * ANCHOR_Y_FRAC)
