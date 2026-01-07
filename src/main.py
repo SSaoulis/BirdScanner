@@ -19,6 +19,7 @@ from object_detection import (
     update_detection_classifications_cache,
     StableDetectionTracker,
 )
+from video_buffer import VideoBuffer
 import object_detection
 
 
@@ -74,6 +75,18 @@ def get_args():
         "--preview",
         action="store_true",
         help="Enable camera preview window",
+    )
+    parser.add_argument(
+        "--buffer-seconds",
+        type=float,
+        default=10.0,
+        help="Number of seconds of video to keep in buffer for detection clips (default: 10 seconds)",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        default="/home/stefan/Pictures/bird_detections",
+        help="Directory where detection videos and images are saved",
     )
     return parser.parse_args()
 
@@ -153,6 +166,12 @@ def main():
         use_stable_tracks = False
         tracker = None
 
+    # Initialize video buffer for capturing detection clips
+    video_buffer = VideoBuffer(
+        max_buffer_seconds=args.buffer_seconds,
+        fps=fps
+    )
+
     # Initialize camera and classification manager
     results_lock = threading.Lock()
     manager = ClassificationManager(
@@ -160,6 +179,8 @@ def main():
         use_multithreading=args.multithread,
         use_stable_track_gating=use_stable_tracks,
         tracker=tracker,
+        video_buffer=video_buffer,
+        output_dir=args.output_dir,
     )
     manager.set_results_lock(results_lock)
 
@@ -184,6 +205,16 @@ def main():
     def detection_callback(request):
         """Callback for processing detections on each frame."""
         nonlocal last_results
+
+        # Capture frame from camera stream and add to video buffer
+        from picamera2 import MappedArray  # type: ignore
+        try:
+            with MappedArray(request, "main") as m:
+                frame = m.array.copy()
+                # Frame is in RGB format from the camera
+                video_buffer.add_frame(frame)
+        except Exception as e:
+            print(f"Error capturing frame for buffer: {e}")
 
         # Update tracker state once per frame (before enqueuing items).
         # Restrict tracking to detections classified as 'bird' by the detection/segmentation model.
@@ -211,6 +242,8 @@ def main():
             update_detection_classifications_cache(last_results, object_detection.classification_results)
     except KeyboardInterrupt:
         manager.stop()
+        video_buffer.clear()
+        print("Application shut down gracefully.")
 
 
 if __name__ == "__main__":

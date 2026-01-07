@@ -10,6 +10,8 @@ import cv2
 import numpy as np
 
 from classification import Classifier, ONNXClassifier, build_preprocessing
+from video_buffer import VideoBuffer
+from video_writer import save_detection_video
 
 
 # Global state
@@ -231,6 +233,8 @@ def process_single_detection_with_stable_tracks(
     classifier: Classifier,
     tracker: StableDetectionTracker,
     classify_fn: Optional[Callable[[Classifier, np.ndarray], tuple]] = None,
+    video_buffer: Optional[VideoBuffer] = None,
+    output_dir: str = "/home/stefan/Pictures/bird_detections",
 ) -> None:
     """Process detection using the new multi-frame stable-track gating logic.
 
@@ -262,15 +266,47 @@ def process_single_detection_with_stable_tracks(
     roi, coords = preprocess_roi(image, detection.box)
     image_with_boxes = draw_boxes(image.copy(), coords, detection, labels, species, confidence)
 
-    # Save only after a classification actually happened.
+    # Save video and image when high-confidence bird classification is made
     if classifier_class.lower() == "bird" and species and confidence and confidence > 0.4:
+        # Convert RGB to BGR for saving
+        image_bgr = cv2.cvtColor(image_with_boxes, cv2.COLOR_RGB2BGR)
+        
+        # Save still image for backward compatibility
         time = datetime.now()
-        os.makedirs(f"/home/stefan/Pictures/bird_detections/{species}/", exist_ok=True)
-        output_image = cv2.cvtColor(image_with_boxes, cv2.COLOR_RGB2BGR)
-        cv2.imwrite(f"/home/stefan/Pictures/bird_detections/{species}/{time}.png", output_image)
+        os.makedirs(f"{output_dir}/{species}/", exist_ok=True)
+        cv2.imwrite(f"{output_dir}/{species}/{time}.png", image_bgr)
+        
+        # Save video clip if buffer is available
+        if video_buffer is not None:
+            try:
+                # Get frames from buffer: 3 seconds before and after detection
+                buffered_frames = video_buffer.get_all_frames()
+                
+                if buffered_frames:
+                    # Extract frame data and convert RGB to BGR for video writing
+                    frames_for_video = [
+                        cv2.cvtColor(bf.frame, cv2.COLOR_RGB2BGR) 
+                        if len(bf.frame.shape) == 3 and bf.frame.shape[2] == 3
+                        else bf.frame
+                        for bf in buffered_frames
+                    ]
+                    
+                    # Save the video
+                    raw_video_path, _ = save_detection_video(
+                        output_dir,
+                        species,
+                        frames_for_video,
+                        fps=video_buffer.fps,
+                    )
+                    
+                    if raw_video_path:
+                        print(f"Saved detection video: {raw_video_path}")
+            except Exception as e:
+                print(f"Error saving video: {e}")
 
     with results_lock:
         classification_results[detection_id] = (species, confidence)
+
 
 
 def setup_classifier(model_path: str, class_to_idx_path: str) -> Classifier:
@@ -709,6 +745,8 @@ class ClassificationManager:
         queue_maxsize: int = 0,
         use_stable_track_gating: bool = False,
         tracker: Optional[StableDetectionTracker] = None,
+        video_buffer: Optional[VideoBuffer] = None,
+        output_dir: str = "/home/stefan/Pictures/bird_detections",
     ) -> None:
         """Initialize the ClassificationManager.
         
@@ -722,11 +760,15 @@ class ClassificationManager:
             queue_maxsize: Maximum queue size for async processing. 0 means unlimited.
             use_stable_track_gating: If True, gate classification until track is stable.
             tracker: Optional tracker instance (defaults to module-global stable_detection_tracker).
+            video_buffer: Optional VideoBuffer for saving video clips of detections.
+            output_dir: Directory where detection videos and images are saved.
         """
         self.classifier = classifier
         self.use_multithreading = use_multithreading
         self.use_stable_track_gating = use_stable_track_gating
         self.tracker = tracker or stable_detection_tracker
+        self.video_buffer = video_buffer
+        self.output_dir = output_dir
         self._results_lock = None
         self._queue = None
         self._thread = None
@@ -765,6 +807,8 @@ class ClassificationManager:
                     results_lock=self._results_lock,  # type: ignore[arg-type]
                     classifier=self.classifier,
                     tracker=self.tracker,
+                    video_buffer=self.video_buffer,
+                    output_dir=self.output_dir,
                 )
             else:
                 process_single_detection(item, results_lock=self._results_lock, classifier=self.classifier)  # type: ignore
@@ -795,6 +839,8 @@ class ClassificationManager:
                     results_lock=self._results_lock,  # type: ignore[arg-type]
                     classifier=self.classifier,
                     tracker=self.tracker,
+                    video_buffer=self.video_buffer,
+                    output_dir=self.output_dir,
                 )
             else:
                 process_single_detection(item, results_lock=self._results_lock, classifier=self.classifier)  # type: ignore
