@@ -1,15 +1,26 @@
-FROM python:3.11-slim
+# Raspberry Pi OS (Bookworm) base so the system python3 (3.11) can see the
+# apt-installed libcamera/picamera2 bindings, which are built natively against
+# the Pi's libcamera and are NOT available on PyPI.
+FROM dtcooper/raspberrypi-os:bookworm
 
-# System deps for picamera2/libcamera/opencv (stub installs; real camera libs installed on Pi)
+# Camera + IMX500 stack (apt, into the system python3):
+#   python3-picamera2 -> pulls python3-libcamera, python3-kms++, libcamera libs
+#   imx500-all        -> IMX500 firmware + network .rpk models in /usr/share/imx500-models
+# Plus OpenGL/glib runtime libs needed by opencv/ultralytics.
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3-picamera2 \
+    imx500-all \
+    python3-pip \
     libgl1-mesa-glx \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
+# Install the remaining Python deps into the SYSTEM python3 (--break-system-packages)
+# so they share the same interpreter that owns the apt-installed picamera2/libcamera.
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --break-system-packages -r requirements.txt
 
 COPY src/ ./src/
 COPY db/ ./db/
@@ -17,4 +28,4 @@ COPY assets/ ./assets/
 
 ENV PYTHONPATH=/app
 
-CMD ["python", "src/main.py", "--multithread", "--object-duration-threshold", "0.2"]
+CMD ["python3", "src/main.py", "--multithread", "--object-duration-threshold", "0.2"]

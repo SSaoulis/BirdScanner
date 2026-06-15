@@ -7,6 +7,9 @@ services:
     restart: unless-stopped
     volumes:
       - data:/data
+      - /run/udev:/run/udev:ro   # libcamera enumerates cameras via udev
+    devices:
+      - /dev/dma_heap:/dev/dma_heap   # picamera2 allocates buffers from the DMA heap
     env_file: .env
 
   api:
