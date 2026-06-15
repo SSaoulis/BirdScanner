@@ -211,3 +211,11 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+# Allow frontend config/manifest JSON files (*.json rule above excludes model weights)
+!frontend/package.json
+!frontend/package-lock.json
+!frontend/tsconfig.json

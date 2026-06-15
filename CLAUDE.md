@@ -83,6 +83,15 @@ IMX500 on-chip inference
 - `vflip=True, hflip=True` transforms are applied (camera is mounted upside-down)
 - Calls `update_detection_classifications_cache` each frame to keep the legacy temporal filter in sync alongside the new tracker
 
+**`frontend/`** — React + Vite + Tailwind dashboard (Phase 3):
+- `frontend/src/api.ts` — typed fetch wrappers for all `/api/*` endpoints; exports `Detection`, `SystemStatus`, `SpeciesSummary` interfaces plus `timeAgo` and `formatUptime` helpers
+- `frontend/src/components/SystemMonitor.tsx` — polls `/api/system` every 5 s; renders animated gauge bars (green/yellow/red) for CPU, memory, disk, temp, and uptime
+- `frontend/src/components/DetectionCard.tsx` — loads thumbnail from `/api/images/{id}/thumbnail`; shows species, confidence %, and time-ago label; links to full-res image
+- `frontend/src/pages/Dashboard.tsx` — composes `SystemMonitor` + a horizontal-scroll strip of the last 10 `DetectionCard`s
+- Build: `npm run build` (from `frontend/`) outputs to `frontend/dist/`; served by FastAPI at `/` via `StaticFiles`
+- Dev: `npm run dev` proxies `/api/*` to `http://localhost:8080`
+- `Dockerfile.api` — multi-stage image: Node 20 builds the frontend, Python 3.11 runs the API; exposes port 8080
+
 **`src/track_logging.py`** — `TrackingLogger` logs stable-track and track-deletion events to the `tracking` logger
 
 ### Model files (not in repo, must exist on the Pi)
