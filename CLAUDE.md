@@ -153,4 +153,6 @@ docker compose logs -f detector
 - `.env` must be created from `.env.example` before the first run (it is git-ignored).
 - The `data` Docker volume is the single source of truth: the `detector` service writes images and the SQLite DB; the `api` service mounts it read-only.
 - `privileged: true` is scoped to `detector` only (required for IMX500 camera device access).
+- The `detector` image (`Dockerfile.detector`) is based on `dtcooper/raspberrypi-os:bookworm` so the system `python3` can import the apt-installed `python3-picamera2` / `python3-libcamera` bindings (these are built natively against the Pi's libcamera and are **not** on PyPI). `requirements.detector.txt` is pip-installed into that same system interpreter with `--break-system-packages`. The IMX500 firmware + `.rpk` network models (`/usr/share/imx500-models/...`) come from the `imx500-all` apt package baked into the image. A plain `python:3.x` base will crash the detector with `ModuleNotFoundError: No module named 'libcamera'`.
+- The `detector` service additionally mounts `/run/udev:ro` (libcamera enumerates cameras via udev) and the `/dev/dma_heap` device (picamera2 buffer allocation) — both required for the camera to initialise inside the container.
 - Model files (`src/local/convnext_v2_tiny_int8.onnx`) must be present on the Pi; they are not included in the image.
