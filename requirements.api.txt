@@ -1,0 +1,5 @@
+fastapi>=0.101.0
+uvicorn>=0.23.0
+sqlmodel>=0.0.38
+psutil==7.2.0
+httpx>=0.24.0
