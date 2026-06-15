@@ -23,4 +23,9 @@ services:
       - detector
 
 volumes:
-  data:                       # persists DB + images across restarts
+  data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/ssd/birdfinder-data
