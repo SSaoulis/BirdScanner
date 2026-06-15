@@ -72,7 +72,7 @@ export function DetectionCard({ detection, onSelect, selected, onOpenLightbox }:
             </div>
           </div>
         )}
-        {/* Lightbox trigger (non-selectable) */}
+        {/* Lightbox trigger (non-selectable mode: full-image hover overlay) */}
         {onOpenLightbox && !isSelectable && (
           <button
             className="absolute inset-0 w-full h-full opacity-0 group-hover:opacity-100 flex items-center justify-center bg-black/40 transition-opacity duration-150"
@@ -80,6 +80,20 @@ export function DetectionCard({ detection, onSelect, selected, onOpenLightbox }:
             aria-label={`Open lightbox for ${species}`}
           >
             <span className="text-white text-xs font-semibold bg-slate-800/80 px-2 py-1 rounded">View</span>
+          </button>
+        )}
+        {/* Lightbox trigger (selectable mode: small icon in top-right corner) */}
+        {onOpenLightbox && isSelectable && (
+          <button
+            className="absolute top-2 right-2 p-1 rounded bg-slate-900/70 hover:bg-slate-700 text-white opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-10"
+            onClick={(e) => { e.stopPropagation(); e.preventDefault(); onOpenLightbox(detection); }}
+            aria-label={`Open lightbox for ${species}`}
+            tabIndex={-1}
+          >
+            {/* Expand / view icon */}
+            <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <path d="M2 2h4M2 2v4M14 2h-4M14 2v4M2 14h4M2 14v-4M14 14h-4M14 14v-4" strokeLinecap="round" />
+            </svg>
           </button>
         )}
       </div>
