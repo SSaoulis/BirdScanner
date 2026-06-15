@@ -1,5 +1,7 @@
-numpy>=1.26.0
-pillow>=10.0.0
+# numpy, pillow and opencv are installed via apt in Dockerfile.detector
+# (python3-numpy / python3-pil / python3-opencv) so their C-ABI matches the
+# apt-built picamera2 / libcamera / simplejpeg stack. Installing them via pip
+# pulls a second, ABI-incompatible numpy and breaks picamera2 with
+# "numpy.dtype size changed". Only list pure-python / self-contained wheels here.
 onnxruntime>=1.17.0
-opencv-python-headless>=4.8.0
 sqlmodel>=0.0.38
