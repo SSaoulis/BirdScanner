@@ -1,0 +1,17 @@
+**/__pycache__
+**/*.pyc
+**/*.pyo
+.git
+.gitignore
+.env
+*.md
+tests/
+frontend/node_modules/
+frontend/.vite/
+camera_view/
+camera_view.tar
+utils/
+examples/
+local/
+*.egg-info/
+dist/

@@ -121,3 +121,36 @@ All boxes throughout the codebase are `(x, y, w, h)` in ISP output pixel coordin
 - High-confidence classified bird images are written to `$IMAGE_DIR/{species}/` (env var, defaults to `/home/stefan/Pictures/bird_detections`). A 200×200 JPEG thumbnail is saved alongside each image with a `_thumb.jpg` suffix.
 - `db/` tests use SQLAlchemy `StaticPool` to share an in-memory SQLite connection across threads.
 - `backend/` tests (``tests/test_backend.py``) override FastAPI dependencies via ``app.dependency_overrides`` so no real DB or filesystem is needed.
+
+## Deployment
+
+The system is packaged as a Docker Compose stack (`docker-compose.yml`) with two services: `detector` (the ML pipeline) and `api` (FastAPI + React frontend).
+
+### First-time setup
+```bash
+cp .env.example .env
+# Edit .env if you need non-default paths or ports
+docker compose up --build
+```
+
+### Normal operation
+```bash
+# Start all services (detached)
+docker compose up -d
+
+# Stop without losing data (named volume persists)
+docker compose down && docker compose up -d
+
+# Tail detector logs
+docker compose logs -f detector
+```
+
+### Accessing the UI
+- On Pi with mDNS (avahi): `http://birdpi.local:8080`
+- Direct IP: `http://<pi-ip>:8080`
+
+### Notes
+- `.env` must be created from `.env.example` before the first run (it is git-ignored).
+- The `data` Docker volume is the single source of truth: the `detector` service writes images and the SQLite DB; the `api` service mounts it read-only.
+- `privileged: true` is scoped to `detector` only (required for IMX500 camera device access).
+- Model files (`src/local/convnext_v2_tiny_int8.onnx`) must be present on the Pi; they are not included in the image.

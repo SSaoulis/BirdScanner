@@ -1,0 +1,26 @@
+services:
+  detector:
+    build:
+      context: .
+      dockerfile: Dockerfile.detector
+    privileged: true          # required for IMX500 camera access (/dev/video*, /dev/media*)
+    restart: unless-stopped
+    volumes:
+      - data:/data
+    env_file: .env
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    restart: unless-stopped
+    ports:
+      - "${API_PORT:-8080}:8080"
+    volumes:
+      - data:/data:ro         # read-only; detector owns all writes
+    env_file: .env
+    depends_on:
+      - detector
+
+volumes:
+  data:                       # persists DB + images across restarts
