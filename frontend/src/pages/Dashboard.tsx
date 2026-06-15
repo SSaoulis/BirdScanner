@@ -25,9 +25,8 @@ export function Dashboard() {
 
   return (
     <div className="min-h-screen bg-slate-900 text-white p-6 space-y-6">
-      <header className="flex items-center gap-3">
-        <span className="text-3xl" role="img" aria-label="bird">🐦</span>
-        <h1 className="text-2xl font-bold tracking-tight">BirdScanner</h1>
+      <header>
+        <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
       </header>
 
       <SystemMonitor />

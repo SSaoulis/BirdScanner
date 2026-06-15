@@ -83,11 +83,17 @@ IMX500 on-chip inference
 - `vflip=True, hflip=True` transforms are applied (camera is mounted upside-down)
 - Calls `update_detection_classifications_cache` each frame to keep the legacy temporal filter in sync alongside the new tracker
 
-**`frontend/`** — React + Vite + Tailwind dashboard (Phase 3):
+**`frontend/`** — React + Vite + Tailwind dashboard (Phase 3 & 4):
 - `frontend/src/api.ts` — typed fetch wrappers for all `/api/*` endpoints; exports `Detection`, `SystemStatus`, `SpeciesSummary` interfaces plus `timeAgo` and `formatUptime` helpers
+- `frontend/src/App.tsx` — root component; sets up `react-router-dom` `BrowserRouter` with routes `/` → Dashboard and `/history` → History; renders a top-level nav bar
 - `frontend/src/components/SystemMonitor.tsx` — polls `/api/system` every 5 s; renders animated gauge bars (green/yellow/red) for CPU, memory, disk, temp, and uptime
-- `frontend/src/components/DetectionCard.tsx` — loads thumbnail from `/api/images/{id}/thumbnail`; shows species, confidence %, and time-ago label; links to full-res image
+- `frontend/src/components/DetectionCard.tsx` — loads thumbnail from `/api/images/{id}/thumbnail`; shows species, confidence %, and time-ago label; supports optional `onSelect`/`selected` props for bulk-select mode and `onOpenLightbox` prop to trigger the lightbox
 - `frontend/src/pages/Dashboard.tsx` — composes `SystemMonitor` + a horizontal-scroll strip of the last 10 `DetectionCard`s
+- `frontend/src/pages/History.tsx` — full-page history view; filter bar (species dropdown + from/to date pickers), tab switcher (Timeline | Gallery), infinite-scroll pagination (20/page via `IntersectionObserver`); owns all filter/pagination/lightbox/selection state and passes it down to sub-views
+- `frontend/src/components/Timeline.tsx` — chronological paginated list of `DetectionCard`s with an `IntersectionObserver` sentinel for infinite scroll; opens lightbox on thumbnail click; full-res images are never loaded until the lightbox is opened
+- `frontend/src/components/Gallery.tsx` — uniform thumbnail grid with checkbox-based multi-select (checkbox overlay + ring); `IntersectionObserver` for infinite scroll; integrates `FileDownloader` toolbar; opens lightbox on thumbnail click
+- `frontend/src/components/Lightbox.tsx` — full-screen modal showing the full-res image on open; Esc/arrow-key keyboard navigation; prev/next arrows; caption bar with species, confidence, and time-ago; download link
+- `frontend/src/components/FileDownloader.tsx` — manages bulk-select toolbar (select all / clear / count); streams ZIP download via `fetch()` + `ReadableStream`; tracks progress from `Content-Length` header; triggers browser download via `URL.createObjectURL`
 - Build: `npm run build` (from `frontend/`) outputs to `frontend/dist/`; served by FastAPI at `/` via `StaticFiles`
 - Dev: `npm run dev` proxies `/api/*` to `http://localhost:8080`
 - `Dockerfile.api` — multi-stage image: Node 20 builds the frontend, Python 3.11 runs the API; exposes port 8080
