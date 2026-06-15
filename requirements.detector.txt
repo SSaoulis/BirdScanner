@@ -3,5 +3,9 @@
 # apt-built picamera2 / libcamera / simplejpeg stack. Installing them via pip
 # pulls a second, ABI-incompatible numpy and breaks picamera2 with
 # "numpy.dtype size changed". Only list pure-python / self-contained wheels here.
-onnxruntime>=1.17.0
+#
+# onnxruntime MUST be >=1.20 (numpy 2.x support). Older builds pin numpy<2, so
+# pip would install a 1.x numpy into /usr/local that shadows the apt numpy 2.x
+# the camera stack was built against — re-triggering "numpy.dtype size changed".
+onnxruntime>=1.20.0
 sqlmodel>=0.0.38
