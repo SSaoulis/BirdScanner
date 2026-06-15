@@ -11,7 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-picamera2 \
     imx500-all \
     python3-pip \
-    libgl1-mesa-glx \
+    libgl1 \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
@@ -19,12 +19,12 @@ WORKDIR /app
 
 # Install the remaining Python deps into the SYSTEM python3 (--break-system-packages)
 # so they share the same interpreter that owns the apt-installed picamera2/libcamera.
-COPY requirements.txt .
-RUN pip install --no-cache-dir --break-system-packages -r requirements.txt
+COPY requirements.detector.txt .
+RUN pip install --no-cache-dir --break-system-packages -r requirements.detector.txt
 
 COPY src/ ./src/
 COPY db/ ./db/
-COPY assets/ ./assets/
+COPY src/assets/ ./assets/
 
 ENV PYTHONPATH=/app
 
