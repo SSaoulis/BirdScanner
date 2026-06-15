@@ -1,11 +1,9 @@
-# numpy, pillow and opencv are installed via apt in Dockerfile.detector
-# (python3-numpy / python3-pil / python3-opencv) so their C-ABI matches the
-# apt-built picamera2 / libcamera / simplejpeg stack. Installing them via pip
-# pulls a second, ABI-incompatible numpy and breaks picamera2 with
-# "numpy.dtype size changed". Only list pure-python / self-contained wheels here.
-#
-# onnxruntime MUST be >=1.20 (numpy 2.x support). Older builds pin numpy<2, so
-# pip would install a 1.x numpy into /usr/local that shadows the apt numpy 2.x
-# the camera stack was built against — re-triggering "numpy.dtype size changed".
-onnxruntime>=1.20.0
+# Pin numpy/onnxruntime to the exact versions proven on the Pi host. numpy
+# 1.24.2 is what the apt-built picamera2 / simplejpeg / opencv stack on
+# Raspberry Pi OS Bookworm is compiled against; pinning it here stops pip from
+# pulling numpy 2.x into /usr/local, which would shadow the apt numpy and crash
+# the camera stack with "numpy.dtype size changed". onnxruntime 1.23.2 is the
+# version known to run against numpy 1.24.2 on this Pi.
+numpy==1.24.2
+onnxruntime==1.23.2
 sqlmodel>=0.0.38
