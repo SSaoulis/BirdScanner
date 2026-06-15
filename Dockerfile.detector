@@ -1,0 +1,20 @@
+FROM python:3.11-slim
+
+# System deps for picamera2/libcamera/opencv (stub installs; real camera libs installed on Pi)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY src/ ./src/
+COPY db/ ./db/
+COPY assets/ ./assets/
+
+ENV PYTHONPATH=/app
+
+CMD ["python", "src/main.py", "--multithread", "--object-duration-threshold", "0.2"]

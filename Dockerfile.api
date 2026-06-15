@@ -13,13 +13,11 @@ WORKDIR /app
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY src/ ./src/
 COPY db/ ./db/
 COPY backend/ ./backend/
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
-ENV DB_PATH=/data/detections.db
-ENV IMAGE_DIR=/data/bird_detections
+ENV PYTHONPATH=/app
 VOLUME ["/data"]
 
 EXPOSE 8080
