@@ -4,12 +4,20 @@ import os
 import threading
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Callable, Optional
+from pathlib import Path
+from typing import TYPE_CHECKING, Callable, Optional
 
 import cv2
 import numpy as np
+from PIL import Image
 
 from classification import Classifier, ONNXClassifier, build_preprocessing
+
+if TYPE_CHECKING:
+    from db.writer import DetectionWriter
+
+# Root directory for saved images; overridable via IMAGE_DIR environment variable.
+IMAGE_DIR = os.environ.get("IMAGE_DIR", "/home/stefan/Pictures/bird_detections")
 
 
 # Global state
@@ -224,6 +232,18 @@ def should_run_bird_classification_for_detection(
     return should_classify_track(track, min_stable_frames=tracker.min_stable_frames)
 
 
+def _save_thumbnail(roi: np.ndarray, output_path: str) -> None:
+    """Save a 200×200 JPEG thumbnail of the given ROI.
+
+    Args:
+        roi: The region-of-interest as an RGB numpy array.
+        output_path: Absolute filesystem path for the output JPEG.
+    """
+    img = Image.fromarray(roi)
+    img = img.resize((200, 200), Image.LANCZOS)
+    img.save(output_path, "JPEG", quality=85)
+
+
 def process_single_detection_with_stable_tracks(
     item: tuple,
     *,
@@ -231,11 +251,20 @@ def process_single_detection_with_stable_tracks(
     classifier: Classifier,
     tracker: StableDetectionTracker,
     classify_fn: Optional[Callable[[Classifier, np.ndarray], tuple]] = None,
+    detection_writer: Optional["DetectionWriter"] = None,
 ) -> None:
     """Process detection using the new multi-frame stable-track gating logic.
 
     The existing, older per-frame cache logic is intentionally left in
     `process_single_detection` for reference.
+
+    Args:
+        item: Tuple of (image, detection_id, detection, labels, classifier_class).
+        results_lock: Lock for thread-safe access to the classification results dict.
+        classifier: Classifier instance for bird species classification.
+        tracker: StableDetectionTracker to gate classification by track stability.
+        classify_fn: Optional override for the classification callable (used in tests).
+        detection_writer: Optional DetectionWriter for persisting records to SQLite.
     """
 
     if classify_fn is None:
@@ -245,6 +274,7 @@ def process_single_detection_with_stable_tracks(
 
     species = None
     confidence = None
+    track = None
 
     # Gate classification until stable over N frames.
     if classifier_class.lower() == "bird" and should_run_bird_classification_for_detection(
@@ -253,7 +283,6 @@ def process_single_detection_with_stable_tracks(
         roi, coords = preprocess_roi(image, detection.box)
         species, confidence = classify_fn(classifier, roi)
 
-        # Ensure we only classify a stable track once.
         track = tracker.track_for_detection_id(detection_id)
         if track is not None:
             tracker.mark_classified(track.track_id, species=species)
@@ -264,10 +293,29 @@ def process_single_detection_with_stable_tracks(
 
     # Save only after a classification actually happened.
     if classifier_class.lower() == "bird" and species and confidence and confidence > 0.4:
-        time = datetime.now()
-        os.makedirs(f"/home/stefan/Pictures/bird_detections/{species}/", exist_ok=True)
+        ts = datetime.now()
+        species_dir = Path(IMAGE_DIR) / species
+        species_dir.mkdir(parents=True, exist_ok=True)
+
+        stem = str(ts).replace(":", "-")
+        image_rel = f"{species}/{stem}.png"
+        thumb_rel = f"{species}/{stem}_thumb.jpg"
+
         output_image = cv2.cvtColor(image_with_boxes, cv2.COLOR_RGB2BGR)
-        cv2.imwrite(f"/home/stefan/Pictures/bird_detections/{species}/{time}.png", output_image)
+        cv2.imwrite(str(species_dir / f"{stem}.png"), output_image)
+
+        _save_thumbnail(roi, str(species_dir / f"{stem}_thumb.jpg"))
+
+        if detection_writer is not None:
+            detection_writer.write(
+                timestamp=ts,
+                species=species,
+                confidence=confidence,
+                image_path=image_rel,
+                thumbnail_path=thumb_rel,
+                track_id=track.track_id if track is not None else None,
+                stable_frames=track.stable_frames if track is not None else None,
+            )
 
     with results_lock:
         classification_results[detection_id] = (species, confidence)
@@ -700,7 +748,7 @@ def process_detections(
 
 class ClassificationManager:
     """Manages bird classification processing with optional multithreading."""
-    
+
     def __init__(
         self,
         classifier: Classifier,
@@ -709,24 +757,28 @@ class ClassificationManager:
         queue_maxsize: int = 0,
         use_stable_track_gating: bool = False,
         tracker: Optional[StableDetectionTracker] = None,
+        detection_writer: Optional["DetectionWriter"] = None,
     ) -> None:
         """Initialize the ClassificationManager.
-        
+
         Creates a classification processor that can operate in synchronous or
         asynchronous mode. In async mode, detections are queued for processing
         by a background worker thread.
-        
+
         Args:
             classifier: Classifier instance for bird species classification.
             use_multithreading: If True, enable async processing with background thread.
             queue_maxsize: Maximum queue size for async processing. 0 means unlimited.
             use_stable_track_gating: If True, gate classification until track is stable.
             tracker: Optional tracker instance (defaults to module-global stable_detection_tracker).
+            detection_writer: Optional DetectionWriter for persisting records after each
+                high-confidence classification.
         """
         self.classifier = classifier
         self.use_multithreading = use_multithreading
         self.use_stable_track_gating = use_stable_track_gating
         self.tracker = tracker or stable_detection_tracker
+        self.detection_writer = detection_writer
         self._results_lock = None
         self._queue = None
         self._thread = None
@@ -765,6 +817,7 @@ class ClassificationManager:
                     results_lock=self._results_lock,  # type: ignore[arg-type]
                     classifier=self.classifier,
                     tracker=self.tracker,
+                    detection_writer=self.detection_writer,
                 )
             else:
                 process_single_detection(item, results_lock=self._results_lock, classifier=self.classifier)  # type: ignore
@@ -795,6 +848,7 @@ class ClassificationManager:
                     results_lock=self._results_lock,  # type: ignore[arg-type]
                     classifier=self.classifier,
                     tracker=self.tracker,
+                    detection_writer=self.detection_writer,
                 )
             else:
                 process_single_detection(item, results_lock=self._results_lock, classifier=self.classifier)  # type: ignore
