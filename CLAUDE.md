@@ -59,6 +59,14 @@ IMX500 on-chip inference
 - `process_single_detection_with_stable_tracks` — new gating path; `process_single_detection` is the legacy per-frame IoU-cache path (kept for reference)
 - `IMAGE_DIR` — root directory for saved images, sourced from the `IMAGE_DIR` env var (defaults to `/home/stefan/Pictures/bird_detections`)
 
+**`backend/`** — FastAPI REST API (Phase 2):
+- `backend/main.py` — app factory; mounts the four routers; optionally serves `frontend/dist/` at `/` when the build exists
+- `backend/dependencies.py` — `get_session()` and `get_image_dir()` FastAPI dependency providers (reads `DB_PATH` / `IMAGE_DIR` env vars)
+- `backend/routers/detections.py` — `GET /api/detections` (paginated + filtered) and `GET /api/detections/{id}`
+- `backend/routers/images.py` — `GET /api/images/{id}/thumbnail`, `GET /api/images/{id}/full`, `GET /api/images/download?ids=...` (chunked ZIP)
+- `backend/routers/system.py` — `GET /api/system` (CPU/mem/disk/temp/uptime via psutil)
+- `backend/routers/species.py` — `GET /api/species` (list with counts, sorted by count desc)
+
 **`db/`** — SQLite persistence layer (Phase 1):
 - `db/models.py` — `DetectionRecord` SQLModel ORM model (`detections` table)
 - `db/database.py` — `make_engine()` / `init_db()` / `make_session_factory()`; DB path from `DB_PATH` env var
@@ -97,3 +105,4 @@ All boxes throughout the codebase are `(x, y, w, h)` in ISP output pixel coordin
 - `examples/` contains the original unrefactored script; do not merge changes back into it.
 - High-confidence classified bird images are written to `$IMAGE_DIR/{species}/` (env var, defaults to `/home/stefan/Pictures/bird_detections`). A 200×200 JPEG thumbnail is saved alongside each image with a `_thumb.jpg` suffix.
 - `db/` tests use SQLAlchemy `StaticPool` to share an in-memory SQLite connection across threads.
+- `backend/` tests (``tests/test_backend.py``) override FastAPI dependencies via ``app.dependency_overrides`` so no real DB or filesystem is needed.
