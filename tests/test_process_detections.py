@@ -1,4 +1,4 @@
-from src.object_detection import (
+from src.tracking import (
     StableDetectionTracker,
     StableTrack,
     should_classify_track,
