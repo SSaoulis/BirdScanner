@@ -4,7 +4,7 @@ from typing import List
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from sqlmodel import Session, func, select
+from sqlmodel import Session, col, func, select
 
 from db.models import DetectionRecord
 from backend.dependencies import get_session
@@ -38,8 +38,10 @@ def list_species(session: Session = Depends(get_session)) -> List[SpeciesSummary
         List of ``SpeciesSummary`` objects sorted by count descending.
     """
     rows = session.exec(
-        select(DetectionRecord.species, func.count(DetectionRecord.id).label("count"))
+        select(
+            DetectionRecord.species, func.count(col(DetectionRecord.id)).label("count")
+        )
         .group_by(DetectionRecord.species)
-        .order_by(func.count(DetectionRecord.id).desc())
+        .order_by(func.count(col(DetectionRecord.id)).desc())
     ).all()
     return [SpeciesSummary(species=row[0], count=row[1]) for row in rows]

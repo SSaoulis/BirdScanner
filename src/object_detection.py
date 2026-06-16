@@ -12,7 +12,7 @@ import numpy as np
 
 # Most recent set of parsed detections; returned as a fallback when a frame
 # yields no inference output so the live loop always has something to draw.
-last_detections = []
+last_detections: list["Detection"] = []
 
 
 class Detection:
@@ -34,7 +34,7 @@ class Detection:
         # Store IMX500 and metadata for later coordinate conversion
         self._coords = coords
         self._metadata = metadata
-        self.box = None  # Will be set by set_box() after IMX500 is available
+        self.box: tuple | None = None  # Set by set_box() after IMX500 is available
 
     def set_box(self, box: tuple) -> None:
         """Set the box after coordinate conversion.

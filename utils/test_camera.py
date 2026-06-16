@@ -8,6 +8,7 @@ import argparse
 import os
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 import libcamera
 import time
 
@@ -18,7 +19,7 @@ except ImportError:
     exit(1)
 
 
-def take_photo(output_dir: str = ".", filename: str = None) -> str:
+def take_photo(output_dir: str = ".", filename: Optional[str] = None) -> str:
     """
     Take a photo using picamera2 and save it to the specified directory.
     Applies a fixed ScalerCrop anchored at 2/5 across and 2/5 down.

@@ -185,7 +185,7 @@ def build_preprocessing(config: Dict[str, Any]) -> Callable[[Any], np.ndarray]:
         # to PIL RGB
         img = _to_pil(x)
         # resize with bicubic to base_size
-        img = img.resize(base_size, resample=Image.BICUBIC)
+        img = img.resize(base_size, resample=Image.Resampling.BICUBIC)
         # center crop to final size (W,H ordering for PIL crop helper)
         img = center_crop_pil(img, (size[0], size[1]))
         # convert to numpy HWC float32 in [0,1]

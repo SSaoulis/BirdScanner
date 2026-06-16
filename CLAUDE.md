@@ -34,7 +34,24 @@ pytest tests/test_process_detections.py::test_update_tracks_for_frame_increments
 pytest --cov=src tests/
 ```
 
-Tests import from `src.*` so run from the project root. Tests that require ONNX model files (e.g. `tests/test_classification.py`) skip automatically when the model is absent.
+Tests import from `src.*` so run from the project root. Run them as `python -m pytest tests/` (module mode puts the project root on `sys.path` so the `src.*` / `db` imports resolve); plain `pytest tests/` fails collection. Tests that require ONNX model files (e.g. `tests/test_classification.py`) skip automatically when the model is absent.
+
+### Type checking (mypy)
+
+`mypy.ini` at the repo root configures mypy. `src/` modules import their siblings by
+flat name (they run with `cwd=src`), while `tests/` import them via the `src.*` package
+path — these two views cannot coexist in a single mypy process, so run mypy in **two
+passes**:
+
+```bash
+mypy src backend db utils   # the source tree (flat imports)
+mypy tests                  # the tests (src.* imports; mypy_path=src lets src's flat imports resolve)
+```
+
+`mypy.ini` sets `mypy_path = src` and silences missing-import noise for the Pi-only
+native bindings (`libcamera`, `picamera2`) and the untyped third-party libs
+(`onnxruntime`, `psutil`, `paramiko`), so mypy reports only genuine type errors in our
+own code.
 
 ## Architecture
 
