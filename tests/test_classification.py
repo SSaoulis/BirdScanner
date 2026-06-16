@@ -10,7 +10,10 @@ from pathlib import Path
 
 # REAL MODEL PATH
 MODEL_PATH = Path(__file__).parent.parent / "examples/models/convnext_v2_tiny_int8.onnx"
-CLASS_TO_IDX_PATH = Path(__file__).parent.parent / "src/assets/convnext_v2_tiny.onnx_class_to_idx.json"
+CLASS_TO_IDX_PATH = (
+    Path(__file__).parent.parent / "src/assets/convnext_v2_tiny.onnx_class_to_idx.json"
+)
+
 
 # test a simple prediction with the real model and random data of size 384x384x3
 def test_onnx_classifier_prediction():
@@ -37,12 +40,14 @@ def test_onnx_classifier_prediction_with_preprocessing():
 
     # Build model and preprocessing
     onnx_model = ONNXClassifier(str(MODEL_PATH))
-    preprocessing = build_preprocessing({
-        "size": (384, 384),
-        "rgb_values": {"mean": [0.485, 0.456, 0.406], "std": [0.229, 0.224, 0.225]},
-        "center_crop": 1.0,
-        "simple_crop": False,
-    })
+    preprocessing = build_preprocessing(
+        {
+            "size": (384, 384),
+            "rgb_values": {"mean": [0.485, 0.456, 0.406], "std": [0.229, 0.224, 0.225]},
+            "center_crop": 1.0,
+            "simple_crop": False,
+        }
+    )
     classifier = Classifier(onnx_model, CLASS_TO_IDX_PATH, preprocessing=preprocessing)
 
     # Create a random image-like numpy array (H,W,3) in [0,1]
@@ -55,6 +60,7 @@ def test_onnx_classifier_prediction_with_preprocessing():
     assert output.ndim == 2
     assert output.shape[0] == 1
     assert output.shape[1] > 0
+
 
 # end
 # To run the test, use the command: pytest tests/test_classification.py

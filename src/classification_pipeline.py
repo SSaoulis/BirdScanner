@@ -31,7 +31,9 @@ IMAGE_DIR = os.environ.get("IMAGE_DIR", "/home/stefan/Pictures/bird_detections")
 
 # Global classification state shared with the live frame loop.
 classification_results = {}
-last_detection_classifications = []  # List of (box, species, confidence) tuples for temporal filtering
+last_detection_classifications = (
+    []
+)  # List of (box, species, confidence) tuples for temporal filtering
 
 
 def setup_classifier(model_path: str, class_to_idx_path: str) -> Classifier:
@@ -109,8 +111,9 @@ def process_single_detection_with_stable_tracks(
     track = None
 
     # Gate classification until stable over N frames.
-    if classifier_class.lower() == "bird" and should_run_bird_classification_for_detection(
-        detection_id, tracker=tracker
+    if (
+        classifier_class.lower() == "bird"
+        and should_run_bird_classification_for_detection(detection_id, tracker=tracker)
     ):
         roi, coords = preprocess_roi(image, detection.box)
         species, confidence = classify_fn(classifier, roi)
@@ -121,10 +124,17 @@ def process_single_detection_with_stable_tracks(
 
     # Always draw boxes; include optional classification result.
     roi, coords = preprocess_roi(image, detection.box)
-    image_with_boxes = draw_boxes(image.copy(), coords, detection, labels, species, confidence)
+    image_with_boxes = draw_boxes(
+        image.copy(), coords, detection, labels, species, confidence
+    )
 
     # Save only after a classification actually happened.
-    if classifier_class.lower() == "bird" and species and confidence and confidence > 0.4:
+    if (
+        classifier_class.lower() == "bird"
+        and species
+        and confidence
+        and confidence > 0.4
+    ):
         ts = datetime.now()
         species_dir = Path(IMAGE_DIR) / species
         species_dir.mkdir(parents=True, exist_ok=True)
@@ -193,14 +203,21 @@ def process_single_detection(
         species, confidence = run_bird_classification(classifier, roi)
 
     roi, coords = preprocess_roi(image, detection.box)
-    image_with_boxes = draw_boxes(image.copy(), coords, detection, labels, species, confidence)
+    image_with_boxes = draw_boxes(
+        image.copy(), coords, detection, labels, species, confidence
+    )
 
     if classifier_class.lower() == "bird" and species and confidence:
         if confidence > 0.4:
             time = datetime.now()
-            os.makedirs(f"/home/stefan/Pictures/bird_detections/{species}/", exist_ok=True)
+            os.makedirs(
+                f"/home/stefan/Pictures/bird_detections/{species}/", exist_ok=True
+            )
             output_image = cv2.cvtColor(image_with_boxes, cv2.COLOR_RGB2BGR)
-            cv2.imwrite(f"/home/stefan/Pictures/bird_detections/{species}/{time}.png", output_image)
+            cv2.imwrite(
+                f"/home/stefan/Pictures/bird_detections/{species}/{time}.png",
+                output_image,
+            )
 
     with results_lock:
         classification_results[detection_id] = (species, confidence)
@@ -268,7 +285,9 @@ def process_detections(
 
             classifier_class = labels[int(detection.category)]
             if classifier_class.lower() == "bird":
-                manager.process((full_img, detection_id, detection, labels, classifier_class))
+                manager.process(
+                    (full_img, detection_id, detection, labels, classifier_class)
+                )
 
 
 class ClassificationManager:

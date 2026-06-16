@@ -163,7 +163,9 @@ def draw_boxes(
     if species:
         label += f" - {species}"
 
-    (text_width, text_height), baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+    (text_width, text_height), baseline = cv2.getTextSize(
+        label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1
+    )
     text_x = x + 5
     text_y = y + 15
 
@@ -178,7 +180,15 @@ def draw_boxes(
     cv2.addWeighted(overlay, alpha, image_array, 1 - alpha, 0, image_array)
 
     cv2.rectangle(image_array, (x, y), (x + w, y + h), (0, 255, 0, 0), thickness=2)
-    cv2.putText(image_array, label, (text_x, text_y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+    cv2.putText(
+        image_array,
+        label,
+        (text_x, text_y),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.5,
+        (0, 0, 255),
+        1,
+    )
     return image_array
 
 

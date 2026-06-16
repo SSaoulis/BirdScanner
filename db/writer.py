@@ -45,7 +45,9 @@ class DetectionWriter:
         self._session_factory = session_factory
         self._queue: Queue = Queue(maxsize=_QUEUE_MAXSIZE)
         self._stop_event = threading.Event()
-        self._thread = threading.Thread(target=self._drain_loop, daemon=True, name="DetectionWriter")
+        self._thread = threading.Thread(
+            target=self._drain_loop, daemon=True, name="DetectionWriter"
+        )
         self._thread.start()
 
     def write(
@@ -87,7 +89,9 @@ class DetectionWriter:
         try:
             self._queue.put_nowait(record)
         except Full:
-            logger.warning("DetectionWriter queue full; dropping detection for %s", species)
+            logger.warning(
+                "DetectionWriter queue full; dropping detection for %s", species
+            )
 
     def stop(self, timeout: float = 5.0) -> None:
         """Signal the background thread to stop and wait for it to finish.
@@ -132,4 +136,6 @@ class DetectionWriter:
                 session.add(record)
                 session.commit()
         except Exception:
-            logger.exception("Failed to write detection record for species=%s", record.species)
+            logger.exception(
+                "Failed to write detection record for species=%s", record.species
+            )

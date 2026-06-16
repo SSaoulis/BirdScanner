@@ -18,7 +18,9 @@ last_detections = []
 class Detection:
     """Represents a detected object with bounding box and category."""
 
-    def __init__(self, coords: np.ndarray, category: int, conf: float, metadata: dict) -> None:
+    def __init__(
+        self, coords: np.ndarray, category: int, conf: float, metadata: dict
+    ) -> None:
         """Create a Detection object, recording the bounding box, category and confidence.
 
         Args:

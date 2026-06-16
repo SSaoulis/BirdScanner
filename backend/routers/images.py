@@ -103,7 +103,9 @@ def _stream_zip(paths: List[Path]):
         ``bytes`` chunks of the in-progress ZIP stream.
     """
     buf = io.BytesIO()
-    with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_STORED, allowZip64=True) as zf:
+    with zipfile.ZipFile(
+        buf, mode="w", compression=zipfile.ZIP_STORED, allowZip64=True
+    ) as zf:
         for path in paths:
             zf.write(path, arcname=path.name)
             buf.seek(0)
@@ -141,7 +143,9 @@ def download_images(
     try:
         id_list: List[int] = [int(i.strip()) for i in ids.split(",") if i.strip()]
     except ValueError:
-        raise HTTPException(status_code=400, detail="ids must be comma-separated integers")
+        raise HTTPException(
+            status_code=400, detail="ids must be comma-separated integers"
+        )
 
     paths: List[Path] = []
     for detection_id in id_list:

@@ -63,24 +63,20 @@ def main():
     tracking_logger = logging.getLogger("tracking")
     tracking_logger.setLevel(logging.DEBUG if app_config.debug else logging.INFO)
     handler = logging.StreamHandler(sys.stdout)
-    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
     handler.setFormatter(formatter)
     tracking_logger.addHandler(handler)
 
     # Create the database schema up front (the detector owns all DB writes).
-    # Doing this before camera init guarantees the SQLite file and tables exist
-    # even when the camera is unavailable, so the read-only API can always serve
-    # the site (an empty gallery rather than a 500). The engine is reused below
-    # for the DetectionWriter's session factory.
     engine = make_engine()
     init_db(engine)
 
     # Initialize IMX500 device (must be called before instantiation of Picamera2).
-    # Retry gracefully if the camera dev-node is missing so the detector does not
-    # crash-loop; the API service serves stored images independently.
     imx500 = wait_for_camera(app_config.model)
     intrinsics = imx500.network_intrinsics
-    
+
     if not intrinsics:
         intrinsics = NetworkIntrinsics()
         intrinsics.task = "object detection"
@@ -102,7 +98,7 @@ def main():
             intrinsics.labels = f.read().splitlines()
 
     intrinsics.update_with_defaults()
-    
+
     if app_config.print_intrinsics:
         print(intrinsics)
         exit()
@@ -118,11 +114,17 @@ def main():
     # - Otherwise compute min_stable_frames from duration * fps (ceil, min 1).
     # Prefer config.fps if supplied; fall back to intrinsics inference rate.
     fps = app_config.fps or int(getattr(intrinsics, "inference_rate", 0) or 0) or 1
-    if app_config.object_duration_threshold and app_config.object_duration_threshold > 0:
-        min_stable_frames = max(1, int((app_config.object_duration_threshold * fps) + 0.9999))
+    if (
+        app_config.object_duration_threshold
+        and app_config.object_duration_threshold > 0
+    ):
+        min_stable_frames = max(
+            1, int((app_config.object_duration_threshold * fps) + 0.9999)
+        )
         use_stable_tracks = True
 
         from track_logging import TrackingLogger
+
         logger = TrackingLogger()
 
         tracker = StableDetectionTracker(
@@ -169,10 +171,7 @@ def main():
     crop_y = max(0, min(crop_y, SENSOR_H - CROP_H))
 
     config = picam2.create_preview_configuration(
-        main={
-            "size": (640, 640),
-            "format": "RGB888"
-        },
+        main={"size": (640, 640), "format": "RGB888"},
         controls={
             "FrameRate": intrinsics.inference_rate,
             "ScalerCrop": (crop_x, crop_y, CROP_W, CROP_H),
@@ -221,7 +220,9 @@ def main():
                 picam2,
             )
             # Update the detection classifications cache for temporal filtering
-            update_detection_classifications_cache(last_results, classification_pipeline.classification_results)
+            update_detection_classifications_cache(
+                last_results, classification_pipeline.classification_results
+            )
     except KeyboardInterrupt:
         manager.stop()
         detection_writer.stop()

@@ -84,12 +84,30 @@ def _make_record(
 def seeded_session(session_factory, image_dir):
     """Session with several detection records pre-inserted."""
     with session_factory() as session:
-        _make_record(session, image_dir, species="Robin", confidence=0.95, track_id=1,
-                     ts=datetime(2024, 6, 1, 12, 0, 0, tzinfo=timezone.utc))
-        _make_record(session, image_dir, species="Robin", confidence=0.88, track_id=2,
-                     ts=datetime(2024, 6, 2, 12, 0, 0, tzinfo=timezone.utc))
-        _make_record(session, image_dir, species="Sparrow", confidence=0.91, track_id=3,
-                     ts=datetime(2024, 6, 3, 12, 0, 0, tzinfo=timezone.utc))
+        _make_record(
+            session,
+            image_dir,
+            species="Robin",
+            confidence=0.95,
+            track_id=1,
+            ts=datetime(2024, 6, 1, 12, 0, 0, tzinfo=timezone.utc),
+        )
+        _make_record(
+            session,
+            image_dir,
+            species="Robin",
+            confidence=0.88,
+            track_id=2,
+            ts=datetime(2024, 6, 2, 12, 0, 0, tzinfo=timezone.utc),
+        )
+        _make_record(
+            session,
+            image_dir,
+            species="Sparrow",
+            confidence=0.91,
+            track_id=3,
+            ts=datetime(2024, 6, 3, 12, 0, 0, tzinfo=timezone.utc),
+        )
         session.commit()
 
 

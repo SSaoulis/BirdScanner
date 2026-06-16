@@ -272,7 +272,9 @@ def test_tracks_are_deleted_after_max_missing_frames_without_match():
       3) Provide a 3rd empty frame: A should be deleted.
     """
 
-    tracker = StableDetectionTracker(iou_threshold=0.6, min_stable_frames=3, max_missing_frames=2)
+    tracker = StableDetectionTracker(
+        iou_threshold=0.6, min_stable_frames=3, max_missing_frames=2
+    )
 
     # Frame 1: A is detected -> 1 active track.
     tracker.update_frame([DummyDet((10, 10, 20, 20))])
@@ -296,7 +298,9 @@ def test_track_reappearing_after_deletion_is_treated_as_new_and_needs_stability_
     create a new track (and thus re-require N stable frames).
     """
 
-    tracker = StableDetectionTracker(iou_threshold=0.6, min_stable_frames=2, max_missing_frames=1)
+    tracker = StableDetectionTracker(
+        iou_threshold=0.6, min_stable_frames=2, max_missing_frames=1
+    )
 
     # Frame 1: A appears.
     tracker.update_frame([DummyDet((10, 10, 20, 20))])
