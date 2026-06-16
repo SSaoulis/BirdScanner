@@ -6,11 +6,16 @@ FROM dtcooper/raspberrypi-os:bookworm
 # Camera + IMX500 stack (apt, into the system python3):
 #   python3-picamera2 -> pulls python3-libcamera, python3-kms++, libcamera libs
 #   imx500-all        -> IMX500 firmware + network .rpk models in /usr/share/imx500-models
-# Plus OpenGL/glib runtime libs needed by opencv/ultralytics.
+# numpy/opencv/pillow MUST come from apt so their C-ABI matches the apt-built
+# picamera2/simplejpeg (a pip numpy alongside them triggers
+# "numpy.dtype size changed"). libgl1/glib are runtime libs for opencv.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-picamera2 \
     imx500-all \
     python3-pip \
+    python3-numpy \
+    python3-opencv \
+    python3-pil \
     libgl1 \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*

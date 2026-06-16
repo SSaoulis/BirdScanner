@@ -1,5 +1,9 @@
-numpy>=1.26.0
-pillow>=10.0.0
-onnxruntime>=1.17.0
-opencv-python-headless>=4.8.0
+# Pin numpy/onnxruntime to the exact versions proven on the Pi host. numpy
+# 1.24.2 is what the apt-built picamera2 / simplejpeg / opencv stack on
+# Raspberry Pi OS Bookworm is compiled against; pinning it here stops pip from
+# pulling numpy 2.x into /usr/local, which would shadow the apt numpy and crash
+# the camera stack with "numpy.dtype size changed". onnxruntime 1.23.2 is the
+# version known to run against numpy 1.24.2 on this Pi.
+numpy==1.24.2
+onnxruntime==1.23.2
 sqlmodel>=0.0.38
