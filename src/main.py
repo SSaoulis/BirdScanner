@@ -21,6 +21,9 @@ from object_detection import (
 )
 import object_detection
 
+from db.database import make_engine, init_db, make_session_factory
+from db.writer import DetectionWriter
+
 
 def get_args():
     """Parse command-line arguments."""
@@ -153,6 +156,13 @@ def main():
         use_stable_tracks = False
         tracker = None
 
+    # Set up the SQLite persistence layer.  The detector owns all DB writes
+    # (and schema creation); the API mounts the same database read-only.
+    # init_db here guarantees the file and schema exist before the API reads it.
+    engine = make_engine()
+    init_db(engine)
+    detection_writer = DetectionWriter(make_session_factory(engine))
+
     # Initialize camera and classification manager
     results_lock = threading.Lock()
     manager = ClassificationManager(
@@ -160,6 +170,7 @@ def main():
         use_multithreading=args.multithread,
         use_stable_track_gating=use_stable_tracks,
         tracker=tracker,
+        detection_writer=detection_writer,
     )
     manager.set_results_lock(results_lock)
 
@@ -233,6 +244,7 @@ def main():
             update_detection_classifications_cache(last_results, object_detection.classification_results)
     except KeyboardInterrupt:
         manager.stop()
+        detection_writer.stop()
 
 
 if __name__ == "__main__":
