@@ -1,12 +1,14 @@
 # from onnxruntime.quantization import quantize_dynamic, QuantType
 import onnx
+
 path = "models/convnext_v2_tiny.onnx"
 infer_model_path = "models/convnext_v2_tiny_infer.onnx"
 out_model = "models/convnext_v2_tiny_int8.onnx"
 # onnx.load(path)
 # onnx.checker.check_model(path)
 from onnxruntime.quantization import quantize_dynamic, QuantType
-#print onxx version
+
+# print onxx version
 print(onnx.__version__)
 quantize_dynamic(
     model_input=infer_model_path,

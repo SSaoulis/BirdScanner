@@ -46,7 +46,9 @@ def make_engine(db_path: str | None = None, *, read_only: bool = False):
     path = db_path or os.environ.get("DB_PATH", _DEFAULT_DB_PATH)
     # Read-only mode uses SQLite's URI filename syntax so it never attempts to
     # create the file or a journal alongside it (essential on a read-only mount).
-    url = f"sqlite:///file:{path}?mode=ro&uri=true" if read_only else f"sqlite:///{path}"
+    url = (
+        f"sqlite:///file:{path}?mode=ro&uri=true" if read_only else f"sqlite:///{path}"
+    )
     # check_same_thread=False is required for SQLite when the session is used
     # from a different thread than the one that created the connection.
     return create_engine(

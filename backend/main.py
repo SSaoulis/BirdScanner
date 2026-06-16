@@ -33,4 +33,6 @@ app.include_router(species.router)
 
 # Serve the React frontend if the build output exists.
 if _FRONTEND_DIST.is_dir():
-    app.mount("/", StaticFiles(directory=str(_FRONTEND_DIST), html=True), name="frontend")
+    app.mount(
+        "/", StaticFiles(directory=str(_FRONTEND_DIST), html=True), name="frontend"
+    )

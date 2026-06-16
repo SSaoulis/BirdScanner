@@ -133,7 +133,9 @@ def test_id_autoincrement(writer, engine):
 
 def test_write_is_non_blocking(engine):
     """write() must return before the DB commit completes (fire-and-forget)."""
-    writer = DetectionWriter(make_session_factory(engine))  # engine already has StaticPool
+    writer = DetectionWriter(
+        make_session_factory(engine)
+    )  # engine already has StaticPool
     t0 = time.monotonic()
     writer.write(
         timestamp=datetime.now(),
@@ -177,8 +179,15 @@ def test_init_db_creates_table(engine):
 
     col_names = {row[1] for row in result}
     expected = {
-        "id", "timestamp", "species", "confidence",
-        "image_path", "thumbnail_path", "track_id",
-        "stable_frames", "duration_sec", "uploaded_at",
+        "id",
+        "timestamp",
+        "species",
+        "confidence",
+        "image_path",
+        "thumbnail_path",
+        "track_id",
+        "stable_frames",
+        "duration_sec",
+        "uploaded_at",
     }
     assert expected == col_names

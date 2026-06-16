@@ -11,7 +11,9 @@ import numpy as np
 
 from picamera2 import MappedArray, Picamera2
 from picamera2.devices import IMX500
-from picamera2.devices.imx500 import (NetworkIntrinsics,)
+from picamera2.devices.imx500 import (
+    NetworkIntrinsics,
+)
 
 last_detections = []
 classification_queue = Queue()
@@ -33,7 +35,6 @@ def parse_detections(metadata: dict):
     bbox_normalization = intrinsics.bbox_normalization
     bbox_order = intrinsics.bbox_order
     threshold = args.threshold
-
 
     np_outputs = imx500.get_outputs(metadata, add_batch=True)
     input_w, input_h = imx500.get_input_size()
@@ -71,9 +72,6 @@ def run_bird_classification(image):
     return "Bird Species", 0.95
 
 
-
-
-
 def classification_worker():
     """Worker thread that processes images from the classification queue."""
     while True:
@@ -81,32 +79,36 @@ def classification_worker():
             item = classification_queue.get(timeout=1)
             if item is None:  # Sentinel value to stop the thread
                 break
-            
+
             image, detection_id, detection, labels, classifier_class = item
-            
+
             x, y, w, h = detection.box
-            roi = image[y:y+h, x:x+w]
+            roi = image[y : y + h, x : x + w]
 
             species, confidence = run_bird_classification(roi)
 
-            image_with_boxes = draw_boxes(image.copy(), detection, labels, species, confidence)
+            image_with_boxes = draw_boxes(
+                image.copy(), detection, labels, species, confidence
+            )
 
             if classifier_class.lower() == "bird" and species:
                 time = datetime.now()
-                os.makedirs(f"/home/stefan/Pictures/bird_detections/{species}/", exist_ok=True)
+                os.makedirs(
+                    f"/home/stefan/Pictures/bird_detections/{species}/", exist_ok=True
+                )
 
                 output_image = cv2.cvtColor(image_with_boxes, cv2.COLOR_RGB2BGR)
-                cv2.imwrite(f"/home/stefan/Pictures/bird_detections/{species}/{time}.png", output_image)
+                cv2.imwrite(
+                    f"/home/stefan/Pictures/bird_detections/{species}/{time}.png",
+                    output_image,
+                )
 
-            
             with results_lock:
                 classification_results[detection_id] = (species, confidence)
-            
+
             classification_queue.task_done()
         except:
             pass
-
-
 
 
 def draw_boxes(image_array, detection, labels, species=None, confidence=None):
@@ -123,39 +125,49 @@ def draw_boxes(image_array, detection, labels, species=None, confidence=None):
         label += f" - {species}"
 
     # Calculate text size and position
-    (text_width, text_height), baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+    (text_width, text_height), baseline = cv2.getTextSize(
+        label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1
+    )
     text_x = x + 5
     text_y = y + 15
     # Draw the background rectangle on the overlay
-    cv2.rectangle(overlay,
-                    (text_x, text_y - text_height),
-                    (text_x + text_width, text_y + baseline),
-                    (255, 255, 255),  # Background color (white)
-                    cv2.FILLED)
+    cv2.rectangle(
+        overlay,
+        (text_x, text_y - text_height),
+        (text_x + text_width, text_y + baseline),
+        (255, 255, 255),  # Background color (white)
+        cv2.FILLED,
+    )
 
     alpha = 0.30
     cv2.addWeighted(overlay, alpha, image_array, 1 - alpha, 0, image_array)
 
     # Draw detection box
     cv2.rectangle(image_array, (x, y), (x + w, y + h), (0, 255, 0, 0), thickness=2)
-    
+
     # Draw text on top of the background
-    cv2.putText(image_array, label, (text_x, text_y),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+    cv2.putText(
+        image_array,
+        label,
+        (text_x, text_y),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.5,
+        (0, 0, 255),
+        1,
+    )
 
     return image_array
 
 
-
 def process_detections(request, stream="main"):
     """Draw the detections for this request onto the ISP output."""
-    
+
     detections = last_results
     if detections is None:
         return
-    
+
     labels = get_labels()
-    
+
     with MappedArray(request, stream) as m:
         for detection_id, detection in enumerate(detections):
             # Extract the region of interest as a numpy array
@@ -164,29 +176,52 @@ def process_detections(request, stream="main"):
             if classifier_class.lower() == "bird":
                 # Add image data to queue for classification on another thread
                 # Only pass what's needed: image, detection_id, detection object, labels, class
-                classification_queue.put((full_img, detection_id, detection, labels, classifier_class))
-
-    
-
+                classification_queue.put(
+                    (full_img, detection_id, detection, labels, classifier_class)
+                )
 
 
 def get_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", type=str, help="Path of the model",
-                        default="/usr/share/imx500-models/imx500_network_ssd_mobilenetv2_fpnlite_320x320_pp.rpk")
+    parser.add_argument(
+        "--model",
+        type=str,
+        help="Path of the model",
+        default="/usr/share/imx500-models/imx500_network_ssd_mobilenetv2_fpnlite_320x320_pp.rpk",
+    )
     parser.add_argument("--fps", type=int, help="Frames per second")
-    parser.add_argument("--bbox-normalization", action=argparse.BooleanOptionalAction, help="Normalize bbox")
-    parser.add_argument("--bbox-order", choices=["yx", "xy"], default="yx",
-                        help="Set bbox order yx -> (y0, x0, y1, x1) xy -> (x0, y0, x1, y1)")
-    parser.add_argument("--threshold", type=float, default=0.55, help="Detection threshold")
-    parser.add_argument("--ignore-dash-labels", action=argparse.BooleanOptionalAction, help="Remove '-' labels ")
+    parser.add_argument(
+        "--bbox-normalization",
+        action=argparse.BooleanOptionalAction,
+        help="Normalize bbox",
+    )
+    parser.add_argument(
+        "--bbox-order",
+        choices=["yx", "xy"],
+        default="yx",
+        help="Set bbox order yx -> (y0, x0, y1, x1) xy -> (x0, y0, x1, y1)",
+    )
+    parser.add_argument(
+        "--threshold", type=float, default=0.55, help="Detection threshold"
+    )
+    parser.add_argument(
+        "--ignore-dash-labels",
+        action=argparse.BooleanOptionalAction,
+        help="Remove '-' labels ",
+    )
 
-    parser.add_argument("-r", "--preserve-aspect-ratio", action=argparse.BooleanOptionalAction,
-                        help="preserve the pixel aspect ratio of the input tensor")
-    parser.add_argument("--labels", type=str,
-                        help="Path to the labels file")
-    parser.add_argument("--print-intrinsics", action="store_true",
-                        help="Print JSON network_intrinsics then exit")
+    parser.add_argument(
+        "-r",
+        "--preserve-aspect-ratio",
+        action=argparse.BooleanOptionalAction,
+        help="preserve the pixel aspect ratio of the input tensor",
+    )
+    parser.add_argument("--labels", type=str, help="Path to the labels file")
+    parser.add_argument(
+        "--print-intrinsics",
+        action="store_true",
+        help="Print JSON network_intrinsics then exit",
+    )
     return parser.parse_args()
 
 
@@ -205,8 +240,8 @@ if __name__ == "__main__":
 
     # Override intrinsics from args
     for key, value in vars(args).items():
-        if key == 'labels' and value is not None:
-            with open(value, 'r') as f:
+        if key == "labels" and value is not None:
+            with open(value, "r") as f:
                 intrinsics.labels = f.read().splitlines()
         elif hasattr(intrinsics, key) and value is not None:
             setattr(intrinsics, key, value)
@@ -222,7 +257,9 @@ if __name__ == "__main__":
         exit()
 
     picam2 = Picamera2(imx500.camera_num)
-    config = picam2.create_preview_configuration(controls={"FrameRate": intrinsics.inference_rate}, buffer_count=12)
+    config = picam2.create_preview_configuration(
+        controls={"FrameRate": intrinsics.inference_rate}, buffer_count=12
+    )
 
     imx500.show_network_fw_progress_bar()
     picam2.start(config, show_preview=False)

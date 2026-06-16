@@ -159,7 +159,9 @@ class StableDetectionTracker:
 
         # Snapshot which tracks were already stable so we can detect first-time stability.
         previously_stable_ids = {
-            t.track_id for t in self._tracks if t.stable_frames >= self.min_stable_frames
+            t.track_id
+            for t in self._tracks
+            if t.stable_frames >= self.min_stable_frames
         }
 
         self._tracks, self._last_per_det_track = update_tracks_for_frame(
@@ -198,7 +200,9 @@ class StableDetectionTracker:
 
 # Global tracker instance used by default in the live pipeline.
 # Tests can instantiate StableDetectionTracker directly.
-stable_detection_tracker = StableDetectionTracker(iou_threshold=0.6, min_stable_frames=3)
+stable_detection_tracker = StableDetectionTracker(
+    iou_threshold=0.6, min_stable_frames=3
+)
 
 
 def should_run_bird_classification_for_detection(

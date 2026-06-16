@@ -15,8 +15,12 @@ router = APIRouter(prefix="/api/detections", tags=["detections"])
 @router.get("", response_model=List[DetectionRecord])
 def list_detections(
     species: Optional[str] = Query(default=None, description="Filter by species name"),
-    from_: Optional[datetime] = Query(default=None, alias="from", description="Earliest timestamp (inclusive)"),
-    to: Optional[datetime] = Query(default=None, description="Latest timestamp (inclusive)"),
+    from_: Optional[datetime] = Query(
+        default=None, alias="from", description="Earliest timestamp (inclusive)"
+    ),
+    to: Optional[datetime] = Query(
+        default=None, description="Latest timestamp (inclusive)"
+    ),
     limit: int = Query(default=50, ge=1, le=500, description="Max records to return"),
     offset: int = Query(default=0, ge=0, description="Number of records to skip"),
     session: Session = Depends(get_session),

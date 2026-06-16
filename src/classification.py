@@ -5,6 +5,7 @@ from PIL import Image
 import json
 from pathlib import Path
 
+
 class ONNXClassifier:
     """
     Lightweight ONNX Runtime classifier wrapper.
@@ -14,6 +15,7 @@ class ONNXClassifier:
     - Channel order must be RGB, values already normalized/rescaled as required by the model.
     - No preprocessing is performed here; pass data that already matches the model's input size, e.g. (1, 3, 384, 384).
     """
+
     def __init__(self, model_path):
         self.session = ort.InferenceSession(model_path)
 
@@ -31,9 +33,11 @@ class ONNXClassifier:
         inputs = {self.session.get_inputs()[0].name: data.astype(np.float32)}
         outputs = self.session.run(None, inputs)
         return outputs[0]
-    
+
+
 def build_classifier(path_to_onnx_model):
     return ONNXClassifier(path_to_onnx_model)
+
 
 class Classifier:
     """
@@ -50,7 +54,13 @@ class Classifier:
     - class_index_path: optional path to a JSON mapping of {class_name: index}. If provided, it enables classify().
     - preprocessing: optional callable to convert raw inputs to NCHW float32.
     """
-    def __init__(self, model, class_index_path: str | Path | None = None, preprocessing: Callable[[Any], np.ndarray] | None = None):
+
+    def __init__(
+        self,
+        model,
+        class_index_path: str | Path | None = None,
+        preprocessing: Callable[[Any], np.ndarray] | None = None,
+    ):
         self.model = model
         self.preprocessing = preprocessing
         self.softmax = True
@@ -94,13 +104,16 @@ class Classifier:
         - (class_name, confidence) where confidence is the predicted probability for the top class.
         """
         if self.idx_to_class is None:
-            raise ValueError("No class index mapping provided. Initialize Classifier with class_index_path to use classify().")
+            raise ValueError(
+                "No class index mapping provided. Initialize Classifier with class_index_path to use classify()."
+            )
         probs = self.predict(data)
         # handle batch, pick first sample
         top_idx = int(np.argmax(probs, axis=1)[0])
         top_conf = float(probs[0, top_idx])
         class_name = self.idx_to_class.get(top_idx, f"<unknown:{top_idx}>")
         return class_name, top_conf
+
 
 # data preprocessing (pure PIL + numpy, no torch/torchvision)
 
@@ -112,9 +125,12 @@ class Classifier:
 # - simple_crop: bool (default False)
 # The returned callable accepts a PIL.Image.Image or numpy array (H,W,3/4) and returns numpy array (1,3,H,W) float32.
 
+
 def build_preprocessing(config: Dict[str, Any]) -> Callable[[Any], np.ndarray]:
     size: Tuple[int, int] = tuple(config.get("size", (384, 384)))  # (H, W)
-    rgb_values = config.get("rgb_values", {"mean": [0.485, 0.456, 0.406], "std": [0.229, 0.224, 0.225]})
+    rgb_values = config.get(
+        "rgb_values", {"mean": [0.485, 0.456, 0.406], "std": [0.229, 0.224, 0.225]}
+    )
     center_crop: float = float(config.get("center_crop", 1.0))
     simple_crop: bool = bool(config.get("simple_crop", False))
 
@@ -151,7 +167,9 @@ def build_preprocessing(config: Dict[str, Any]) -> Callable[[Any], np.ndarray]:
                     arr = x
                 img = Image.fromarray(arr)
                 return img.convert("RGB")
-        raise TypeError("Unsupported input type for preprocessing. Expected PIL.Image or numpy array")
+        raise TypeError(
+            "Unsupported input type for preprocessing. Expected PIL.Image or numpy array"
+        )
 
     def center_crop_pil(img: Image.Image, target_hw: Tuple[int, int]) -> Image.Image:
         target_h, target_w = target_hw
@@ -186,10 +204,12 @@ def build_preprocessing(config: Dict[str, Any]) -> Callable[[Any], np.ndarray]:
 def setup_classifier(model_path: str, class_to_idx_path: str):
     """Initialize the ONNX classifier with preprocessing."""
     onnx_model = ONNXClassifier(str(model_path))
-    preprocessing = build_preprocessing({
-        "size": (384, 384),
-        "rgb_values": {"mean": [0.485, 0.456, 0.406], "std": [0.229, 0.224, 0.225]},
-        "center_crop": 1.0,
-        "simple_crop": False,
-    })
+    preprocessing = build_preprocessing(
+        {
+            "size": (384, 384),
+            "rgb_values": {"mean": [0.485, 0.456, 0.406], "std": [0.229, 0.224, 0.225]},
+            "center_crop": 1.0,
+            "simple_crop": False,
+        }
+    )
     return Classifier(onnx_model, class_to_idx_path, preprocessing=preprocessing)

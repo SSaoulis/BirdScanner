@@ -1,5 +1,3 @@
-
-
 """Threading logic for classification processing.
 
 This module contains the ClassificationManager which handles both synchronous
@@ -12,7 +10,7 @@ import threading
 
 def process_single_detection(item, *, results_lock, classifier):
     """Process one detection item (sync or async depending on manager).
-    
+
     This function should be imported from object_detection module.
     Keeping this here for reference.
     """
@@ -21,8 +19,10 @@ def process_single_detection(item, *, results_lock, classifier):
 
 class ClassificationManager:
     """Manages bird classification processing with optional multithreading."""
-    
-    def __init__(self, classifier, *, use_multithreading: bool = False, queue_maxsize: int = 0):
+
+    def __init__(
+        self, classifier, *, use_multithreading: bool = False, queue_maxsize: int = 0
+    ):
         self.classifier = classifier
         self.use_multithreading = use_multithreading
         self._results_lock = None
@@ -43,7 +43,9 @@ class ClassificationManager:
     def process(self, item):
         """Process a detection item synchronously or queue it for async processing."""
         if not self.use_multithreading:
-            process_single_detection(item, results_lock=self._results_lock, classifier=self.classifier)
+            process_single_detection(
+                item, results_lock=self._results_lock, classifier=self.classifier
+            )
             return
 
         try:
@@ -59,7 +61,9 @@ class ClassificationManager:
             if item is None:
                 self._queue.task_done()
                 break
-            process_single_detection(item, results_lock=self._results_lock, classifier=self.classifier)
+            process_single_detection(
+                item, results_lock=self._results_lock, classifier=self.classifier
+            )
             self._queue.task_done()
 
     def stop(self):

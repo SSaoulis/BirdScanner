@@ -1,7 +1,9 @@
 import birder
 from birder.inference.classification import infer_image
 
-(net, model_info) = birder.load_pretrained_model("convnext_v2_tiny_eu-common", inference=True)
+(net, model_info) = birder.load_pretrained_model(
+    "convnext_v2_tiny_eu-common", inference=True
+)
 # Note: A 256x256 variant is available as "uniformer_s_eu-common256px"
 
 # Get the image size the model was trained on
