@@ -1,6 +1,5 @@
 """Main entry point for bird detection and classification application."""
 
-import argparse
 import logging
 import sys
 import threading
@@ -23,65 +22,10 @@ from classification_pipeline import (
 )
 from tracking import StableDetectionTracker
 import classification_pipeline
+from config import config as app_config
 
 from db.database import make_engine, init_db, make_session_factory
 from db.writer import DetectionWriter
-
-
-def get_args():
-    """Parse command-line arguments."""
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--model",
-        type=str,
-        help="Path of the model",
-        default="/usr/share/imx500-models/imx500_network_ssd_mobilenetv2_fpnlite_320x320_pp.rpk",
-    )
-    parser.add_argument("--fps", type=int, help="Frames per second")
-    parser.add_argument("--bbox-normalization", action=argparse.BooleanOptionalAction, help="Normalize bbox")
-    parser.add_argument(
-        "--bbox-order",
-        choices=["yx", "xy"],
-        default="yx",
-        help="Set bbox order yx -> (y0, x0, y1, x1) xy -> (x0, y0, x1, y1)",
-    )
-    parser.add_argument("--threshold", type=float, default=0.55, help="Detection threshold")
-    parser.add_argument("--ignore-dash-labels", action=argparse.BooleanOptionalAction, help="Remove '-' labels ")
-    parser.add_argument(
-        "-r",
-        "--preserve-aspect-ratio",
-        action=argparse.BooleanOptionalAction,
-        help="preserve the pixel aspect ratio of the input tensor",
-    )
-    parser.add_argument("--labels", type=str, help="Path to the labels file")
-    parser.add_argument("--print-intrinsics", action="store_true", help="Print JSON network_intrinsics then exit")
-    parser.add_argument(
-        "--multithread",
-        action="store_true",
-        help="Enable background processing thread for classification",
-    )
-    parser.add_argument(
-        "--object-duration-threshold",
-        dest="object_duration_threshold",
-        type=float,
-        default=0.2,
-        help=(
-            "Total time (seconds) a track must be stable (IoU>0.6 across frames) before running bird "
-            "classification. Set to 0 to revert to legacy per-frame logic."
-        ),
-    )
-    parser.add_argument(
-        "--debug",
-        action="store_true",
-        help="Enable debug logging for track lifecycle events",
-    )
-    # add flag to turn on preview
-    parser.add_argument(
-        "--preview",
-        action="store_true",
-        help="Enable camera preview window",
-    )
-    return parser.parse_args()
 
 
 def wait_for_camera(model_path: str, retry_interval: float = 30.0) -> IMX500:
@@ -116,11 +60,8 @@ def wait_for_camera(model_path: str, retry_interval: float = 30.0) -> IMX500:
 
 def main():
     """Main application entry point."""
-    args = get_args()
-
-
     tracking_logger = logging.getLogger("tracking")
-    tracking_logger.setLevel(logging.DEBUG if args.debug else logging.INFO)
+    tracking_logger.setLevel(logging.DEBUG if app_config.debug else logging.INFO)
     handler = logging.StreamHandler(sys.stdout)
     formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
     handler.setFormatter(formatter)
@@ -137,7 +78,7 @@ def main():
     # Initialize IMX500 device (must be called before instantiation of Picamera2).
     # Retry gracefully if the camera dev-node is missing so the detector does not
     # crash-loop; the API service serves stored images independently.
-    imx500 = wait_for_camera(args.model)
+    imx500 = wait_for_camera(app_config.model)
     intrinsics = imx500.network_intrinsics
     
     if not intrinsics:
@@ -147,8 +88,8 @@ def main():
         print("Network is not an object detection task", file=sys.stderr)
         exit()
 
-    # Override intrinsics from args
-    for key, value in vars(args).items():
+    # Override intrinsics from config
+    for key, value in vars(app_config).items():
         if key == "labels" and value is not None:
             with open(value, "r") as f:
                 intrinsics.labels = f.read().splitlines()
@@ -162,7 +103,7 @@ def main():
 
     intrinsics.update_with_defaults()
     
-    if args.print_intrinsics:
+    if app_config.print_intrinsics:
         print(intrinsics)
         exit()
 
@@ -175,10 +116,10 @@ def main():
     # Configure new stable-track gating.
     # - If duration == 0 => revert to legacy behaviour.
     # - Otherwise compute min_stable_frames from duration * fps (ceil, min 1).
-    # Prefer args.fps if supplied; fall back to intrinsics inference rate.
-    fps = args.fps or int(getattr(intrinsics, "inference_rate", 0) or 0) or 1
-    if args.object_duration_threshold and args.object_duration_threshold > 0:
-        min_stable_frames = max(1, int((args.object_duration_threshold * fps) + 0.9999))
+    # Prefer config.fps if supplied; fall back to intrinsics inference rate.
+    fps = app_config.fps or int(getattr(intrinsics, "inference_rate", 0) or 0) or 1
+    if app_config.object_duration_threshold and app_config.object_duration_threshold > 0:
+        min_stable_frames = max(1, int((app_config.object_duration_threshold * fps) + 0.9999))
         use_stable_tracks = True
 
         from track_logging import TrackingLogger
@@ -187,7 +128,7 @@ def main():
         tracker = StableDetectionTracker(
             iou_threshold=0.6,
             min_stable_frames=min_stable_frames,
-            # Reasonable default; can be promoted to a CLI arg later.
+            # Reasonable default; can be promoted to a config field later.
             max_missing_frames=max(1, int(1.0 * fps)),
             on_track_became_stable=logger.log_stable_track,
             on_track_deleted=logger.log_deleted_track,
@@ -206,7 +147,7 @@ def main():
     results_lock = threading.Lock()
     manager = ClassificationManager(
         classifier,
-        use_multithreading=args.multithread,
+        use_multithreading=app_config.multithread,
         use_stable_track_gating=use_stable_tracks,
         tracker=tracker,
         detection_writer=detection_writer,
@@ -242,7 +183,7 @@ def main():
     print(f"ScalerCrop = ({crop_x}, {crop_y}, {CROP_W}, {CROP_H})")
 
     imx500.show_network_fw_progress_bar()
-    picam2.start(config, show_preview=args.preview)
+    picam2.start(config, show_preview=app_config.preview)
 
     if intrinsics.preserve_aspect_ratio:
         imx500.set_auto_aspect_ratio()
@@ -276,7 +217,7 @@ def main():
                 picam2.capture_metadata(),
                 imx500,
                 intrinsics,
-                args.threshold,
+                app_config.threshold,
                 picam2,
             )
             # Update the detection classifications cache for temporal filtering

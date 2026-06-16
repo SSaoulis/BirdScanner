@@ -11,14 +11,16 @@ BirdScanner is a real-time bird detection and classification system designed for
 ### Run the app (on Raspberry Pi only)
 ```bash
 cd src
-python main.py --threshold 0.55 --object-duration-threshold 0.2 --multithread --debug
+python main.py
 ```
 
-Key flags:
-- `--multithread` — run classification on a background thread (prevents blocking the camera callback)
-- `--object-duration-threshold <seconds>` — how long a track must be stable before classification fires (0 = legacy per-frame mode)
-- `--debug` — enables `tracking` logger at DEBUG level
-- `--preview` — shows the camera preview window
+Runtime behaviour is configured in `src/config.py` (the former CLI args), not via
+command-line flags. Edit the values on the module-level `config` instance:
+- `multithread` — run classification on a background thread (prevents blocking the camera callback); defaults to `True`
+- `object_duration_threshold` — seconds a track must be stable before classification fires (0 = legacy per-frame mode); defaults to `0.2`
+- `debug` — enables `tracking` logger at DEBUG level; defaults to `True`
+- `preview` — shows the camera preview window; defaults to `False`
+- plus `model`, `fps`, `bbox_normalization`, `bbox_order`, `threshold`, `ignore_dash_labels`, `preserve_aspect_ratio`, `labels`, `print_intrinsics`
 
 ### Tests
 ```bash
@@ -97,7 +99,11 @@ monolithic `object_detection.py` was refactored along these seams):
 - `Classifier` — adds preprocessing and class-index mapping; `classify()` returns `(species_str, confidence_float)`
 - `build_preprocessing` — pure PIL+NumPy pipeline (resize → center crop → ImageNet normalize → NCHW)
 
+**`src/config.py`** — application configuration:
+- `Config` dataclass + module-level `config` instance holding every runtime setting that used to be a CLI arg (`model`, `fps`, `bbox_normalization`, `bbox_order`, `threshold`, `ignore_dash_labels`, `preserve_aspect_ratio`, `labels`, `print_intrinsics`, `multithread`, `object_duration_threshold`, `debug`, `preview`); edit values here instead of passing flags. `main.py` imports it as `app_config` (to avoid clashing with the local `config` returned by `picam2.create_preview_configuration`)
+
 **`src/main.py`** — entry point:
+- Reads all runtime settings from `config.config` (imported as `app_config`); no `argparse`. The intrinsics-override loop iterates `vars(app_config)`, so optional intrinsic fields left as `None` do not clobber the network intrinsics defaults
 - Camera sensor crop is hardcoded to 900×900 anchored at `(4/13, 5/10)` of the 4056×3040 sensor (points the crop at the bird feeder)
 - `vflip=True, hflip=True` transforms are applied (camera is mounted upside-down)
 - Calls `update_detection_classifications_cache` each frame to keep the legacy temporal filter in sync alongside the new tracker
