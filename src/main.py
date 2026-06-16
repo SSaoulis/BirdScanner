@@ -22,7 +22,8 @@ from object_detection import (
 )
 import object_detection
 
-from db.database import make_engine, init_db
+from db.database import make_engine, init_db, make_session_factory
+from db.writer import DetectionWriter
 
 
 def get_args():
@@ -126,8 +127,10 @@ def main():
     # Create the database schema up front (the detector owns all DB writes).
     # Doing this before camera init guarantees the SQLite file and tables exist
     # even when the camera is unavailable, so the read-only API can always serve
-    # the site (an empty gallery rather than a 500).
-    init_db(make_engine())
+    # the site (an empty gallery rather than a 500). The engine is reused below
+    # for the DetectionWriter's session factory.
+    engine = make_engine()
+    init_db(engine)
 
     # Initialize IMX500 device (must be called before instantiation of Picamera2).
     # Retry gracefully if the camera dev-node is missing so the detector does not
@@ -191,6 +194,12 @@ def main():
         use_stable_tracks = False
         tracker = None
 
+    # Set up the SQLite persistence layer.  The detector owns all DB writes;
+    # the API mounts the same database read-only.  The schema was already
+    # created up front (before camera init) using the same engine, so the API
+    # can serve the site even when the camera never comes up.
+    detection_writer = DetectionWriter(make_session_factory(engine))
+
     # Initialize camera and classification manager
     results_lock = threading.Lock()
     manager = ClassificationManager(
@@ -198,6 +207,7 @@ def main():
         use_multithreading=args.multithread,
         use_stable_track_gating=use_stable_tracks,
         tracker=tracker,
+        detection_writer=detection_writer,
     )
     manager.set_results_lock(results_lock)
 
@@ -271,6 +281,7 @@ def main():
             update_detection_classifications_cache(last_results, object_detection.classification_results)
     except KeyboardInterrupt:
         manager.stop()
+        detection_writer.stop()
 
 
 if __name__ == "__main__":
