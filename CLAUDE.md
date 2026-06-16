@@ -61,7 +61,7 @@ IMX500 on-chip inference
 
 **`backend/`** — FastAPI REST API (Phase 2):
 - `backend/main.py` — app factory; mounts the four routers; optionally serves `frontend/dist/` at `/` when the build exists
-- `backend/dependencies.py` — `get_session()` and `get_image_dir()` FastAPI dependency providers (reads `DB_PATH` / `IMAGE_DIR` env vars)
+- `backend/dependencies.py` — `get_session()` and `get_image_dir()` FastAPI dependency providers (reads `DB_PATH` / `IMAGE_DIR` env vars); the engine is opened **read-only** (`make_engine(read_only=True)`) and the API never runs `init_db` — the detector owns schema creation, and the DB is mounted read-only
 - `backend/routers/detections.py` — `GET /api/detections` (paginated + filtered) and `GET /api/detections/{id}`
 - `backend/routers/images.py` — `GET /api/images/{id}/thumbnail`, `GET /api/images/{id}/full`, `GET /api/images/download?ids=...` (chunked ZIP)
 - `backend/routers/system.py` — `GET /api/system` (CPU/mem/disk/temp/uptime via psutil)
@@ -69,7 +69,7 @@ IMX500 on-chip inference
 
 **`db/`** — SQLite persistence layer (Phase 1):
 - `db/models.py` — `DetectionRecord` SQLModel ORM model (`detections` table)
-- `db/database.py` — `make_engine()` / `init_db()` / `make_session_factory()`; DB path from `DB_PATH` env var
+- `db/database.py` — `make_engine()` / `init_db()` / `make_session_factory()`; DB path from `DB_PATH` env var. `make_engine(read_only=True)` opens the SQLite file via the `mode=ro` URI so it can be read off a read-only mount without attempting to create a journal file (used by the API)
 - `db/writer.py` — `DetectionWriter`: fire-and-forget background-thread writer; `write()` enqueues, `stop()` flushes and exits
 - `db/migrations/001_initial.sql` — plain SQL migration (reference; `init_db()` is authoritative)
 
@@ -82,6 +82,7 @@ IMX500 on-chip inference
 - Camera sensor crop is hardcoded to 900×900 anchored at `(4/13, 5/10)` of the 4056×3040 sensor (points the crop at the bird feeder)
 - `vflip=True, hflip=True` transforms are applied (camera is mounted upside-down)
 - Calls `update_detection_classifications_cache` each frame to keep the legacy temporal filter in sync alongside the new tracker
+- Creates the SQLite engine, runs `init_db()`, and wires a `DetectionWriter` into the `ClassificationManager` so every high-confidence classification is persisted; the writer is flushed via `detection_writer.stop()` on `KeyboardInterrupt`. The detector creating the DB here is what allows the read-only API to open it.
 
 **`frontend/`** — React + Vite + Tailwind dashboard (Phase 3 & 4):
 - `frontend/src/api.ts` — typed fetch wrappers for all `/api/*` endpoints; exports `Detection`, `SystemStatus`, `SpeciesSummary` interfaces plus `timeAgo` and `formatUptime` helpers

@@ -26,22 +26,31 @@ _DEFAULT_DB_PATH = "detections.db"
 SessionFactory = Callable[[], Session]
 
 
-def make_engine(db_path: str | None = None):
+def make_engine(db_path: str | None = None, *, read_only: bool = False):
     """Create a SQLAlchemy engine for the SQLite database.
 
     Args:
         db_path: Explicit filesystem path for the SQLite file.  When
             omitted the value of the ``DB_PATH`` environment variable is
             used, falling back to ``detections.db`` in the cwd.
+        read_only: When ``True`` the SQLite file is opened in read-only
+            mode (``mode=ro``).  This is required when the database lives
+            on a read-only mount: a default read-write connection would
+            try to create a journal file in the directory and fail with
+            ``unable to open database file``.  Read-only mode also requires
+            that the file already exist (the writer process must create it).
 
     Returns:
         A SQLAlchemy ``Engine`` instance.
     """
     path = db_path or os.environ.get("DB_PATH", _DEFAULT_DB_PATH)
+    # Read-only mode uses SQLite's URI filename syntax so it never attempts to
+    # create the file or a journal alongside it (essential on a read-only mount).
+    url = f"sqlite:///file:{path}?mode=ro&uri=true" if read_only else f"sqlite:///{path}"
     # check_same_thread=False is required for SQLite when the session is used
     # from a different thread than the one that created the connection.
     return create_engine(
-        f"sqlite:///{path}",
+        url,
         echo=False,
         connect_args={"check_same_thread": False},
     )

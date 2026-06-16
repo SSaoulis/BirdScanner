@@ -6,7 +6,7 @@ from typing import Generator
 
 from sqlmodel import Session
 
-from db.database import make_engine, init_db, make_session_factory
+from db.database import make_engine, make_session_factory
 
 _DEFAULT_IMAGE_DIR = "/home/stefan/Pictures/bird_detections"
 
@@ -16,11 +16,15 @@ _session_factory = None
 
 
 def _get_engine():
-    """Return the module-level SQLAlchemy engine, creating it on first call."""
+    """Return the module-level SQLAlchemy engine, creating it on first call.
+
+    The API is a read-only consumer: it mounts the database read-only and the
+    detector service owns all writes (including schema creation).  The engine is
+    therefore opened in read-only mode and the API never runs ``init_db``.
+    """
     global _engine
     if _engine is None:
-        _engine = make_engine()
-        init_db(_engine)
+        _engine = make_engine(read_only=True)
     return _engine
 
 
