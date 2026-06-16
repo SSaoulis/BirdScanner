@@ -14,13 +14,15 @@ from picamera2.devices.imx500 import NetworkIntrinsics  # type: ignore
 from object_detection import (
     parse_detections,
     get_labels,
+)
+from classification_pipeline import (
     process_detections,
     setup_classifier,
     ClassificationManager,
     update_detection_classifications_cache,
-    StableDetectionTracker,
 )
-import object_detection
+from tracking import StableDetectionTracker
+import classification_pipeline
 
 from db.database import make_engine, init_db, make_session_factory
 from db.writer import DetectionWriter
@@ -278,7 +280,7 @@ def main():
                 picam2,
             )
             # Update the detection classifications cache for temporal filtering
-            update_detection_classifications_cache(last_results, object_detection.classification_results)
+            update_detection_classifications_cache(last_results, classification_pipeline.classification_results)
     except KeyboardInterrupt:
         manager.stop()
         detection_writer.stop()

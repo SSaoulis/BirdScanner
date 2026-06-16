@@ -52,11 +52,30 @@ IMX500 on-chip inference
 
 ### Key modules
 
-**`src/object_detection.py`** — the bulk of the system logic:
+The detection pipeline is split across four focused modules (the previously
+monolithic `object_detection.py` was refactored along these seams):
+
+**`src/object_detection.py`** — core object detection only:
 - `Detection` — bounding box + category + confidence; box is set after coordinate conversion via `imx500.convert_inference_coords`
+- `parse_detections` — extracts `Detection` objects from the IMX500 inference tensor; `get_labels` filters the intrinsics label list
+- `last_detections` — module-global fallback returned when a frame yields no inference output
+
+**`src/detection_utils.py`** — stateless geometry/drawing helpers shared across the pipeline:
+- `iou` — Intersection-over-Union for two `(x, y, w, h)` boxes
+- `preprocess_roi` — expands a box to a padded square and crops the ROI
+- `draw_boxes` — annotates a frame with boxes + labels + optional classification result
+- `save_thumbnail` — writes a 200×200 JPEG thumbnail
+
+**`src/tracking.py`** — multi-frame stability tracking:
 - `StableDetectionTracker` — IoU-based tracker; a detection must match across `min_stable_frames` consecutive frames before `should_run_bird_classification_for_detection` returns `True`; each track is classified at most once (`mark_classified`)
+- `StableTrack`, `match_detection_to_track`, `update_tracks_for_frame`, `should_classify_track` — the underlying pure-function tracking primitives (directly unit-tested in `tests/test_process_detections.py`)
+- `stable_detection_tracker` — module-global default tracker instance
+
+**`src/classification_pipeline.py`** — classification orchestration + persistence:
 - `ClassificationManager` — wraps sync/async (threaded `Queue`) dispatch; in async mode items are dropped if the queue is full so the camera callback never blocks; accepts an optional `DetectionWriter` for DB persistence
+- `process_detections` — picam2 `pre_callback` entry point; draws boxes and queues bird detections
 - `process_single_detection_with_stable_tracks` — new gating path; `process_single_detection` is the legacy per-frame IoU-cache path (kept for reference)
+- `setup_classifier`, `run_bird_classification`, `update_detection_classifications_cache`, `classification_results`
 - `IMAGE_DIR` — root directory for saved images, sourced from the `IMAGE_DIR` env var (defaults to `/home/stefan/Pictures/bird_detections`)
 
 **`backend/`** — FastAPI REST API (Phase 2):
@@ -118,7 +137,7 @@ All boxes throughout the codebase are `(x, y, w, h)` in ISP output pixel coordin
 ## Conventions
 
 - All functions must have type hints and docstrings.
-- `threading_logic.py` is a stale reference copy; the live `ClassificationManager` lives in `object_detection.py`.
+- `threading_logic.py` is a stale reference copy; the live `ClassificationManager` lives in `classification_pipeline.py`.
 - `examples/` contains the original unrefactored script; do not merge changes back into it.
 - High-confidence classified bird images are written to `$IMAGE_DIR/{species}/` (env var, defaults to `/home/stefan/Pictures/bird_detections`). A 200×200 JPEG thumbnail is saved alongside each image with a `_thumb.jpg` suffix.
 - `db/` tests use SQLAlchemy `StaticPool` to share an in-memory SQLite connection across threads.
