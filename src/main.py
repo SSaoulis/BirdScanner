@@ -4,6 +4,7 @@ import argparse
 import logging
 import sys
 import threading
+import time
 
 import libcamera
 from picamera2 import Picamera2  # type: ignore
@@ -20,6 +21,8 @@ from object_detection import (
     StableDetectionTracker,
 )
 import object_detection
+
+from db.database import make_engine, init_db
 
 
 def get_args():
@@ -78,6 +81,36 @@ def get_args():
     return parser.parse_args()
 
 
+def wait_for_camera(model_path: str, retry_interval: float = 30.0) -> IMX500:
+    """Initialize the IMX500 device, retrying until the camera becomes available.
+
+    The IMX500 constructor raises ``RuntimeError`` when the camera dev-node is
+    missing (e.g. the camera is unplugged, mis-seated, or the container lacks
+    device access). Rather than letting the process crash and spam full
+    tracebacks under the container's restart policy, log a concise warning and
+    retry. The detector stays alive and recovers automatically when the camera
+    reappears, while the independent API service keeps serving stored images.
+
+    Args:
+        model_path: Path to the IMX500 detection network (``.rpk``) firmware.
+        retry_interval: Seconds to wait between initialization attempts.
+
+    Returns:
+        An initialized :class:`IMX500` instance once the camera is available.
+    """
+    logger = logging.getLogger("tracking")
+    while True:
+        try:
+            return IMX500(model_path)
+        except RuntimeError as exc:
+            logger.warning(
+                "Camera not available (%s). Retrying in %.0fs...",
+                exc,
+                retry_interval,
+            )
+            time.sleep(retry_interval)
+
+
 def main():
     """Main application entry point."""
     args = get_args()
@@ -90,11 +123,16 @@ def main():
     handler.setFormatter(formatter)
     tracking_logger.addHandler(handler)
 
-    
-    
+    # Create the database schema up front (the detector owns all DB writes).
+    # Doing this before camera init guarantees the SQLite file and tables exist
+    # even when the camera is unavailable, so the read-only API can always serve
+    # the site (an empty gallery rather than a 500).
+    init_db(make_engine())
 
-    # Initialize IMX500 device (must be called before instantiation of Picamera2)
-    imx500 = IMX500(args.model)
+    # Initialize IMX500 device (must be called before instantiation of Picamera2).
+    # Retry gracefully if the camera dev-node is missing so the detector does not
+    # crash-loop; the API service serves stored images independently.
+    imx500 = wait_for_camera(args.model)
     intrinsics = imx500.network_intrinsics
     
     if not intrinsics:
