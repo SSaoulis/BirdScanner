@@ -61,7 +61,7 @@ IMX500 on-chip inference
 
 **`backend/`** — FastAPI REST API (Phase 2):
 - `backend/main.py` — app factory; mounts the four routers; optionally serves `frontend/dist/` at `/` when the build exists
-- `backend/dependencies.py` — `get_session()` and `get_image_dir()` FastAPI dependency providers (reads `DB_PATH` / `IMAGE_DIR` env vars)
+- `backend/dependencies.py` — `get_session()` and `get_image_dir()` FastAPI dependency providers (reads `DB_PATH` / `IMAGE_DIR` env vars); the engine is opened **read-only** (`make_engine(read_only=True)`) and the API never runs `init_db` — the detector owns schema creation, and the DB is mounted read-only
 - `backend/routers/detections.py` — `GET /api/detections` (paginated + filtered) and `GET /api/detections/{id}`
 - `backend/routers/images.py` — `GET /api/images/{id}/thumbnail`, `GET /api/images/{id}/full`, `GET /api/images/download?ids=...` (chunked ZIP)
 - `backend/routers/system.py` — `GET /api/system` (CPU/mem/disk/temp/uptime via psutil)
@@ -69,7 +69,7 @@ IMX500 on-chip inference
 
 **`db/`** — SQLite persistence layer (Phase 1):
 - `db/models.py` — `DetectionRecord` SQLModel ORM model (`detections` table)
-- `db/database.py` — `make_engine()` / `init_db()` / `make_session_factory()`; DB path from `DB_PATH` env var
+- `db/database.py` — `make_engine()` / `init_db()` / `make_session_factory()`; DB path from `DB_PATH` env var. `make_engine(read_only=True)` opens the SQLite file via the `mode=ro` URI so it can be read off a read-only mount without attempting to create a journal file (used by the API)
 - `db/writer.py` — `DetectionWriter`: fire-and-forget background-thread writer; `write()` enqueues, `stop()` flushes and exits
 - `db/migrations/001_initial.sql` — plain SQL migration (reference; `init_db()` is authoritative)
 
@@ -82,6 +82,8 @@ IMX500 on-chip inference
 - Camera sensor crop is hardcoded to 900×900 anchored at `(4/13, 5/10)` of the 4056×3040 sensor (points the crop at the bird feeder)
 - `vflip=True, hflip=True` transforms are applied (camera is mounted upside-down)
 - Calls `update_detection_classifications_cache` each frame to keep the legacy temporal filter in sync alongside the new tracker
+- Creates the SQLite engine and runs `init_db()` on startup **before camera init**, so the schema always exists; the detector owns all DB writes, so this lets the read-only API serve an empty gallery even when the camera never comes up. The same `engine` is reused to wire a `DetectionWriter` into the `ClassificationManager` so every high-confidence classification is persisted; the writer is flushed via `detection_writer.stop()` on `KeyboardInterrupt`.
+- `wait_for_camera()` wraps `IMX500(...)` in a retry-with-backoff loop (30 s default): when the camera dev-node is missing it logs a concise warning and retries instead of crashing, so the detector never crash-loops and auto-recovers when the camera reappears
 
 **`frontend/`** — React + Vite + Tailwind dashboard (Phase 3 & 4):
 - `frontend/src/api.ts` — typed fetch wrappers for all `/api/*` endpoints; exports `Detection`, `SystemStatus`, `SpeciesSummary` interfaces plus `timeAgo` and `formatUptime` helpers
@@ -155,5 +157,5 @@ docker compose logs -f detector
 - `privileged: true` is scoped to `detector` only (required for IMX500 camera device access).
 - The `detector` image (`Dockerfile.detector`) is based on `dtcooper/raspberrypi-os:bookworm` so the system `python3` can import the apt-installed `python3-picamera2` / `python3-libcamera` bindings (these are built natively against the Pi's libcamera and are **not** on PyPI). `numpy`, `opencv` and `pillow` are installed via apt (`python3-numpy` / `python3-opencv` / `python3-pil`); the apt `numpy` is `1.24.2`, which is what the apt-built picamera2/simplejpeg/opencv stack is compiled against. `requirements.detector.txt` therefore pins `numpy==1.24.2` (so pip does not pull numpy 2.x into `/usr/local` and shadow the apt copy — that crashes the detector with `numpy.dtype size changed`) and `onnxruntime==1.23.2` (the version known to run against numpy 1.24.2 on this Pi). These plus `sqlmodel` are pip-installed into the system interpreter with `--break-system-packages`. The IMX500 firmware + `.rpk` network models (`/usr/share/imx500-models/...`) come from the `imx500-all` apt package baked into the image. A plain `python:3.x` base will crash the detector with `ModuleNotFoundError: No module named 'libcamera'`.
 - The `detector` service additionally mounts `/run/udev:ro` (libcamera enumerates cameras via udev) and the `/dev/dma_heap` device (picamera2 buffer allocation) — both required for the camera to initialise inside the container.
-- Model files (`src/local/convnext_v2_tiny_int8.onnx`) must be present on the Pi. Only the int8 model is copied into the image; `.dockerignore` excludes the other large scratch models in `src/local/` (`convnext_v2_tiny.onnx`, `yolov8s.onnx`, `imx500_network_yolo11n_pp.rpk`, `converted5/`) so they never enter the build context.
-- **Detector rebuild speed**: `Dockerfile.detector` copies `src/local/` (the model) in its own early layer, *before* the source `.py` files. Editing code only invalidates the tiny final `COPY src/*.py` layer, so rebuilds after a code change take seconds instead of minutes (the apt/pip/model layers stay cached). `.dockerignore` also excludes `.claude/` (worktree copies) to keep the build context small. To avoid the api and detector images thrashing the Pi's IO by building in parallel, rebuild only what changed: `docker compose up -d --build detector`.
+- Model files (`src/local/convnext_v2_tiny_int8.onnx`) must be present on the Pi; they are not included in the image.
+- If the camera is unavailable (dev-node missing — unplugged, mis-seated, or device access not granted), the `detector` does **not** crash-loop: `wait_for_camera()` logs `Camera not available (...). Retrying in 30s...` and retries until the camera appears. The `api` service is independent and continues serving the site; because the detector initialises the DB schema on startup, the UI loads (showing existing images, or an empty gallery on a fresh volume).
