@@ -146,7 +146,7 @@ monolithic `object_detection.py` was refactored along these seams):
 - `Dockerfile.api` — multi-stage image: Node 20 builds the frontend, Python 3.11 runs the API; exposes port 8080
 
 **`src/camera_server.py`** — on-demand camera snapshot server:
-- `capture_jpeg(picam2)` — captures one frame from the running camera's `main` stream and encodes it to JPEG (RGB→BGR for OpenCV)
+- `capture_jpeg(picam2)` — captures one frame from the running camera's `main` stream (RGB-ordered, since the stream is `BGR888`; see "Colour channel order") and encodes it to JPEG (RGB→BGR for OpenCV)
 - `start_camera_server(picam2, port)` — runs a stdlib `ThreadingHTTPServer` on a background daemon thread serving `GET /capture` (returns a fresh JPEG); `camera_server_port()` reads the port from `CAMERA_SERVER_PORT` (default 8000)
 - Wired into `main.py` after `picam2.start(...)` so the read-only API can surface a live "Test Camera" image even though the detector owns the camera exclusively; shut down on `KeyboardInterrupt`
 
@@ -164,6 +164,10 @@ monolithic `object_detection.py` was refactored along these seams):
 ### Bounding box format
 
 All boxes throughout the codebase are `(x, y, w, h)` in ISP output pixel coordinates after `imx500.convert_inference_coords`. The `preprocess_roi` function expands the box to a square with 20% padding before passing to the classifier.
+
+### Colour channel order (RGB vs BGR)
+
+The `main` ISP stream is configured with `"format": "BGR888"` — **not** `"RGB888"`. picamera2's `888` format names are byte-reversed relative to the numpy array they produce: `"BGR888"` yields an `[R, G, B]`-ordered array, while `"RGB888"` yields `[B, G, R]`. Everything downstream assumes **RGB**: the ConvNeXt classifier (ImageNet-RGB normalisation in `build_preprocessing`), `save_thumbnail` (`PIL.Image.fromarray`), and the `cv2.cvtColor(..., RGB2BGR)` writes in `classification_pipeline.py` / `camera_server.py`. Requesting `"RGB888"` therefore swaps red↔blue in every saved image **and** feeds the classifier mis-ordered channels, producing garbage species predictions. If colours ever invert again, check this format string first.
 
 ## Conventions
 

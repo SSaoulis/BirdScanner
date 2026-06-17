@@ -27,9 +27,10 @@ DEFAULT_CAMERA_SERVER_PORT = 8000
 def capture_jpeg(picam2: Any, stream: str = "main") -> bytes:
     """Capture a single frame from the running camera and encode it as JPEG.
 
-    The camera's ``main`` stream is configured as ``RGB888``; OpenCV's encoder
-    expects BGR ordering, so the frame is converted before encoding to keep
-    colours correct.
+    The camera's ``main`` stream is configured as ``BGR888``, which (per
+    picamera2's byte-reversed format naming) yields an RGB-ordered array.
+    OpenCV's encoder expects BGR ordering, so the frame is converted before
+    encoding to keep colours correct.
 
     Args:
         picam2: A started ``Picamera2`` instance to capture from.

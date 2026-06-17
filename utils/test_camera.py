@@ -66,7 +66,9 @@ def take_photo(output_dir: str = ".", filename: Optional[str] = None) -> str:
     config = camera.create_preview_configuration(
         main={
             "size": (640, 640),
-            "format": "RGB888",
+            # picamera2's "888" names are byte-reversed: "BGR888" yields an
+            # [R, G, B] array. Match src/main.py so colours stay correct.
+            "format": "BGR888",
         },
         controls={
             "ScalerCrop": (crop_x, crop_y, CROP_W, CROP_H),
