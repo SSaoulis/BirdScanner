@@ -299,12 +299,24 @@ class TestSpecies:
 class _FakeHttpxResponse:
     """Minimal httpx.Response stand-in for the camera proxy."""
 
-    def __init__(self, content: bytes, content_type: str = "image/jpeg") -> None:
+    def __init__(
+        self,
+        content: bytes = b"",
+        content_type: str = "image/jpeg",
+        status_code: int = 200,
+        json_body=None,
+    ) -> None:
         self.content = content
         self.headers = {"Content-Type": content_type}
+        self.status_code = status_code
+        self.text = content.decode("utf-8", "replace")
+        self._json_body = json_body
 
     def raise_for_status(self) -> None:
         return None
+
+    def json(self):
+        return self._json_body
 
 
 class TestCamera:
@@ -335,3 +347,63 @@ class TestCamera:
         monkeypatch.setattr(camera.httpx, "get", _fake_get)
         resp = client.get("/api/camera/snapshot")
         assert resp.status_code == 503
+
+    def test_full_snapshot_proxies_detector_jpeg(self, client, monkeypatch):
+        from backend.routers import camera
+
+        captured = {}
+
+        def _fake_get(url, timeout):
+            captured["url"] = url
+            return _FakeHttpxResponse(b"FULLJPEG")
+
+        monkeypatch.setattr(camera.httpx, "get", _fake_get)
+        resp = client.get("/api/camera/snapshot/full")
+        assert resp.status_code == 200
+        assert resp.content == b"FULLJPEG"
+        assert captured["url"].endswith("/capture/full")
+
+    def test_get_crop_proxies_detector_json(self, client, monkeypatch):
+        from backend.routers import camera
+
+        state = {"x": 1, "y": 2, "w": 900, "h": 900, "sensor_w": 4056}
+
+        def _fake_get(url, timeout):
+            return _FakeHttpxResponse(content_type="application/json", json_body=state)
+
+        monkeypatch.setattr(camera.httpx, "get", _fake_get)
+        resp = client.get("/api/camera/crop")
+        assert resp.status_code == 200
+        assert resp.json() == state
+
+    def test_set_crop_proxies_post_body(self, client, monkeypatch):
+        from backend.routers import camera
+
+        captured = {}
+        state = {"x": 1, "y": 2, "w": 900, "h": 900}
+
+        def _fake_post(url, json, timeout):
+            captured["url"] = url
+            captured["json"] = json
+            return _FakeHttpxResponse(
+                content_type="application/json", json_body=state
+            )
+
+        monkeypatch.setattr(camera.httpx, "post", _fake_post)
+        resp = client.post(
+            "/api/camera/crop", json={"nx": 0.1, "ny": 0.2, "nw": 0.3, "nh": 0.4}
+        )
+        assert resp.status_code == 200
+        assert resp.json() == state
+        assert captured["url"].endswith("/crop")
+        assert captured["json"] == {"nx": 0.1, "ny": 0.2, "nw": 0.3, "nh": 0.4}
+
+    def test_set_crop_relays_detector_400(self, client, monkeypatch):
+        from backend.routers import camera
+
+        def _fake_post(url, json, timeout):
+            return _FakeHttpxResponse(b"bad body", status_code=400)
+
+        monkeypatch.setattr(camera.httpx, "post", _fake_post)
+        resp = client.post("/api/camera/crop", json={"nx": 0.1})
+        assert resp.status_code == 400
