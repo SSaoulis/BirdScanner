@@ -17,20 +17,20 @@ function tempColor(celsius: number): string {
 
 interface GaugeBarProps {
   label: string;
-  value: number;
+  value: number | null;
   unit: string;
   max: number;
   colorClass: string;
 }
 
 function GaugeBar({ label, value, unit, max, colorClass }: GaugeBarProps) {
-  const pct = Math.min((value / max) * 100, 100);
+  const pct = value === null ? 0 : Math.min((value / max) * 100, 100);
   return (
     <div>
       <div className="flex justify-between text-sm mb-1">
         <span className="text-slate-400">{label}</span>
         <span className="font-mono font-semibold text-white">
-          {value.toFixed(1)}{unit}
+          {value === null ? "—" : `${value.toFixed(1)}${unit}`}
         </span>
       </div>
       <div className="h-2 rounded-full bg-slate-700 overflow-hidden">
@@ -78,50 +78,48 @@ export function SystemMonitor() {
         <p className="text-sm text-red-400">{error}</p>
       )}
 
-      {status === null && !error && (
-        <p className="text-sm text-slate-500 animate-pulse">Loading…</p>
-      )}
-
-      {status && (
-        <div className="space-y-3">
-          <GaugeBar
-            label="CPU"
-            value={status.cpu_percent}
-            unit="%"
-            max={100}
-            colorClass={gaugeColor(status.cpu_percent)}
-          />
-          <GaugeBar
-            label="Memory"
-            value={status.memory_percent}
-            unit="%"
-            max={100}
-            colorClass={gaugeColor(status.memory_percent)}
-          />
-          <GaugeBar
-            label="Disk"
-            value={status.disk_percent}
-            unit="%"
-            max={100}
-            colorClass={gaugeColor(status.disk_percent)}
-          />
-          {status.cpu_temp_celsius !== null && (
-            <GaugeBar
-              label="CPU Temp"
-              value={status.cpu_temp_celsius}
-              unit="°C"
-              max={100}
-              colorClass={tempColor(status.cpu_temp_celsius)}
-            />
-          )}
-          <div className="flex justify-between text-sm pt-1 border-t border-slate-700">
-            <span className="text-slate-400">Uptime</span>
-            <span className="font-mono font-semibold text-white">
-              {formatUptime(status.uptime_seconds)}
-            </span>
-          </div>
+      {/*
+        The gauge structure is always rendered (with placeholder dashes/empty
+        bars until the first poll resolves) so the component keeps a fixed size
+        from the initial render — this avoids the page shifting when values
+        arrive. When `status` is null, every gauge falls back to a null value.
+      */}
+      <div className="space-y-3" aria-busy={status === null && !error}>
+        <GaugeBar
+          label="CPU"
+          value={status?.cpu_percent ?? null}
+          unit="%"
+          max={100}
+          colorClass={gaugeColor(status?.cpu_percent ?? 0)}
+        />
+        <GaugeBar
+          label="Memory"
+          value={status?.memory_percent ?? null}
+          unit="%"
+          max={100}
+          colorClass={gaugeColor(status?.memory_percent ?? 0)}
+        />
+        <GaugeBar
+          label="Disk"
+          value={status?.disk_percent ?? null}
+          unit="%"
+          max={100}
+          colorClass={gaugeColor(status?.disk_percent ?? 0)}
+        />
+        <GaugeBar
+          label="CPU Temp"
+          value={status?.cpu_temp_celsius ?? null}
+          unit="°C"
+          max={100}
+          colorClass={tempColor(status?.cpu_temp_celsius ?? 0)}
+        />
+        <div className="flex justify-between text-sm pt-1 border-t border-slate-700">
+          <span className="text-slate-400">Uptime</span>
+          <span className="font-mono font-semibold text-white">
+            {status === null ? "—" : formatUptime(status.uptime_seconds)}
+          </span>
         </div>
-      )}
+      </div>
     </div>
   );
 }
