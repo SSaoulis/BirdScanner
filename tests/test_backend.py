@@ -169,6 +169,45 @@ class TestListDetections:
         timestamps = [d["timestamp"] for d in resp.json()]
         assert timestamps == sorted(timestamps, reverse=True)
 
+    def test_tied_timestamps_paginate_without_duplicates(
+        self, session_factory, image_dir
+    ):
+        """Pages must not overlap when many rows share one timestamp.
+
+        Without a deterministic tiebreaker SQLite can return tied rows in a
+        different order per query, so offset-based pages overlap and the UI
+        shows the same detection twice. The ``id`` tiebreaker keeps the order
+        stable so every paginated page is disjoint.
+        """
+        same_ts = datetime(2024, 7, 1, 9, 0, 0, tzinfo=timezone.utc)
+        with session_factory() as session:
+            for track_id in range(10):
+                _make_record(
+                    session, image_dir, track_id=track_id, ts=same_ts
+                )
+
+        from backend.main import app
+        from backend.dependencies import get_session, get_image_dir
+
+        def _override_session():
+            with session_factory() as session:
+                yield session
+
+        app.dependency_overrides[get_session] = _override_session
+        app.dependency_overrides[get_image_dir] = lambda: image_dir
+        try:
+            client = TestClient(app)
+            seen_ids: list[int] = []
+            for offset in range(0, 10, 3):
+                page = client.get(
+                    f"/api/detections?limit=3&offset={offset}"
+                ).json()
+                seen_ids.extend(d["id"] for d in page)
+        finally:
+            app.dependency_overrides.clear()
+
+        assert len(seen_ids) == len(set(seen_ids)) == 10
+
 
 class TestGetDetection:
     def test_returns_correct_record(self, client):
