@@ -24,7 +24,10 @@ services:
     ports:
       - "${API_PORT:-8080}:8080"
     volumes:
-      - data:/data:ro         # read-only; detector owns all writes
+      - data:/data:ro         # read-only; detector owns all writes.
+                              # Also carries the species-reference bank at
+                              # /data/species_reference (SPECIES_REFERENCE_DIR);
+                              # see .env.example.
     env_file: .env
     depends_on:
       - detector
