@@ -50,6 +50,9 @@ from db.database import (  # noqa: E402  pylint: disable=wrong-import-position
 from db.writer import (  # noqa: E402  pylint: disable=wrong-import-position
     DetectionWriter,
 )
+from db.deleter import (  # noqa: E402  pylint: disable=wrong-import-position
+    delete_detection,
+)
 
 
 def wait_for_camera(model_path: str, retry_interval: float = 30.0) -> IMX500:
@@ -250,15 +253,31 @@ def main():
         sensor_h=SENSOR_H,
     )
 
-    # Expose on-demand snapshots + crop control so the read-only API can surface
-    # a live test image and the crop editor (the detector owns the camera
-    # exclusively; the API proxies to this). The snapshot server is auxiliary:
-    # if its port is already in use (another service or a stale instance), log a
-    # warning and run without it rather than killing the detection pipeline.
+    # Deletion runs synchronously on the control server thread against the same
+    # engine the writer uses, removing the DB row and the image + thumbnail
+    # files (the detector owns the read-write data volume; the API proxies here).
+    from pathlib import Path
+
+    image_root = Path(classification_pipeline.IMAGE_DIR)
+    delete_session_factory = make_session_factory(engine)
+
+    def handle_delete(detection_id: int) -> bool:
+        """Delete a detection by id; returns True if a record existed."""
+        return delete_detection(delete_session_factory, image_root, detection_id)
+
+    # Expose on-demand snapshots + crop control + detection deletion so the
+    # read-only API can surface a live test image, the crop editor, and delete
+    # detections (the detector owns the camera exclusively; the API proxies to
+    # this). The control server is auxiliary: if its port is already in use
+    # (another service or a stale instance), log a warning and run without it
+    # rather than killing the detection pipeline.
     snapshot_port = camera_server_port()
     try:
         camera_server = start_camera_server(
-            picam2, snapshot_port, crop_controller=crop_controller
+            picam2,
+            snapshot_port,
+            crop_controller=crop_controller,
+            delete_detection=handle_delete,
         )
     except OSError as exc:
         tracking_logger.warning(

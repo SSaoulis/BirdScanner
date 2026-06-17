@@ -233,6 +233,52 @@ class TestGetDetection:
         assert resp.status_code == 404
 
 
+class _FakeDeleteResponse:
+    """Minimal httpx.Response stand-in for the delete proxy."""
+
+    def __init__(self, status_code: int) -> None:
+        self.status_code = status_code
+
+
+class TestDeleteDetection:
+    def test_proxies_delete_to_detector(self, client, monkeypatch):
+        from backend.routers import detections
+
+        captured = {}
+
+        def _fake_delete(url, timeout):
+            captured["url"] = url
+            return _FakeDeleteResponse(204)
+
+        monkeypatch.setattr(detections.httpx, "delete", _fake_delete)
+        resp = client.delete("/api/detections/123")
+        assert resp.status_code == 204
+        assert captured["url"].endswith("/detections/123")
+
+    def test_relays_404_from_detector(self, client, monkeypatch):
+        from backend.routers import detections
+
+        monkeypatch.setattr(
+            detections.httpx,
+            "delete",
+            lambda url, timeout: _FakeDeleteResponse(404),
+        )
+        resp = client.delete("/api/detections/123")
+        assert resp.status_code == 404
+
+    def test_returns_503_when_detector_unreachable(self, client, monkeypatch):
+        import httpx
+
+        from backend.routers import detections
+
+        def _fake_delete(url, timeout):
+            raise httpx.ConnectError("connection refused")
+
+        monkeypatch.setattr(detections.httpx, "delete", _fake_delete)
+        resp = client.delete("/api/detections/123")
+        assert resp.status_code == 503
+
+
 # ---------------------------------------------------------------------------
 # Images
 # ---------------------------------------------------------------------------

@@ -126,6 +126,32 @@ export function History() {
     setLightboxIndex(null);
   }
 
+  // ── Deletion ──────────────────────────────────────────────────────
+  /**
+   * Remove already-deleted detections from local state. The actual API
+   * deletes are performed by the Lightbox / FileDownloader; this only reaps
+   * the now-gone rows so the list, selection, and pagination offset stay in
+   * sync, and closes the lightbox (its positional index is no longer valid).
+   */
+  const removeDetections = useCallback((ids: number[]) => {
+    if (ids.length === 0) return;
+    const removed = new Set(ids);
+    setDetections((prev) => prev.filter((d) => !removed.has(d.id)));
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      ids.forEach((id) => next.delete(id));
+      return next;
+    });
+    setOffset((prev) => Math.max(0, prev - ids.length));
+    setLightboxIndex(null);
+  }, []);
+
+  /** Remove a single deleted detection (used by the Lightbox). */
+  const handleDeleteDetection = useCallback(
+    (id: number) => removeDetections([id]),
+    [removeDetections]
+  );
+
   return (
     <div className="min-h-screen bg-slate-900 text-white">
       {/* Page header */}
@@ -250,6 +276,7 @@ export function History() {
             lightboxIndex={lightboxIndex}
             onOpenLightbox={handleOpenLightbox}
             onCloseLightbox={handleCloseLightbox}
+            onDeleteDetection={handleDeleteDetection}
           />
         ) : (
           <Gallery
@@ -264,6 +291,8 @@ export function History() {
             lightboxIndex={lightboxIndex}
             onOpenLightbox={handleOpenLightbox}
             onCloseLightbox={handleCloseLightbox}
+            onDeleteDetection={handleDeleteDetection}
+            onDeleteSelected={removeDetections}
           />
         )}
       </div>

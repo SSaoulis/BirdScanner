@@ -80,6 +80,11 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+async function apiDelete(path: string): Promise<void> {
+  const res = await fetch(path, { method: "DELETE" });
+  if (!res.ok) throw new Error(`API ${path} → ${res.status} ${res.statusText}`);
+}
+
 export const api = {
   detections: {
     list: (params?: DetectionListParams): Promise<Detection[]> =>
@@ -87,6 +92,10 @@ export const api = {
 
     get: (id: number): Promise<Detection> =>
       apiFetch<Detection>(`/api/detections/${id}`),
+
+    /** Permanently delete a detection (its DB row + image files). */
+    delete: (id: number): Promise<void> =>
+      apiDelete(`/api/detections/${id}`),
   },
 
   images: {
