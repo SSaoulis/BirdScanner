@@ -22,6 +22,7 @@ from classification_pipeline import (
 )
 from tracking import StableDetectionTracker
 import classification_pipeline
+from camera_server import camera_server_port, start_camera_server
 from config import config as app_config
 
 from db.database import make_engine, init_db, make_session_factory
@@ -187,6 +188,10 @@ def main():
     if intrinsics.preserve_aspect_ratio:
         imx500.set_auto_aspect_ratio()
 
+    # Expose on-demand snapshots so the read-only API can surface a live test
+    # image (the detector owns the camera exclusively; the API proxies to this).
+    camera_server = start_camera_server(picam2, camera_server_port())
+
     # Get labels for display
     labels = get_labels(intrinsics)
 
@@ -224,6 +229,7 @@ def main():
                 last_results, classification_pipeline.classification_results
             )
     except KeyboardInterrupt:
+        camera_server.shutdown()
         manager.stop()
         detection_writer.stop()
 

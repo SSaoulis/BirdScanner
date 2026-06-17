@@ -68,6 +68,11 @@ export const api = {
   species: {
     list: (): Promise<SpeciesSummary[]> => apiFetch<SpeciesSummary[]>("/api/species"),
   },
+
+  camera: {
+    /** URL for an on-demand camera snapshot, proxied from the detector. */
+    snapshotUrl: (): string => "/api/camera/snapshot",
+  },
 };
 
 /** Format a timestamp string as a human-readable "time ago" label. */
