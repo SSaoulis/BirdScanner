@@ -101,7 +101,7 @@ monolithic `object_detection.py` was refactored along these seams):
 **`backend/`** — FastAPI REST API (Phase 2):
 - `backend/main.py` — app factory; mounts the five routers; optionally serves `frontend/dist/` at `/` when the build exists
 - `backend/dependencies.py` — `get_session()` and `get_image_dir()` FastAPI dependency providers (reads `DB_PATH` / `IMAGE_DIR` env vars); the engine is opened **read-only** (`make_engine(read_only=True)`) and the API never runs `init_db` — the detector owns schema creation, and the DB is mounted read-only
-- `backend/routers/detections.py` — `GET /api/detections` (paginated + filtered) and `GET /api/detections/{id}`
+- `backend/routers/detections.py` — `GET /api/detections` (paginated + filtered by `species`, `from`, `to`, and `min_confidence` — a 0–1 floor applied as `confidence >= min_confidence`) and `GET /api/detections/{id}`
 - `backend/routers/images.py` — `GET /api/images/{id}/thumbnail`, `GET /api/images/{id}/full`, `GET /api/images/download?ids=...` (chunked ZIP)
 - `backend/routers/system.py` — `GET /api/system` (CPU/mem/disk/temp/uptime via psutil)
 - `backend/routers/species.py` — `GET /api/species` (list with counts, sorted by count desc)
@@ -134,8 +134,8 @@ monolithic `object_detection.py` was refactored along these seams):
 - `frontend/src/App.tsx` — root component; sets up `react-router-dom` `BrowserRouter` with routes `/` → Dashboard, `/history` → History, and `/camera` → Camera; renders a top-level nav bar
 - `frontend/src/components/SystemMonitor.tsx` — polls `/api/system` every 5 s; renders animated gauge bars (green/yellow/red) for CPU, memory, disk, temp, and uptime
 - `frontend/src/components/DetectionCard.tsx` — loads thumbnail from `/api/images/{id}/thumbnail`; shows species, confidence %, and time-ago label; supports optional `onSelect`/`selected` props for bulk-select mode and `onOpenLightbox` prop to trigger the lightbox
-- `frontend/src/pages/Dashboard.tsx` — composes `SystemMonitor` + a horizontal-scroll strip of the last 10 `DetectionCard`s
-- `frontend/src/pages/History.tsx` — full-page history view; filter bar (species dropdown + from/to date pickers), tab switcher (Timeline | Gallery), infinite-scroll pagination (20/page via `IntersectionObserver`); owns all filter/pagination/lightbox/selection state and passes it down to sub-views
+- `frontend/src/pages/Dashboard.tsx` — composes `SystemMonitor` + a horizontal-scroll strip of the last 10 `DetectionCard`s; a min-confidence slider (0–100%) refetches the strip with the `min_confidence` query param (0 = show all)
+- `frontend/src/pages/History.tsx` — full-page history view; filter bar (species dropdown + from/to date pickers + min-confidence slider mapped to the `min_confidence` query param, 0 = show all), tab switcher (Timeline | Gallery), infinite-scroll pagination (20/page via `IntersectionObserver`); owns all filter/pagination/lightbox/selection state and passes it down to sub-views. Filtering is done server-side so pagination stays correct
 - `frontend/src/pages/Camera.tsx` — Camera tab; a "Test Camera" button fetches `/api/camera/snapshot` as a blob (so HTTP errors surface as a message, not a broken image), cache-busts per click, and displays the returned frame; revokes object URLs on replace/unmount
 - `frontend/src/components/Timeline.tsx` — chronological paginated list of `DetectionCard`s with an `IntersectionObserver` sentinel for infinite scroll; opens lightbox on thumbnail click; full-res images are never loaded until the lightbox is opened
 - `frontend/src/components/Gallery.tsx` — uniform thumbnail grid with checkbox-based multi-select (checkbox overlay + ring); `IntersectionObserver` for infinite scroll; integrates `FileDownloader` toolbar; opens lightbox on thumbnail click

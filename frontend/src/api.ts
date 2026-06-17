@@ -30,6 +30,8 @@ export interface DetectionListParams {
   species?: string;
   from?: string;
   to?: string;
+  /** Only return detections with confidence at or above this value (0–1). */
+  min_confidence?: number;
   limit?: number;
   offset?: number;
 }
