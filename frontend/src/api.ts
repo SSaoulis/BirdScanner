@@ -26,6 +26,30 @@ export interface SpeciesSummary {
   count: number;
 }
 
+export interface SpeciesReferenceImage {
+  /** Ready-to-use API path for the reference image; render directly in <img src>. */
+  url: string;
+  attribution: string;
+  license: string | null;
+}
+
+export interface SpeciesReference {
+  common_name: string;
+  scientific_name: string | null;
+  summary: string;
+  behaviour: string | null;
+  wikipedia_url: string | null;
+  images: SpeciesReferenceImage[];
+}
+
+/** Error thrown by apiFetch carrying the HTTP status code, so callers can branch on 404. */
+export class ApiError extends Error {
+  constructor(public readonly status: number, message: string) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
 export interface DetectionListParams {
   species?: string;
   from?: string;
@@ -66,7 +90,7 @@ async function apiFetch<T>(path: string, params?: Record<string, string | number
     }
   }
   const res = await fetch(url.toString());
-  if (!res.ok) throw new Error(`API ${path} → ${res.status} ${res.statusText}`);
+  if (!res.ok) throw new ApiError(res.status, `API ${path} → ${res.status} ${res.statusText}`);
   return res.json() as Promise<T>;
 }
 
@@ -110,6 +134,14 @@ export const api = {
 
   species: {
     list: (): Promise<SpeciesSummary[]> => apiFetch<SpeciesSummary[]>("/api/species"),
+
+    /**
+     * Fetch reference data (images + species info) for a species by its
+     * common name. Rejects with an ApiError (status 404) when no reference
+     * data exists for the species.
+     */
+    reference: (name: string): Promise<SpeciesReference> =>
+      apiFetch<SpeciesReference>(`/api/species/${encodeURIComponent(name)}/reference`),
   },
 
   camera: {
