@@ -26,12 +26,60 @@ export interface SpeciesSummary {
   count: number;
 }
 
+export interface SpeciesReferenceImage {
+  /** Ready-to-use API path for the reference image; render directly in <img src>. */
+  url: string;
+  attribution: string;
+  license: string | null;
+}
+
+export interface SpeciesReference {
+  common_name: string;
+  scientific_name: string | null;
+  summary: string;
+  behaviour: string | null;
+  wikipedia_url: string | null;
+  images: SpeciesReferenceImage[];
+}
+
+/** Error thrown by apiFetch carrying the HTTP status code, so callers can branch on 404. */
+export class ApiError extends Error {
+  constructor(public readonly status: number, message: string) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
 export interface DetectionListParams {
   species?: string;
   from?: string;
   to?: string;
+  /** Only return detections with confidence at or above this value (0–1). */
+  min_confidence?: number;
   limit?: number;
   offset?: number;
+}
+
+/** A normalized crop box (fractions in [0, 1]) over the displayed preview. */
+export interface NormalizedBox {
+  nx: number;
+  ny: number;
+  nw: number;
+  nh: number;
+}
+
+/** The detection crop region as reported by the detector. */
+export interface CropState {
+  /** Crop rectangle in raw sensor pixels. */
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  /** Same region as a normalized box over the displayed (flipped) preview. */
+  norm: NormalizedBox;
+  /** Full sensor dimensions, for rendering the preview at the true aspect. */
+  sensor_w: number;
+  sensor_h: number;
 }
 
 async function apiFetch<T>(path: string, params?: Record<string, string | number | undefined>): Promise<T> {
@@ -42,8 +90,23 @@ async function apiFetch<T>(path: string, params?: Record<string, string | number
     }
   }
   const res = await fetch(url.toString());
+  if (!res.ok) throw new ApiError(res.status, `API ${path} → ${res.status} ${res.statusText}`);
+  return res.json() as Promise<T>;
+}
+
+async function postJson<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
   if (!res.ok) throw new Error(`API ${path} → ${res.status} ${res.statusText}`);
   return res.json() as Promise<T>;
+}
+
+async function apiDelete(path: string): Promise<void> {
+  const res = await fetch(path, { method: "DELETE" });
+  if (!res.ok) throw new Error(`API ${path} → ${res.status} ${res.statusText}`);
 }
 
 export const api = {
@@ -53,6 +116,10 @@ export const api = {
 
     get: (id: number): Promise<Detection> =>
       apiFetch<Detection>(`/api/detections/${id}`),
+
+    /** Permanently delete a detection (its DB row + image files). */
+    delete: (id: number): Promise<void> =>
+      apiDelete(`/api/detections/${id}`),
   },
 
   images: {
@@ -67,11 +134,29 @@ export const api = {
 
   species: {
     list: (): Promise<SpeciesSummary[]> => apiFetch<SpeciesSummary[]>("/api/species"),
+
+    /**
+     * Fetch reference data (images + species info) for a species by its
+     * common name. Rejects with an ApiError (status 404) when no reference
+     * data exists for the species.
+     */
+    reference: (name: string): Promise<SpeciesReference> =>
+      apiFetch<SpeciesReference>(`/api/species/${encodeURIComponent(name)}/reference`),
   },
 
   camera: {
-    /** URL for an on-demand camera snapshot, proxied from the detector. */
+    /** URL for an on-demand snapshot of the current (cropped) feed. */
     snapshotUrl: (): string => "/api/camera/snapshot",
+
+    /** URL for a full-sensor snapshot used by the crop editor. */
+    fullSnapshotUrl: (): string => "/api/camera/snapshot/full",
+
+    /** Fetch the detector's current detection-crop region. */
+    getCrop: (): Promise<CropState> => apiFetch<CropState>("/api/camera/crop"),
+
+    /** Apply a new crop region (a normalized box, or `{ reset: true }`). */
+    setCrop: (body: NormalizedBox | { reset: true }): Promise<CropState> =>
+      postJson<CropState>("/api/camera/crop", body),
   },
 };
 

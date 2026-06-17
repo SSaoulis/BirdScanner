@@ -9,6 +9,7 @@ services:
       - data:/data
       - /run/udev:/run/udev:ro   # libcamera enumerates cameras via udev
       - /sys/kernel/debug:/sys/kernel/debug   # IMX500 firmware-upload progress lives in debugfs (fw_progress)
+      - /usr/share/imx500-models:/usr/share/imx500-models:ro   # use the host's .rpk network models (the container's imx500-all apt package lacks the YOLO11n model the detector loads)
     devices:
       - /dev/dma_heap:/dev/dma_heap   # picamera2 allocates buffers from the DMA heap
     expose:
@@ -23,7 +24,10 @@ services:
     ports:
       - "${API_PORT:-8080}:8080"
     volumes:
-      - data:/data:ro         # read-only; detector owns all writes
+      - data:/data:ro         # read-only; detector owns all writes.
+                              # Also carries the species-reference bank at
+                              # /data/species_reference (SPECIES_REFERENCE_DIR);
+                              # see .env.example.
     env_file: .env
     depends_on:
       - detector

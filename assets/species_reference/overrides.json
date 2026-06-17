@@ -1,0 +1,35 @@
+{
+  "Unknown": {
+    "skip": true
+  },
+  "Audouins gull": {
+    "wikipedia_title": "Audouin's gull"
+  },
+  "Bonellis eagle": {
+    "wikipedia_title": "Bonelli's eagle"
+  },
+  "Cettis warbler": {
+    "wikipedia_title": "Cetti's warbler"
+  },
+  "Sykess warbler": {
+    "wikipedia_title": "Sykes's warbler"
+  },
+  "Pallass leaf warbler": {
+    "wikipedia_title": "Pallas's leaf warbler"
+  },
+  "Pallass grasshopper warbler": {
+    "wikipedia_title": "Pallas's grasshopper warbler"
+  },
+  "Pallass reed bunting": {
+    "wikipedia_title": "Pallas's reed bunting"
+  },
+  "Pallass gull": {
+    "wikipedia_title": "Pallas's gull"
+  },
+  "Temmincks stint": {
+    "wikipedia_title": "Temminck's stint"
+  },
+  "Montagus harrier": {
+    "wikipedia_title": "Montagu's harrier"
+  }
+}

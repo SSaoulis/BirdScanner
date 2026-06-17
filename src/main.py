@@ -1,6 +1,7 @@
 """Main entry point for bird detection and classification application."""
 
 import logging
+import os
 import sys
 import threading
 import time
@@ -24,9 +25,34 @@ from tracking import StableDetectionTracker
 import classification_pipeline
 from camera_server import camera_server_port, start_camera_server
 from config import config as app_config
+from crop import (
+    SENSOR_W,
+    SENSOR_H,
+    crop_config_path,
+    default_crop_region,
+    load_crop_region,
+    main_stream_size_for_crop,
+)
+from crop_controller import CropController
 
-from db.database import make_engine, init_db, make_session_factory
-from db.writer import DetectionWriter
+# The `db` package lives at the repository root, one level above this file's
+# directory (src/). The flat sibling imports above resolve via sys.path[0]
+# (= src/), but `db` does not, so add the repo root to the path explicitly.
+# This lets `cd src && python main.py` work locally and mirrors the Docker
+# image's PYTHONPATH=/app without requiring the env var to be set.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from db.database import (  # noqa: E402  pylint: disable=wrong-import-position
+    make_engine,
+    init_db,
+    make_session_factory,
+)
+from db.writer import (  # noqa: E402  pylint: disable=wrong-import-position
+    DetectionWriter,
+)
+from db.deleter import (  # noqa: E402  pylint: disable=wrong-import-position
+    delete_detection,
+)
 
 
 def wait_for_camera(model_path: str, retry_interval: float = 30.0) -> IMX500:
@@ -158,39 +184,55 @@ def main():
     manager.set_results_lock(results_lock)
 
     picam2 = Picamera2(imx500.camera_num)
-    SENSOR_W, SENSOR_H = 4056, 3040
-    CROP_W, CROP_H = 900, 900
 
-    ANCHOR_X_FRAC = 4 / 13
-    ANCHOR_Y_FRAC = 5 / 10
-
-    crop_x = int(SENSOR_W * ANCHOR_X_FRAC)
-    crop_y = int(SENSOR_H * ANCHOR_Y_FRAC)
-
-    # Clamp to sensor bounds
-    crop_x = max(0, min(crop_x, SENSOR_W - CROP_W))
-    crop_y = max(0, min(crop_y, SENSOR_H - CROP_H))
-
-    config = picam2.create_preview_configuration(
-        # picamera2's "888" format names are byte-reversed vs. the numpy array
-        # they yield: "BGR888" delivers an [R, G, B]-ordered array. The whole
-        # pipeline (ConvNeXt classifier, PIL thumbnails, the cv2 RGB2BGR writes)
-        # assumes RGB, so we must request BGR888 to actually get RGB. Using
-        # "RGB888" here yields BGR and swaps red<->blue everywhere downstream.
-        main={"size": (640, 640), "format": "BGR888"},
-        controls={
-            "FrameRate": intrinsics.inference_rate,
-            "ScalerCrop": (crop_x, crop_y, CROP_W, CROP_H),
-        },
-        # 6 buffers keep ample jitter margin while halving DMA-heap pressure
-        # vs the inherited 12. Inside the container the kernel CMA pool is shared
-        # with the IMX500 firmware upload and the 2028x1520 raw sensor stream
-        # (the dominant consumer, fixed at the sensor's smallest mode), so 12
-        # buffers exhausted CMA and crashed picam2.start() with ENOMEM.
-        buffer_count=6,
-        transform=libcamera.Transform(vflip=True, hflip=True),
+    # The detection crop region is variable and configured from the UI. Load the
+    # last saved region (falling back to the historical 900x900 feeder default)
+    # and size the ``main`` stream to its aspect ratio so the region is not
+    # stretched into a square frame.
+    crop_region = load_crop_region(
+        crop_config_path(), default_crop_region(SENSOR_W, SENSOR_H)
     )
-    print(f"ScalerCrop = ({crop_x}, {crop_y}, {CROP_W}, {CROP_H})")
+    initial_main_size = main_stream_size_for_crop(crop_region.w, crop_region.h)
+
+    def build_camera_config(
+        main_size: tuple[int, int], scaler_crop: tuple[int, int, int, int]
+    ):
+        """Build the preview configuration for a given main size and crop.
+
+        Centralises every picamera2-specific knob so :class:`CropController` can
+        rebuild an equivalent configuration when an aspect-ratio change forces a
+        ``main`` stream resize.
+
+        Args:
+            main_size: The ``(w, h)`` of the ISP ``main`` output stream.
+            scaler_crop: The ``(x, y, w, h)`` sensor ScalerCrop region.
+
+        Returns:
+            A picamera2 preview configuration object.
+        """
+        return picam2.create_preview_configuration(
+            # picamera2's "888" format names are byte-reversed vs. the numpy
+            # array they yield: "BGR888" delivers an [R, G, B]-ordered array. The
+            # whole pipeline (ConvNeXt classifier, PIL thumbnails, the cv2
+            # RGB2BGR writes) assumes RGB, so we must request BGR888 to actually
+            # get RGB. Using "RGB888" here yields BGR and swaps red<->blue
+            # everywhere downstream.
+            main={"size": main_size, "format": "BGR888"},
+            controls={
+                "FrameRate": intrinsics.inference_rate,
+                "ScalerCrop": scaler_crop,
+            },
+            # 6 buffers keep ample jitter margin while halving DMA-heap pressure
+            # vs the inherited 12. Inside the container the kernel CMA pool is
+            # shared with the IMX500 firmware upload and the 2028x1520 raw sensor
+            # stream (the dominant consumer, fixed at the sensor's smallest mode),
+            # so 12 buffers exhausted CMA and crashed picam2.start() with ENOMEM.
+            buffer_count=6,
+            transform=libcamera.Transform(vflip=True, hflip=True),
+        )
+
+    config = build_camera_config(initial_main_size, crop_region.as_tuple())
+    print(f"ScalerCrop = {crop_region.as_tuple()}  main={initial_main_size}")
 
     imx500.show_network_fw_progress_bar()
     picam2.start(config, show_preview=app_config.preview)
@@ -198,9 +240,54 @@ def main():
     if intrinsics.preserve_aspect_ratio:
         imx500.set_auto_aspect_ratio()
 
-    # Expose on-demand snapshots so the read-only API can surface a live test
-    # image (the detector owns the camera exclusively; the API proxies to this).
-    camera_server = start_camera_server(picam2, camera_server_port())
+    # The crop controller owns every live change to the detection region and
+    # serialises camera access with the main capture loop below via its lock, so
+    # a UI-triggered reconfigure never races an in-flight capture.
+    crop_controller = CropController(
+        picam2=picam2,
+        region=crop_region,
+        main_size=initial_main_size,
+        config_factory=build_camera_config,
+        config_path=crop_config_path(),
+        sensor_w=SENSOR_W,
+        sensor_h=SENSOR_H,
+    )
+
+    # Deletion runs synchronously on the control server thread against the same
+    # engine the writer uses, removing the DB row and the image + thumbnail
+    # files (the detector owns the read-write data volume; the API proxies here).
+    from pathlib import Path
+
+    image_root = Path(classification_pipeline.IMAGE_DIR)
+    delete_session_factory = make_session_factory(engine)
+
+    def handle_delete(detection_id: int) -> bool:
+        """Delete a detection by id; returns True if a record existed."""
+        return delete_detection(delete_session_factory, image_root, detection_id)
+
+    # Expose on-demand snapshots + crop control + detection deletion so the
+    # read-only API can surface a live test image, the crop editor, and delete
+    # detections (the detector owns the camera exclusively; the API proxies to
+    # this). The control server is auxiliary: if its port is already in use
+    # (another service or a stale instance), log a warning and run without it
+    # rather than killing the detection pipeline.
+    snapshot_port = camera_server_port()
+    try:
+        camera_server = start_camera_server(
+            picam2,
+            snapshot_port,
+            crop_controller=crop_controller,
+            delete_detection=handle_delete,
+        )
+    except OSError as exc:
+        tracking_logger.warning(
+            "Camera snapshot server could not bind port %d (%s); continuing "
+            "without it. Set CAMERA_SERVER_PORT to a free port to enable the "
+            "Camera tab's Test Camera button.",
+            snapshot_port,
+            exc,
+        )
+        camera_server = None
 
     # Get labels for display
     labels = get_labels(intrinsics)
@@ -227,19 +314,25 @@ def main():
     # Main loop
     try:
         while True:
-            last_results = parse_detections(
-                picam2.capture_metadata(),
-                imx500,
-                intrinsics,
-                app_config.threshold,
-                picam2,
-            )
+            # Hold the crop controller's lock across capture + parse so a
+            # UI-triggered crop reconfigure (which may stop/start the camera)
+            # can never interleave with an in-flight capture.
+            with crop_controller.camera_lock:
+                metadata = picam2.capture_metadata()
+                last_results = parse_detections(
+                    metadata,
+                    imx500,
+                    intrinsics,
+                    app_config.threshold,
+                    picam2,
+                )
             # Update the detection classifications cache for temporal filtering
             update_detection_classifications_cache(
                 last_results, classification_pipeline.classification_results
             )
     except KeyboardInterrupt:
-        camera_server.shutdown()
+        if camera_server is not None:
+            camera_server.shutdown()
         manager.stop()
         detection_writer.stop()
 

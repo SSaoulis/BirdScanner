@@ -8,6 +8,8 @@ interface FileDownloaderProps {
   selectedIds: Set<number>;
   /** Called when the selection changes. */
   onSelectionChange: (ids: Set<number>) => void;
+  /** Called with the ids that were successfully deleted after a bulk delete. */
+  onDeleteSelected: (ids: number[]) => void;
 }
 
 interface DownloadProgress {
@@ -23,9 +25,10 @@ interface DownloadProgress {
  * are selected. Uses `fetch()` with a `ReadableStream` to track progress
  * via the `Content-Length` header.
  */
-export function FileDownloader({ allDetections, selectedIds, onSelectionChange }: FileDownloaderProps) {
+export function FileDownloader({ allDetections, selectedIds, onSelectionChange, onDeleteSelected }: FileDownloaderProps) {
   const [progress, setProgress] = useState<DownloadProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const selectedCount = selectedIds.size;
   const allIds = allDetections.map((d) => d.id);
@@ -101,6 +104,34 @@ export function FileDownloader({ allDetections, selectedIds, onSelectionChange }
     }
   }
 
+  /**
+   * Confirm, then delete every selected detection. Deletes are issued
+   * sequentially; ids that succeed are reported to the parent even if a later
+   * one fails, so a partial failure still removes what it could.
+   */
+  async function handleDeleteSelected() {
+    if (selectedIds.size === 0 || deleting) return;
+    if (!window.confirm(`Permanently delete ${selectedCount} detection(s) and their images?`)) {
+      return;
+    }
+
+    setDeleting(true);
+    setError(null);
+    const deleted: number[] = [];
+    let failed = 0;
+    for (const id of Array.from(selectedIds)) {
+      try {
+        await api.detections.delete(id);
+        deleted.push(id);
+      } catch {
+        failed += 1;
+      }
+    }
+    if (deleted.length > 0) onDeleteSelected(deleted);
+    if (failed > 0) setError(`Failed to delete ${failed} detection(s).`);
+    setDeleting(false);
+  }
+
   /** Compute a 0–100 integer percentage or null if total is unknown. */
   function getPercent(p: DownloadProgress): number | null {
     if (p.total === null) return null;
@@ -141,6 +172,17 @@ export function FileDownloader({ allDetections, selectedIds, onSelectionChange }
           disabled={progress !== null && !progress.done}
         >
           {progress && !progress.done ? "Downloading…" : `Download ZIP (${selectedCount})`}
+        </button>
+      )}
+
+      {/* Delete button */}
+      {selectedCount > 0 && (
+        <button
+          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white font-semibold text-sm transition-colors"
+          onClick={handleDeleteSelected}
+          disabled={deleting}
+        >
+          {deleting ? "Deleting…" : `Delete (${selectedCount})`}
         </button>
       )}
 

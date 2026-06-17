@@ -21,6 +21,13 @@ export function History() {
   const [filterSpecies, setFilterSpecies] = useState<string>("");
   const [filterFrom, setFilterFrom] = useState<string>("");
   const [filterTo, setFilterTo] = useState<string>("");
+  // Minimum confidence as a 0–100 percentage; 0 means "show all".
+  // `sliderMinConfidence` tracks the live slider position for display only;
+  // `filterMinConfidence` is the committed value that drives the fetch and is
+  // only updated when the slider is released (so dragging doesn't refetch on
+  // every intermediate value).
+  const [sliderMinConfidence, setSliderMinConfidence] = useState<number>(0);
+  const [filterMinConfidence, setFilterMinConfidence] = useState<number>(0);
 
   // ── Pagination state ─────────────────────────────────────────────
   const [detections, setDetections] = useState<Detection[]>([]);
@@ -56,6 +63,7 @@ export function History() {
         species: filterSpecies || undefined,
         from: filterFrom || undefined,
         to: filterTo || undefined,
+        min_confidence: filterMinConfidence > 0 ? filterMinConfidence / 100 : undefined,
         limit: PAGE_SIZE,
         offset: 0,
       });
@@ -68,7 +76,7 @@ export function History() {
     } finally {
       setLoading(false);
     }
-  }, [filterSpecies, filterFrom, filterTo]);
+  }, [filterSpecies, filterFrom, filterTo, filterMinConfidence]);
 
   useEffect(() => {
     loadFirstPage();
@@ -84,11 +92,22 @@ export function History() {
         species: filterSpecies || undefined,
         from: filterFrom || undefined,
         to: filterTo || undefined,
+        min_confidence: filterMinConfidence > 0 ? filterMinConfidence / 100 : undefined,
         limit: PAGE_SIZE,
         offset,
       });
 
-      setDetections((prev) => [...prev, ...data]);
+      // Drop any rows we already hold before appending. The detector writes
+      // new detections live, so a row inserted between page fetches shifts the
+      // offset window and makes the next page re-return rows we already have.
+      // Without this guard those rows render twice (in both Timeline and
+      // Gallery, which share this list). The offset cursor still advances by
+      // the raw page length so the server-side window keeps moving forward.
+      setDetections((prev) => {
+        const seen = new Set(prev.map((d) => d.id));
+        const fresh = data.filter((d) => !seen.has(d.id));
+        return [...prev, ...fresh];
+      });
       setOffset((prev) => prev + data.length);
       if (data.length < PAGE_SIZE) setExhausted(true);
     } catch (e) {
@@ -96,7 +115,7 @@ export function History() {
     } finally {
       setLoadingMore(false);
     }
-  }, [loadingMore, exhausted, filterSpecies, filterFrom, filterTo, offset]);
+  }, [loadingMore, exhausted, filterSpecies, filterFrom, filterTo, filterMinConfidence, offset]);
 
   // ── Lightbox helpers ──────────────────────────────────────────────
   function handleOpenLightbox(index: number) {
@@ -106,6 +125,32 @@ export function History() {
   function handleCloseLightbox() {
     setLightboxIndex(null);
   }
+
+  // ── Deletion ──────────────────────────────────────────────────────
+  /**
+   * Remove already-deleted detections from local state. The actual API
+   * deletes are performed by the Lightbox / FileDownloader; this only reaps
+   * the now-gone rows so the list, selection, and pagination offset stay in
+   * sync, and closes the lightbox (its positional index is no longer valid).
+   */
+  const removeDetections = useCallback((ids: number[]) => {
+    if (ids.length === 0) return;
+    const removed = new Set(ids);
+    setDetections((prev) => prev.filter((d) => !removed.has(d.id)));
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      ids.forEach((id) => next.delete(id));
+      return next;
+    });
+    setOffset((prev) => Math.max(0, prev - ids.length));
+    setLightboxIndex(null);
+  }, []);
+
+  /** Remove a single deleted detection (used by the Lightbox). */
+  const handleDeleteDetection = useCallback(
+    (id: number) => removeDetections([id]),
+    [removeDetections]
+  );
 
   return (
     <div className="min-h-screen bg-slate-900 text-white">
@@ -163,14 +208,36 @@ export function History() {
             />
           </div>
 
+          {/* Minimum confidence slider — refetches only when released. */}
+          <div className="flex flex-col gap-1 min-w-[180px]">
+            <label className="text-xs text-slate-400 font-medium" htmlFor="filter-confidence">
+              Min confidence: {sliderMinConfidence}%
+            </label>
+            <input
+              id="filter-confidence"
+              type="range"
+              min={0}
+              max={100}
+              step={1}
+              className="accent-emerald-500 mt-2"
+              value={sliderMinConfidence}
+              onChange={(e) => setSliderMinConfidence(Number(e.target.value))}
+              onMouseUp={() => setFilterMinConfidence(sliderMinConfidence)}
+              onTouchEnd={() => setFilterMinConfidence(sliderMinConfidence)}
+              onKeyUp={() => setFilterMinConfidence(sliderMinConfidence)}
+            />
+          </div>
+
           {/* Clear filters */}
-          {(filterSpecies || filterFrom || filterTo) && (
+          {(filterSpecies || filterFrom || filterTo || filterMinConfidence > 0) && (
             <button
               className="text-sm text-slate-400 hover:text-white underline self-end pb-2"
               onClick={() => {
                 setFilterSpecies("");
                 setFilterFrom("");
                 setFilterTo("");
+                setSliderMinConfidence(0);
+                setFilterMinConfidence(0);
               }}
             >
               Clear filters
@@ -209,6 +276,7 @@ export function History() {
             lightboxIndex={lightboxIndex}
             onOpenLightbox={handleOpenLightbox}
             onCloseLightbox={handleCloseLightbox}
+            onDeleteDetection={handleDeleteDetection}
           />
         ) : (
           <Gallery
@@ -223,6 +291,8 @@ export function History() {
             lightboxIndex={lightboxIndex}
             onOpenLightbox={handleOpenLightbox}
             onCloseLightbox={handleCloseLightbox}
+            onDeleteDetection={handleDeleteDetection}
+            onDeleteSelected={removeDetections}
           />
         )}
       </div>

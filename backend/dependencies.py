@@ -10,6 +10,11 @@ from db.database import make_engine, make_session_factory
 
 _DEFAULT_IMAGE_DIR = "/home/stefan/Pictures/bird_detections"
 
+# Repo-relative default for the offline-built species reference data bank.
+# Resolved the same robust way ``backend/main.py`` resolves the frontend dist
+# directory so it works regardless of the process's current working directory.
+_DEFAULT_REFERENCE_DIR = Path(__file__).parent.parent / "assets" / "species_reference"
+
 # Module-level singletons so the engine is created once per process.
 _engine = None
 _session_factory = None
@@ -51,3 +56,18 @@ def get_image_dir() -> Path:
         Resolved ``Path`` to the image directory.
     """
     return Path(os.environ.get("IMAGE_DIR", _DEFAULT_IMAGE_DIR))
+
+
+def get_reference_dir() -> Path:
+    """FastAPI dependency that returns the species-reference root directory.
+
+    Reads ``SPECIES_REFERENCE_DIR`` from the environment; defaults to the
+    repo-relative ``assets/species_reference`` directory.  The directory holds
+    the offline-built ``manifest.json`` plus cached reference images and may not
+    exist yet (the reference API degrades gracefully when it is absent).
+
+    Returns:
+        Resolved ``Path`` to the species-reference directory.
+    """
+    env_value = os.environ.get("SPECIES_REFERENCE_DIR")
+    return Path(env_value) if env_value else _DEFAULT_REFERENCE_DIR
