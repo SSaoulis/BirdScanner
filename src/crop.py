@@ -8,10 +8,13 @@ holds the pure, camera-independent logic for that crop:
 * :class:`CropRegion` — an ``(x, y, w, h)`` rectangle in **unflipped raw sensor
   pixel** coordinates (origin top-left of the sensor), plus clamping.
 * conversions between sensor coordinates and the **normalized** ``[0, 1]`` box the
-  UI draws over a full-sensor preview.  The live camera applies a 180-degree
-  ``vflip + hflip`` transform, so the preview the user draws on is rotated 180
-  degrees relative to raw sensor space; :func:`normalized_to_sensor` /
-  :func:`sensor_to_normalized` invert that rotation.
+  UI draws over a full-sensor preview.  Although the camera applies a 180-degree
+  ``vflip + hflip`` transform, libcamera applies ``ScalerCrop`` in the *same*
+  orientation as the transformed preview the user sees (verified empirically:
+  inverting the rotation cropped the diagonally-opposite region).  So
+  :func:`normalized_to_sensor` / :func:`sensor_to_normalized` are a direct
+  per-axis scale with **no** rotation — the displayed box maps to the matching
+  sensor region.
 * :func:`main_stream_size_for_crop` — the ISP ``main`` output size that matches a
   crop's aspect ratio (so the region is not stretched into a square stream).
 * JSON load/save so the chosen region survives detector restarts.
@@ -133,11 +136,10 @@ def normalized_to_sensor(
 
     The box is given as ``(nx, ny, nw, nh)`` fractions in ``[0, 1]`` of the
     full-sensor preview the user drew on, where ``(nx, ny)`` is the box's
-    top-left corner *as displayed*.  Because the live preview is produced through
-    a 180-degree ``vflip + hflip`` transform, the displayed top-left corner maps
-    to the sensor's bottom-right; this function inverts that rotation so the
-    returned region is in raw (unflipped) sensor coordinates suitable for
-    ``ScalerCrop``.
+    top-left corner *as displayed*.  libcamera applies ``ScalerCrop`` in the same
+    orientation as the (vflip+hflip) transformed preview, so the mapping is a
+    direct per-axis scale: the displayed top-left maps straight to the
+    ``ScalerCrop`` top-left, with no rotation.
 
     Args:
         nx: Normalized left edge of the box on the displayed preview.
@@ -155,15 +157,9 @@ def normalized_to_sensor(
     right = _clamp01(left + max(0.0, nw))
     bottom = _clamp01(top + max(0.0, nh))
 
-    # 180-degree rotation: the displayed (left, top)->(right, bottom) box maps to
-    # the sensor's opposite corner, so the sensor-space left/top come from the
-    # *complement* of the displayed right/bottom edges.
-    sensor_left = 1.0 - right
-    sensor_top = 1.0 - bottom
-
     region = CropRegion(
-        x=round(sensor_left * sensor_w),
-        y=round(sensor_top * sensor_h),
+        x=round(left * sensor_w),
+        y=round(top * sensor_h),
         w=round((right - left) * sensor_w),
         h=round((bottom - top) * sensor_h),
     )
@@ -175,9 +171,10 @@ def sensor_to_normalized(
 ) -> Tuple[float, float, float, float]:
     """Convert a sensor-space :class:`CropRegion` to a normalized UI box.
 
-    Inverse of :func:`normalized_to_sensor`: maps a raw-sensor region back to the
-    ``(nx, ny, nw, nh)`` fractions the UI should use to position the box on the
-    180-degree-flipped preview.
+    Inverse of :func:`normalized_to_sensor`: maps a sensor region back to the
+    ``(nx, ny, nw, nh)`` fractions the UI uses to position the box on the
+    preview.  A direct per-axis scale (no rotation), matching how libcamera
+    applies ``ScalerCrop`` relative to the transformed preview.
 
     Args:
         region: The sensor-space crop region.
@@ -188,10 +185,10 @@ def sensor_to_normalized(
         A ``(nx, ny, nw, nh)`` tuple of fractions in ``[0, 1]`` for the displayed
         preview.
     """
+    nx = region.x / sensor_w
+    ny = region.y / sensor_h
     nw = region.w / sensor_w
     nh = region.h / sensor_h
-    nx = 1.0 - (region.x + region.w) / sensor_w
-    ny = 1.0 - (region.y + region.h) / sensor_h
     return (nx, ny, nw, nh)
 
 

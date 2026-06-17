@@ -31,14 +31,23 @@ def test_full_normalized_box_maps_to_full_sensor() -> None:
     assert region == CropRegion(0, 0, SENSOR_W, SENSOR_H)
 
 
-def test_normalized_to_sensor_inverts_the_180_degree_flip() -> None:
-    # A box in the top-left of the *displayed* (flipped) preview must land in the
-    # bottom-right of the raw sensor.
+def test_normalized_to_sensor_maps_directly_without_rotation() -> None:
+    # libcamera applies ScalerCrop in the same orientation as the transformed
+    # preview, so a box in the top-left of the display maps to the top-left of
+    # the sensor crop (no 180-degree inversion).
     region = normalized_to_sensor(0.0, 0.0, 0.25, 0.25)
-    assert region.x == round(0.75 * SENSOR_W)
-    assert region.y == round(0.75 * SENSOR_H)
+    assert region.x == 0
+    assert region.y == 0
     assert region.w == round(0.25 * SENSOR_W)
     assert region.h == round(0.25 * SENSOR_H)
+
+
+def test_bottom_right_box_maps_to_bottom_right_crop() -> None:
+    # Regression: drawing the box in the bottom-right must crop the bottom-right
+    # region, not the diagonally-opposite top-left.
+    region = normalized_to_sensor(0.6, 0.6, 0.4, 0.4)
+    assert region.x == round(0.6 * SENSOR_W)
+    assert region.y == round(0.6 * SENSOR_H)
 
 
 def test_normalized_round_trip() -> None:
