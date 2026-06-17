@@ -172,7 +172,12 @@ def main():
     crop_y = max(0, min(crop_y, SENSOR_H - CROP_H))
 
     config = picam2.create_preview_configuration(
-        main={"size": (640, 640), "format": "RGB888"},
+        # picamera2's "888" format names are byte-reversed vs. the numpy array
+        # they yield: "BGR888" delivers an [R, G, B]-ordered array. The whole
+        # pipeline (ConvNeXt classifier, PIL thumbnails, the cv2 RGB2BGR writes)
+        # assumes RGB, so we must request BGR888 to actually get RGB. Using
+        # "RGB888" here yields BGR and swaps red<->blue everywhere downstream.
+        main={"size": (640, 640), "format": "BGR888"},
         controls={
             "FrameRate": intrinsics.inference_rate,
             "ScalerCrop": (crop_x, crop_y, CROP_W, CROP_H),
