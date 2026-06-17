@@ -200,5 +200,5 @@ def save_thumbnail(roi: np.ndarray, output_path: str) -> None:
         output_path: Absolute filesystem path for the output JPEG.
     """
     img = Image.fromarray(roi)
-    img = img.resize((200, 200), Image.LANCZOS)
+    img = img.resize((200, 200), Image.Resampling.LANCZOS)
     img.save(output_path, "JPEG", quality=85)

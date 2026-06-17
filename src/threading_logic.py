@@ -25,10 +25,10 @@ class ClassificationManager:
     ):
         self.classifier = classifier
         self.use_multithreading = use_multithreading
-        self._results_lock = None
-        self._queue = None
-        self._thread = None
-        self._stop_event = None
+        self._results_lock: threading.Lock | None = None
+        self._queue: "Queue[tuple] | None" = None
+        self._thread: threading.Thread | None = None
+        self._stop_event: threading.Event | None = None
 
         if self.use_multithreading:
             self._stop_event = threading.Event()

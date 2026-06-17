@@ -23,7 +23,7 @@ IMAGES_DIR = Path(__file__).parent / "bird_species"
 # minimal preparation: resize to model expected size 384x384, convert to NCHW float32 (no normalization)
 def prepare_input(img: Image.Image) -> np.ndarray:
     img = img.convert("RGB")
-    img = img.resize((384, 384), resample=Image.BICUBIC)
+    img = img.resize((384, 384), resample=Image.Resampling.BICUBIC)
     arr = np.asarray(img, dtype=np.float32) / 255.0
     chw = np.transpose(arr, (2, 0, 1))
     return np.expand_dims(chw, axis=0).astype(np.float32)

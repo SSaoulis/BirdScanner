@@ -11,6 +11,7 @@ import tarfile
 import os
 from pathlib import Path
 from datetime import datetime
+from typing import Optional
 import matplotlib.pyplot as plt
 from PIL import Image
 import sys
@@ -129,7 +130,7 @@ def extract_tar_file(tar_path: str, extract_dir: str = ".") -> bool:
         return False
 
 
-def find_most_recent_image(directory: str) -> str:
+def find_most_recent_image(directory: str) -> Optional[str]:
     """
     Find the most recently modified image file in the directory
     """

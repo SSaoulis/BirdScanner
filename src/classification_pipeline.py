@@ -23,6 +23,8 @@ from tracking import (
 )
 
 if TYPE_CHECKING:
+    from queue import Queue
+
     from db.writer import DetectionWriter
 
 # Root directory for saved images; overridable via IMAGE_DIR environment variable.
@@ -30,10 +32,9 @@ IMAGE_DIR = os.environ.get("IMAGE_DIR", "/home/stefan/Pictures/bird_detections")
 
 
 # Global classification state shared with the live frame loop.
-classification_results = {}
-last_detection_classifications = (
-    []
-)  # List of (box, species, confidence) tuples for temporal filtering
+classification_results: dict[int, tuple[str | None, float | None]] = {}
+# List of (box, species, confidence) tuples for temporal filtering.
+last_detection_classifications: list[tuple] = []
 
 
 def setup_classifier(model_path: str, class_to_idx_path: str) -> Classifier:
@@ -323,10 +324,10 @@ class ClassificationManager:
         self.use_stable_track_gating = use_stable_track_gating
         self.tracker = tracker or stable_detection_tracker
         self.detection_writer = detection_writer
-        self._results_lock = None
-        self._queue = None
-        self._thread = None
-        self._stop_event = None
+        self._results_lock: threading.Lock | None = None
+        self._queue: "Queue[tuple] | None" = None
+        self._thread: threading.Thread | None = None
+        self._stop_event: threading.Event | None = None
 
         if self.use_multithreading:
             from queue import Queue
