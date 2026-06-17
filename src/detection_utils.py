@@ -16,6 +16,27 @@ if TYPE_CHECKING:
     from object_detection import Detection
 
 
+def label_for_category(labels: list, category: int) -> Optional[str]:
+    """Return the label for a class index, or ``None`` if it is out of range.
+
+    The IMX500 SSD model occasionally emits spurious detections with a class
+    index outside the (filtered) label list. Indexing ``labels`` directly with
+    such a value raises ``IndexError`` and crashes the camera callback, so all
+    label look-ups go through this bounds-checked helper.
+
+    Args:
+        labels: List of class label strings.
+        category: Class index from a detection.
+
+    Returns:
+        Optional[str]: The matching label, or ``None`` when the index is out of
+        range for ``labels``.
+    """
+    if 0 <= category < len(labels):
+        return labels[category]
+    return None
+
+
 def iou(box1: tuple, box2: tuple) -> float:
     """Calculate Intersection over Union (IoU) between two boxes.
 
@@ -157,7 +178,11 @@ def draw_boxes(
     """
     x, y, w, h = coords
     overlay = image_array.copy()
-    label = f"{labels[int(detection.category)]} ({detection.conf:.2f})"
+    category = int(detection.category)
+    label_name = label_for_category(labels, category)
+    if label_name is None:
+        label_name = f"id:{category}"
+    label = f"{label_name} ({detection.conf:.2f})"
     if confidence is not None:
         label += f" - {confidence:.2f}"
     if species:

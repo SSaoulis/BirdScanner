@@ -5,6 +5,7 @@ classifier, draws annotated frames, persists high-confidence results, and
 manages synchronous vs. background-thread dispatch (``ClassificationManager``).
 """
 
+import logging
 import os
 import threading
 from datetime import datetime
@@ -15,7 +16,13 @@ import cv2
 import numpy as np
 
 from classification import Classifier, ONNXClassifier, build_preprocessing
-from detection_utils import draw_boxes, iou, preprocess_roi, save_thumbnail
+from detection_utils import (
+    draw_boxes,
+    iou,
+    label_for_category,
+    preprocess_roi,
+    save_thumbnail,
+)
 from tracking import (
     StableDetectionTracker,
     should_run_bird_classification_for_detection,
@@ -29,6 +36,8 @@ if TYPE_CHECKING:
 
 # Root directory for saved images; overridable via IMAGE_DIR environment variable.
 IMAGE_DIR = os.environ.get("IMAGE_DIR", "/home/stefan/Pictures/bird_detections")
+
+logger = logging.getLogger("tracking")
 
 
 # Global classification state shared with the live frame loop.
@@ -280,11 +289,23 @@ def process_detections(
         full_img = m.array.copy()
 
         for detection_id, detection in enumerate(last_results):
+            classifier_class = label_for_category(labels, int(detection.category))
+            if classifier_class is None:
+                # The IMX500 SSD model occasionally emits a spurious detection
+                # whose class index falls outside the label list; skip it rather
+                # than crash the camera callback with an IndexError.
+                logger.warning(
+                    "Skipping detection with out-of-range category %s "
+                    "(label count=%d)",
+                    detection.category,
+                    len(labels),
+                )
+                continue
+
             _, coords = preprocess_roi(full_img, detection.box)
             image_with_boxes = draw_boxes(full_img.copy(), coords, detection, labels)
             m.array[:] = image_with_boxes
 
-            classifier_class = labels[int(detection.category)]
             if classifier_class.lower() == "bird":
                 manager.process(
                     (full_img, detection_id, detection, labels, classifier_class)
