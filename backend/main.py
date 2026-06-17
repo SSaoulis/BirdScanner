@@ -15,10 +15,45 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.responses import Response
+from starlette.types import Scope
 
 from backend.routers import camera, detections, images, species, system
 
 _FRONTEND_DIST = Path(__file__).parent.parent / "frontend" / "dist"
+
+
+class SPAStaticFiles(StaticFiles):
+    """Static-file server that falls back to ``index.html`` for SPA routes.
+
+    The React frontend uses client-side routing (``BrowserRouter``), so deep
+    links such as ``/history`` have no matching file on disk.  A plain
+    ``StaticFiles`` mount returns 404 (``{"detail": "Not Found"}``) for those
+    paths, which breaks page reloads and shared links.  Overriding
+    ``get_response`` to serve ``index.html`` whenever a path does not resolve
+    to a real file lets the browser load the SPA, which then renders the
+    correct route client-side.  API routes are unaffected because they are
+    registered before this mount and take precedence.
+    """
+
+    async def get_response(self, path: str, scope: Scope) -> Response:
+        """Serve the requested file, or ``index.html`` when it is missing.
+
+        Args:
+            path: The request path relative to the mounted directory.
+            scope: The ASGI connection scope for the request.
+
+        Returns:
+            The static-file response, falling back to ``index.html`` on a 404
+            so client-side routes resolve.
+        """
+        try:
+            return await super().get_response(path, scope)
+        except StarletteHTTPException as exc:
+            if exc.status_code == 404:
+                return await super().get_response("index.html", scope)
+            raise
 
 app = FastAPI(
     title="BirdScanner API",
@@ -32,8 +67,10 @@ app.include_router(system.router)
 app.include_router(species.router)
 app.include_router(camera.router)
 
-# Serve the React frontend if the build output exists.
+# Serve the React frontend if the build output exists.  SPAStaticFiles falls
+# back to index.html so client-side routes (e.g. /history) load on direct
+# navigation or refresh instead of returning a 404.
 if _FRONTEND_DIST.is_dir():
     app.mount(
-        "/", StaticFiles(directory=str(_FRONTEND_DIST), html=True), name="frontend"
+        "/", SPAStaticFiles(directory=str(_FRONTEND_DIST), html=True), name="frontend"
     )
