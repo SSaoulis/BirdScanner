@@ -182,9 +182,11 @@ class StableDetectionTracker:
                     self.on_track_became_stable(t)
 
     def track_for_detection_id(self, detection_id: int) -> Optional[StableTrack]:
+        """Return the track last matched to ``detection_id``, or ``None``."""
         return self._last_per_det_track.get(detection_id)
 
     def mark_classified(self, track_id: int, *, species: Optional[str] = None) -> None:
+        """Mark the track ``track_id`` as classified, optionally setting its species."""
         for t in self._tracks:
             if t.track_id == track_id:
                 t.classified = True

@@ -1,0 +1,45 @@
+# Pylint configuration for the BirdScanner source tree.
+#
+# Run as two passes (mirrors the mypy.ini two-pass setup):
+#   pylint src backend db utils tools   # source (this file)
+#   pylint tests --rcfile=tests/.pylintrc
+#
+# The Pi-only native bindings (libcamera, picamera2) and the untyped C-extension
+# / third-party libs (onnxruntime, onnx, cv2) cannot be analysed off-device, so
+# their import/no-member noise is silenced here exactly as mypy.ini silences it.
+
+[MAIN]
+# examples/ is the original unrefactored script kept for reference (see CLAUDE.md);
+# it is intentionally not maintained to lint-clean standards.
+ignore=examples
+
+# Native / Pi-only / untyped modules that cannot be imported on a dev machine.
+ignored-modules=libcamera,
+                picamera2,
+                picamera2.devices,
+                picamera2.devices.imx500,
+                onnxruntime,
+                onnxruntime.quantization,
+                onnx
+
+[MESSAGES CONTROL]
+disable=too-few-public-methods,
+        too-many-locals,
+        too-many-branches,
+        too-many-statements,
+        too-many-positional-arguments,
+        import-outside-toplevel,
+        broad-exception-caught,
+        global-statement,
+        duplicate-code
+
+[FORMAT]
+max-line-length=120
+
+[DESIGN]
+max-args=8
+max-attributes=15
+
+[TYPECHECK]
+# cv2's members are populated dynamically at runtime, so pylint can't see them.
+generated-members=cv2.*

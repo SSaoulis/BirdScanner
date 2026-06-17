@@ -109,26 +109,26 @@ def main():
         intrinsics.task = "object detection"
     elif intrinsics.task != "object detection":
         print("Network is not an object detection task", file=sys.stderr)
-        exit()
+        sys.exit()
 
     # Override intrinsics from config
     for key, value in vars(app_config).items():
         if key == "labels" and value is not None:
-            with open(value, "r") as f:
+            with open(value, "r", encoding="utf-8") as f:
                 intrinsics.labels = f.read().splitlines()
         elif hasattr(intrinsics, key) and value is not None:
             setattr(intrinsics, key, value)
 
     # Load default labels if not provided
     if intrinsics.labels is None:
-        with open("assets/coco_labels.txt", "r") as f:
+        with open("assets/coco_labels.txt", "r", encoding="utf-8") as f:
             intrinsics.labels = f.read().splitlines()
 
     intrinsics.update_with_defaults()
 
     if app_config.print_intrinsics:
         print(intrinsics)
-        exit()
+        sys.exit()
 
     # Initialize classifier
     classifier = setup_classifier(

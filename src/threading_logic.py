@@ -8,13 +8,12 @@ from queue import Queue, Full
 import threading
 
 
-def process_single_detection(item, *, results_lock, classifier):
+def process_single_detection(item, *, results_lock, classifier):  # pylint: disable=unused-argument
     """Process one detection item (sync or async depending on manager).
 
     This function should be imported from object_detection module.
     Keeping this here for reference.
     """
-    pass
 
 
 class ClassificationManager:

@@ -7,16 +7,15 @@ End-to-end script to:
 4. Extract and display the most recent image
 """
 
-import tarfile
 import os
-from pathlib import Path
-from datetime import datetime
-from typing import Optional
-import matplotlib.pyplot as plt
-from PIL import Image
 import sys
+import tarfile
+from pathlib import Path
+from typing import Optional
+
+import matplotlib.pyplot as plt
 import paramiko
-from io import BytesIO
+from PIL import Image
 
 # Configuration
 PI_HOST = "192.168.1.31"
@@ -49,7 +48,7 @@ def run_ssh_command(
         client.connect(host, username=user, password=password, timeout=30)
 
         print(f"Executing: {command}")
-        stdin, stdout, stderr = client.exec_command(command, timeout=60)
+        _, stdout, stderr = client.exec_command(command, timeout=60)
         output = stdout.read().decode()
         error = stderr.read().decode()
 
@@ -79,7 +78,7 @@ def take_photo_on_pi(host: str, user: str, password: str) -> bool:
 
     command = f"cd {PI_REPO_PATH} && source venv/bin/activate && cd utils && python test_camera.py"
 
-    success, output = run_ssh_command(host, user, password, command)
+    success, _ = run_ssh_command(host, user, password, command)
     return success
 
 
@@ -95,7 +94,7 @@ def copy_camera_view_from_pi(host: str, user: str, password: str) -> bool:
         client.connect(host, username=user, password=password, timeout=10)
 
         # Use SSH to create tar stream
-        stdin, stdout, stderr = client.exec_command(
+        _, stdout, _ = client.exec_command(
             f"tar -C {PI_PICTURES_PATH} -cf - camera_view"
         )
 
@@ -137,7 +136,7 @@ def find_most_recent_image(directory: str) -> Optional[str]:
     image_extensions = {".jpg", ".jpeg", ".png", ".gif", ".bmp"}
 
     image_files = []
-    for root, dirs, files in os.walk(directory):
+    for root, _, files in os.walk(directory):
         for file in files:
             if Path(file).suffix.lower() in image_extensions:
                 filepath = os.path.join(root, file)
@@ -159,7 +158,7 @@ def display_image(image_path: str):
     """
     Display image using matplotlib
     """
-    print(f"\n=== Displaying image ===")
+    print("\n=== Displaying image ===")
 
     try:
         img = Image.open(image_path)

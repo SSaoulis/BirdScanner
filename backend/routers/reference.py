@@ -198,7 +198,7 @@ def get_species_reference_image(
     """
     entry = _get_species_entry(reference_dir, name)
     raw_images = entry.get("images")
-    if not isinstance(raw_images, list) or not (0 <= index < len(raw_images)):
+    if not isinstance(raw_images, list) or not 0 <= index < len(raw_images):
         raise HTTPException(status_code=404, detail="Reference image not found")
     image = raw_images[index]
     rel_path = image.get("path") if isinstance(image, dict) else None
@@ -209,8 +209,10 @@ def get_species_reference_image(
     candidate = (base / rel_path).resolve()
     try:
         candidate.relative_to(base)
-    except ValueError:
-        raise HTTPException(status_code=404, detail="Reference image not found")
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=404, detail="Reference image not found"
+        ) from exc
     if not candidate.is_file():
         raise HTTPException(status_code=404, detail="Reference image not found")
     return FileResponse(str(candidate), media_type="image/jpeg")

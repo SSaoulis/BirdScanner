@@ -15,9 +15,11 @@ _DEFAULT_IMAGE_DIR = "/home/stefan/Pictures/bird_detections"
 # directory so it works regardless of the process's current working directory.
 _DEFAULT_REFERENCE_DIR = Path(__file__).parent.parent / "assets" / "species_reference"
 
-# Module-level singletons so the engine is created once per process.
-_engine = None
-_session_factory = None
+# Module-level singletons so the engine is created once per process.  These are
+# mutable, lazily-initialised caches (not true constants), so the lower-case
+# leading-underscore names are intentional.
+_engine = None  # pylint: disable=invalid-name
+_session_factory = None  # pylint: disable=invalid-name
 
 
 def _get_engine():

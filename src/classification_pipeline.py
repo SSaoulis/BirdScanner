@@ -193,10 +193,10 @@ def process_single_detection(
         results_lock: Thread lock for safe results dictionary access.
         classifier: Classifier instance for bird species classification.
     """
-    global last_detection_classifications
     image, detection_id, detection, labels, classifier_class = item
 
-    # Temporal filtering: reuse classification if box overlaps significantly with any detection from last frame
+    # Temporal filtering: reuse classification if the box overlaps significantly
+    # with any detection from the previous frame.
     species = None
     confidence = None
 
@@ -235,7 +235,7 @@ def process_single_detection(
 
 def update_detection_classifications_cache(
     detections: list,
-    classification_results: dict,
+    results: dict,
 ) -> None:
     """Update the cache of detection classifications for the current frame.
 
@@ -245,14 +245,14 @@ def update_detection_classifications_cache(
 
     Args:
         detections: List of Detection objects from current frame.
-        classification_results: Dictionary mapping detection_id to (species, confidence).
+        results: Dictionary mapping detection_id to (species, confidence).
     """
     global last_detection_classifications
 
     new_classifications = []
     for detection_id, detection in enumerate(detections):
-        if detection_id in classification_results:
-            species, confidence = classification_results[detection_id]
+        if detection_id in results:
+            species, confidence = results[detection_id]
             if species and confidence:
                 new_classifications.append((detection.box, species, confidence))
 
@@ -265,7 +265,6 @@ def process_detections(
     last_results: list,
     manager: "ClassificationManager",
     labels: list,
-    full_img_processor=None,
 ) -> None:
     """Draw detections onto ISP output and queue for classification.
 
@@ -279,7 +278,6 @@ def process_detections(
         last_results: List of Detection objects from current frame.
         manager: ClassificationManager instance for async processing.
         labels: List of class label strings.
-        full_img_processor: Optional callback to process full image before detection processing.
     """
     if last_results is None:
         return
@@ -386,7 +384,11 @@ class ClassificationManager:
                     detection_writer=self.detection_writer,
                 )
             else:
-                process_single_detection(item, results_lock=self._results_lock, classifier=self.classifier)  # type: ignore
+                process_single_detection(
+                    item,
+                    results_lock=self._results_lock,
+                    classifier=self.classifier,
+                )  # type: ignore
             return
 
         from queue import Full
@@ -417,7 +419,11 @@ class ClassificationManager:
                     detection_writer=self.detection_writer,
                 )
             else:
-                process_single_detection(item, results_lock=self._results_lock, classifier=self.classifier)  # type: ignore
+                process_single_detection(
+                    item,
+                    results_lock=self._results_lock,
+                    classifier=self.classifier,
+                )  # type: ignore
 
             self._queue.task_done()  # type: ignore
 

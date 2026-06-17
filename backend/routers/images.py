@@ -1,7 +1,6 @@
 """Image serving endpoints: thumbnail, full-resolution, and bulk ZIP download."""
 
 import io
-import os
 import zipfile
 from pathlib import Path
 from typing import List
@@ -142,10 +141,10 @@ def download_images(
     """
     try:
         id_list: List[int] = [int(i.strip()) for i in ids.split(",") if i.strip()]
-    except ValueError:
+    except ValueError as exc:
         raise HTTPException(
             status_code=400, detail="ids must be comma-separated integers"
-        )
+        ) from exc
 
     paths: List[Path] = []
     for detection_id in id_list:

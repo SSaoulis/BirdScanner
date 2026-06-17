@@ -1,11 +1,11 @@
 # create a simple test that uses class ONNXClassifier from src/classification.py
 
+from pathlib import Path
+
+import numpy as np
 import pytest
 
-from src.classification import ONNXClassifier, Classifier, build_preprocessing
-import numpy as np
-import os
-from pathlib import Path
+from src.classification import Classifier, ONNXClassifier, build_preprocessing
 
 
 # REAL MODEL PATH

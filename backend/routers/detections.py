@@ -71,8 +71,8 @@ def list_detections(
     # offset-based pages overlap and surfaces duplicate detections in the UI.
     query = (
         query.order_by(
-            DetectionRecord.timestamp.desc(),  # type: ignore[attr-defined]
-            DetectionRecord.id.desc(),  # type: ignore[attr-defined]
+            DetectionRecord.timestamp.desc(),  # type: ignore[attr-defined]  # pylint: disable=no-member
+            DetectionRecord.id.desc(),  # type: ignore[attr-defined]  # pylint: disable=no-member
         )
         .offset(offset)
         .limit(limit)

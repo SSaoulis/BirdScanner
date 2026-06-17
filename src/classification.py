@@ -1,9 +1,12 @@
-import onnxruntime as ort
-import numpy as np
-from typing import Callable, Dict, Tuple, Any
-from PIL import Image
+"""ONNX classifier stack: raw runtime wrapper, preprocessing, and class mapping."""
+
 import json
 from pathlib import Path
+from typing import Any, Callable, Dict, Tuple
+
+import numpy as np
+import onnxruntime as ort
+from PIL import Image
 
 
 class ONNXClassifier:
@@ -36,6 +39,7 @@ class ONNXClassifier:
 
 
 def build_classifier(path_to_onnx_model):
+    """Build an :class:`ONNXClassifier` for the model at ``path_to_onnx_model``."""
     return ONNXClassifier(path_to_onnx_model)
 
 
@@ -67,7 +71,7 @@ class Classifier:
         self.idx_to_class: dict[int, str] | None = None
         if class_index_path is not None:
             p = Path(class_index_path)
-            with p.open("r") as f:
+            with p.open("r", encoding="utf-8") as f:
                 class_to_idx = json.load(f)
             self.idx_to_class = {int(v): k for k, v in class_to_idx.items()}
 
@@ -127,6 +131,16 @@ class Classifier:
 
 
 def build_preprocessing(config: Dict[str, Any]) -> Callable[[Any], np.ndarray]:
+    """Build a preprocessing callable from a config dict.
+
+    Args:
+        config: Preprocessing options — ``size`` (H, W), ``rgb_values`` (ImageNet
+            ``mean``/``std``), ``center_crop`` (float), and ``simple_crop`` (bool).
+
+    Returns:
+        A callable that accepts a ``PIL.Image.Image`` or an ``(H, W, 3|4)`` numpy
+        array and returns a ``(1, 3, H, W)`` float32 NCHW array.
+    """
     size: Tuple[int, int] = tuple(config.get("size", (384, 384)))  # (H, W)
     rgb_values = config.get(
         "rgb_values", {"mean": [0.485, 0.456, 0.406], "std": [0.229, 0.224, 0.225]}
@@ -158,7 +172,7 @@ def build_preprocessing(config: Dict[str, Any]) -> Callable[[Any], np.ndarray]:
                     arr = x
                 img = Image.fromarray(arr)
                 return img.convert("RGB")
-            elif x.ndim == 2:
+            if x.ndim == 2:
                 # grayscale
                 if x.dtype != np.uint8:
                     arr = np.clip(x, 0, 1) * 255.0
