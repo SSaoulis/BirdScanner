@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-BirdScanner is a real-time bird detection and classification system designed for a Raspberry Pi with the Sony IMX500 AI Camera. The IMX500 runs object detection (SSD MobileNetV2) on-chip; detections are then passed to a ConvNeXt V2 Tiny ONNX model for bird species classification. The system must run on the Pi — `picamera2` and `libcamera` are not available on other platforms.
+BirdScanner is a real-time bird detection and classification system designed for a Raspberry Pi with the Sony IMX500 AI Camera. The IMX500 runs object detection (YOLO11n) on-chip; detections are then passed to a ConvNeXt V2 Tiny ONNX model for bird species classification. The system must run on the Pi — `picamera2` and `libcamera` are not available on other platforms.
 
 ## Commands
 
@@ -156,7 +156,7 @@ monolithic `object_detection.py` was refactored along these seams):
 
 | Purpose | Path (relative to `src/`) |
 |---|---|
-| Object detection (IMX500 firmware) | `/usr/share/imx500-models/imx500_network_ssd_mobilenetv2_fpnlite_320x320_pp.rpk` |
+| Object detection (IMX500 firmware) | `/usr/share/imx500-models/imx500_network_yolo11n_pp.rpk` (YOLO11n; emits normalized, `xy`-ordered boxes — see `src/config.py`) |
 | Species classifier | `local/convnext_v2_tiny_int8.onnx` |
 | Class-to-index mapping | `assets/convnext_v2_tiny.onnx_class_to_idx.json` |
 | COCO labels | `assets/coco_labels.txt` |

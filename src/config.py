@@ -37,20 +37,25 @@ class Config:
         preview: Show the camera preview window.
     """
 
-    model: str = (
-        "/usr/share/imx500-models/"
-        "imx500_network_ssd_mobilenetv2_fpnlite_320x320_pp.rpk"
-    )
+    # These defaults mirror the known-good runtime invocation:
+    #   main.py --model .../imx500_network_yolo11n_pp.rpk \
+    #           --bbox-normalization --bbox-order xy \
+    #           --object-duration-threshold 0.1 --multithread --debug
+    # The detector uses the YOLO11n network, whose post-processed output tensor
+    # emits normalized, xy-ordered boxes. Reverting to the SSD model / yx order /
+    # un-normalized boxes makes parse_detections misdecode the tensor and emit a
+    # single garbage full-frame detection.
+    model: str = "/usr/share/imx500-models/imx500_network_yolo11n_pp.rpk"
     fps: Optional[int] = None
-    bbox_normalization: Optional[bool] = None
-    bbox_order: str = "yx"
+    bbox_normalization: Optional[bool] = True
+    bbox_order: str = "xy"
     threshold: float = 0.55
     ignore_dash_labels: Optional[bool] = None
     preserve_aspect_ratio: Optional[bool] = None
     labels: Optional[str] = None
     print_intrinsics: bool = False
     multithread: bool = True
-    object_duration_threshold: float = 0.2
+    object_duration_threshold: float = 0.1
     debug: bool = True
     preview: bool = False
 
