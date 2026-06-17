@@ -27,10 +27,13 @@ WORKDIR /app
 COPY requirements.detector.txt .
 RUN pip install --no-cache-dir --break-system-packages -r requirements.detector.txt
 
-# Copy the heavy ONNX model layer FIRST and on its own. It rarely changes, so
-# Docker caches it and code edits below never re-copy or re-export the ~30MB
-# model. (The big unused models in src/local are excluded via .dockerignore.)
-COPY src/local/ ./src/local/
+# Copy the ONNX classifier model FIRST and on its own. It rarely changes, so
+# Docker caches it and code edits below never re-copy the ~30MB model.
+# main.py runs with cwd=/app and loads the model via the relative path
+# `local/convnext_v2_tiny_int8.onnx`, so it must land at /app/local/ (mirroring
+# how assets are copied to /app/assets/). Copy ONLY this one model — the other
+# files in src/local/ are training/conversion scratch (155MB) and unused here.
+COPY src/local/convnext_v2_tiny_int8.onnx ./local/
 
 # Source code last: editing a .py file only invalidates this tiny layer, so
 # rebuilds after a code change are seconds instead of minutes.
@@ -40,4 +43,6 @@ COPY src/*.py ./src/
 
 ENV PYTHONPATH=/app
 
-CMD ["python3", "src/main.py", "--multithread", "--object-duration-threshold", "0.2"]
+# Runtime behaviour is configured in src/config.py (the former CLI args were
+# removed in the config refactor), so main.py takes no arguments.
+CMD ["python3", "src/main.py"]
