@@ -34,6 +34,28 @@ export interface DetectionListParams {
   offset?: number;
 }
 
+/** A normalized crop box (fractions in [0, 1]) over the displayed preview. */
+export interface NormalizedBox {
+  nx: number;
+  ny: number;
+  nw: number;
+  nh: number;
+}
+
+/** The detection crop region as reported by the detector. */
+export interface CropState {
+  /** Crop rectangle in raw sensor pixels. */
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  /** Same region as a normalized box over the displayed (flipped) preview. */
+  norm: NormalizedBox;
+  /** Full sensor dimensions, for rendering the preview at the true aspect. */
+  sensor_w: number;
+  sensor_h: number;
+}
+
 async function apiFetch<T>(path: string, params?: Record<string, string | number | undefined>): Promise<T> {
   const url = new URL(path, window.location.origin);
   if (params) {
@@ -42,6 +64,16 @@ async function apiFetch<T>(path: string, params?: Record<string, string | number
     }
   }
   const res = await fetch(url.toString());
+  if (!res.ok) throw new Error(`API ${path} → ${res.status} ${res.statusText}`);
+  return res.json() as Promise<T>;
+}
+
+async function postJson<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
   if (!res.ok) throw new Error(`API ${path} → ${res.status} ${res.statusText}`);
   return res.json() as Promise<T>;
 }
@@ -70,8 +102,18 @@ export const api = {
   },
 
   camera: {
-    /** URL for an on-demand camera snapshot, proxied from the detector. */
+    /** URL for an on-demand snapshot of the current (cropped) feed. */
     snapshotUrl: (): string => "/api/camera/snapshot",
+
+    /** URL for a full-sensor snapshot used by the crop editor. */
+    fullSnapshotUrl: (): string => "/api/camera/snapshot/full",
+
+    /** Fetch the detector's current detection-crop region. */
+    getCrop: (): Promise<CropState> => apiFetch<CropState>("/api/camera/crop"),
+
+    /** Apply a new crop region (a normalized box, or `{ reset: true }`). */
+    setCrop: (body: NormalizedBox | { reset: true }): Promise<CropState> =>
+      postJson<CropState>("/api/camera/crop", body),
   },
 };
 
