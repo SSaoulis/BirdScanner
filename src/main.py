@@ -176,7 +176,12 @@ def main():
             "FrameRate": intrinsics.inference_rate,
             "ScalerCrop": (crop_x, crop_y, CROP_W, CROP_H),
         },
-        buffer_count=12,
+        # 6 buffers keep ample jitter margin while halving DMA-heap pressure
+        # vs the inherited 12. Inside the container the kernel CMA pool is shared
+        # with the IMX500 firmware upload and the 2028x1520 raw sensor stream
+        # (the dominant consumer, fixed at the sensor's smallest mode), so 12
+        # buffers exhausted CMA and crashed picam2.start() with ENOMEM.
+        buffer_count=6,
         transform=libcamera.Transform(vflip=True, hflip=True),
     )
     print(f"ScalerCrop = ({crop_x}, {crop_y}, {CROP_W}, {CROP_H})")
