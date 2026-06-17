@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   api,
   timeAgo,
@@ -28,14 +28,17 @@ type ReferenceState =
   | { kind: "error"; message: string };
 
 /**
- * Full-screen comparison panel opened when a detection thumbnail is clicked.
+ * Full-screen lightbox opened when a detection thumbnail is clicked.
  *
- * Shows two panes: the captured detection image (left) and reference image(s)
- * plus species info (right), fetched from `/api/species/{name}/reference`.
- * Supports keyboard navigation (Esc, ArrowLeft, ArrowRight), prev/next arrow
- * buttons, backdrop-click to close, and locks body scroll while open.
- * Navigating prev/next changes the detection — and therefore its species — so
- * the reference is refetched whenever the displayed species changes.
+ * Shows the captured detection image. A vertical "Reference" tab on the right
+ * edge of the image toggles a species-reference panel that opens to the *exact*
+ * rendered size of the image (measured live) and never grows beyond it — its
+ * content scrolls internally instead, so the detection image is never offset.
+ * Reference data is fetched from `/api/species/{name}/reference`. Supports
+ * keyboard navigation (Esc, ArrowLeft, ArrowRight), prev/next arrow buttons,
+ * backdrop-click to close, and locks body scroll while open. Navigating
+ * prev/next changes the detection — and therefore its species — so the
+ * reference is refetched whenever the displayed species changes.
  */
 export function Lightbox({ detection, onClose, onPrev, onNext, onDelete }: LightboxProps) {
   const { id, species, confidence, timestamp } = detection;
@@ -47,6 +50,29 @@ export function Lightbox({ detection, onClose, onPrev, onNext, onDelete }: Light
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  // Whether the reference panel is open. Closed by default — opened via the tab.
+  const [showReference, setShowReference] = useState(false);
+  // Live rendered size of the detection image; the reference panel is locked
+  // to these exact pixel dimensions so it always matches the image.
+  const imgRef = useRef<HTMLImageElement | null>(null);
+  const [imgSize, setImgSize] = useState<{ w: number; h: number } | null>(null);
+
+  // Track the rendered image size so the reference panel can match it exactly.
+  // A ResizeObserver catches both the initial load (0 → natural size) and any
+  // viewport resize that reflows the vw-capped image.
+  useEffect(() => {
+    const el = imgRef.current;
+    if (!el) return;
+    const update = () => {
+      if (el.clientWidth > 0 && el.clientHeight > 0) {
+        setImgSize({ w: el.clientWidth, h: el.clientHeight });
+      }
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [fullUrl]);
 
   /** Confirm, delete the detection via the API, then notify the parent. */
   async function handleDelete() {
@@ -132,59 +158,78 @@ export function Lightbox({ detection, onClose, onPrev, onNext, onDelete }: Light
         </button>
       )}
 
-      {/* Panel container — stops click propagation so interacting inside doesn't close */}
+      {/* Image + reference row — stops click propagation so interacting inside doesn't close */}
       <div
-        className="relative w-full max-w-6xl max-h-[90vh] overflow-y-auto bg-slate-900 rounded-2xl shadow-2xl"
+        className="relative flex items-start gap-10"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Close button */}
-        <button
-          className="absolute top-3 right-3 z-10 p-1.5 rounded-full bg-slate-800/80 hover:bg-slate-700 text-white text-lg leading-none"
-          onClick={onClose}
-          aria-label="Close comparison view"
-        >
-          ✕
-        </button>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 md:p-6">
-          {/* ── Left pane: captured detection ─────────────────────────── */}
-          <div className="flex flex-col gap-3">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-              Your capture
-            </h3>
+        {/* ── Captured detection image (with the Reference tab on its edge) ── */}
+        <div className="flex flex-col gap-3">
+          <div className="relative">
             <img
+              ref={imgRef}
               src={fullUrl}
               alt={`Captured ${species}`}
-              className="w-full max-h-[60vh] object-contain rounded-lg bg-black"
+              className="block max-h-[80vh] max-w-[44vw] rounded-lg bg-black shadow-2xl"
             />
-            <div className="flex flex-wrap items-center gap-3 px-3 py-2 bg-slate-800/90 rounded-xl text-sm">
-              <span className="font-semibold text-white">{species}</span>
-              <span className="text-emerald-400 font-mono">{confidencePct}%</span>
-              <span className="text-slate-400">{timeAgo(timestamp)}</span>
-              <a
-                href={fullUrl}
-                download
-                className="ml-auto rounded-md bg-slate-700 px-3 py-1.5 text-xs font-medium text-slate-100 transition-colors hover:bg-slate-600"
-                onClick={(e) => e.stopPropagation()}
-              >
-                Download
-              </a>
-              <button
-                className="rounded-md bg-red-600/90 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-red-500 disabled:opacity-50"
-                onClick={(e) => { e.stopPropagation(); handleDelete(); }}
-                disabled={deleting}
-              >
-                {deleting ? "Deleting…" : "Delete"}
-              </button>
-            </div>
-            {deleteError && (
-              <p className="text-xs text-red-400">{deleteError}</p>
-            )}
+
+            {/* Close button */}
+            <button
+              className="absolute top-2 right-2 z-10 p-1.5 rounded-full bg-slate-800/80 hover:bg-slate-700 text-white text-lg leading-none"
+              onClick={onClose}
+              aria-label="Close lightbox"
+            >
+              ✕
+            </button>
+
+            {/* Vertical Reference tab on the right edge of the image */}
+            <button
+              className={`absolute top-1/2 left-full -translate-y-1/2 px-1.5 py-3 rounded-r-lg text-xs font-semibold uppercase tracking-wide [writing-mode:vertical-rl] transition-colors ${
+                showReference
+                  ? "bg-emerald-600 text-white"
+                  : "bg-slate-800/90 text-slate-200 hover:bg-slate-700"
+              }`}
+              onClick={() => setShowReference((v) => !v)}
+              aria-pressed={showReference}
+              aria-label={showReference ? "Hide species reference" : "Show species reference"}
+            >
+              Reference
+            </button>
           </div>
 
-          {/* ── Right pane: species reference ─────────────────────────── */}
-          <div className="flex flex-col gap-3">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+          {/* Caption bar */}
+          <div className="flex flex-wrap items-center gap-3 px-3 py-2 bg-slate-800/90 rounded-xl text-sm">
+            <span className="font-semibold text-white">{species}</span>
+            <span className="text-emerald-400 font-mono">{confidencePct}%</span>
+            <span className="text-slate-400">{timeAgo(timestamp)}</span>
+            <a
+              href={fullUrl}
+              download
+              className="ml-auto rounded-md bg-slate-700 px-3 py-1.5 text-xs font-medium text-slate-100 transition-colors hover:bg-slate-600"
+              onClick={(e) => e.stopPropagation()}
+            >
+              Download
+            </a>
+            <button
+              className="rounded-md bg-red-600/90 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-red-500 disabled:opacity-50"
+              onClick={(e) => { e.stopPropagation(); handleDelete(); }}
+              disabled={deleting}
+            >
+              {deleting ? "Deleting…" : "Delete"}
+            </button>
+            {deleteError && (
+              <span className="w-full text-xs text-red-400">{deleteError}</span>
+            )}
+          </div>
+        </div>
+
+        {/* ── Reference panel — locked to the image's exact rendered size ── */}
+        {showReference && imgSize && (
+          <div
+            className="shrink-0 overflow-y-auto rounded-lg bg-slate-900 shadow-2xl p-4"
+            style={{ width: imgSize.w, height: imgSize.h }}
+          >
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-3">
               Reference
             </h3>
             <ReferencePane
@@ -193,7 +238,7 @@ export function Lightbox({ detection, onClose, onPrev, onNext, onDelete }: Light
               onSelectImage={setActiveImageIndex}
             />
           </div>
-        </div>
+        )}
       </div>
 
       {/* Next arrow */}
@@ -268,7 +313,7 @@ function ReferencePane({ state, activeImageIndex, onSelectImage }: ReferencePane
           <img
             src={activeImage.url}
             alt={`Reference photo of ${reference.common_name}`}
-            className="w-full max-h-[50vh] object-contain rounded-lg bg-black"
+            className="w-full object-contain rounded-lg bg-black"
           />
           <p className="text-[11px] text-slate-500 leading-snug">
             {activeImage.attribution}
