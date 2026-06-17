@@ -289,3 +289,49 @@ class TestSpecies:
         resp = client.get("/api/species")
         counts = [s["count"] for s in resp.json()]
         assert counts == sorted(counts, reverse=True)
+
+
+# ---------------------------------------------------------------------------
+# Camera snapshot proxy
+# ---------------------------------------------------------------------------
+
+
+class _FakeHttpxResponse:
+    """Minimal httpx.Response stand-in for the camera proxy."""
+
+    def __init__(self, content: bytes, content_type: str = "image/jpeg") -> None:
+        self.content = content
+        self.headers = {"Content-Type": content_type}
+
+    def raise_for_status(self) -> None:
+        return None
+
+
+class TestCamera:
+    def test_snapshot_proxies_detector_jpeg(self, client, monkeypatch):
+        from backend.routers import camera
+
+        captured = {}
+
+        def _fake_get(url, timeout):
+            captured["url"] = url
+            return _FakeHttpxResponse(b"JPEGBYTES")
+
+        monkeypatch.setattr(camera.httpx, "get", _fake_get)
+        resp = client.get("/api/camera/snapshot")
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "image/jpeg"
+        assert resp.content == b"JPEGBYTES"
+        assert captured["url"].endswith("/capture")
+
+    def test_snapshot_returns_503_when_detector_unreachable(self, client, monkeypatch):
+        import httpx
+
+        from backend.routers import camera
+
+        def _fake_get(url, timeout):
+            raise httpx.ConnectError("connection refused")
+
+        monkeypatch.setattr(camera.httpx, "get", _fake_get)
+        resp = client.get("/api/camera/snapshot")
+        assert resp.status_code == 503

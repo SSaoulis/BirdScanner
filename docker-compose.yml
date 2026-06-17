@@ -11,6 +11,8 @@ services:
       - /sys/kernel/debug:/sys/kernel/debug   # IMX500 firmware-upload progress lives in debugfs (fw_progress)
     devices:
       - /dev/dma_heap:/dev/dma_heap   # picamera2 allocates buffers from the DMA heap
+    expose:
+      - "8000"                  # on-demand snapshot server (internal; reached by the api service)
     env_file: .env
 
   api:

@@ -99,12 +99,13 @@ monolithic `object_detection.py` was refactored along these seams):
 - `IMAGE_DIR` — root directory for saved images, sourced from the `IMAGE_DIR` env var (defaults to `/home/stefan/Pictures/bird_detections`)
 
 **`backend/`** — FastAPI REST API (Phase 2):
-- `backend/main.py` — app factory; mounts the four routers; optionally serves `frontend/dist/` at `/` when the build exists
+- `backend/main.py` — app factory; mounts the five routers; optionally serves `frontend/dist/` at `/` when the build exists
 - `backend/dependencies.py` — `get_session()` and `get_image_dir()` FastAPI dependency providers (reads `DB_PATH` / `IMAGE_DIR` env vars); the engine is opened **read-only** (`make_engine(read_only=True)`) and the API never runs `init_db` — the detector owns schema creation, and the DB is mounted read-only
 - `backend/routers/detections.py` — `GET /api/detections` (paginated + filtered) and `GET /api/detections/{id}`
 - `backend/routers/images.py` — `GET /api/images/{id}/thumbnail`, `GET /api/images/{id}/full`, `GET /api/images/download?ids=...` (chunked ZIP)
 - `backend/routers/system.py` — `GET /api/system` (CPU/mem/disk/temp/uptime via psutil)
 - `backend/routers/species.py` — `GET /api/species` (list with counts, sorted by count desc)
+- `backend/routers/camera.py` — `GET /api/camera/snapshot`; proxies an on-demand JPEG capture from the detector's snapshot server (`${DETECTOR_URL}/capture`, default `http://detector:8000`) via httpx. The API can't open the camera itself (the detector owns it exclusively + the data volume is read-only), so it relays the detector's frame; returns 503 when the detector is unreachable
 
 **`db/`** — SQLite persistence layer (Phase 1):
 - `db/models.py` — `DetectionRecord` SQLModel ORM model (`detections` table)
@@ -130,11 +131,12 @@ monolithic `object_detection.py` was refactored along these seams):
 
 **`frontend/`** — React + Vite + Tailwind dashboard (Phase 3 & 4):
 - `frontend/src/api.ts` — typed fetch wrappers for all `/api/*` endpoints; exports `Detection`, `SystemStatus`, `SpeciesSummary` interfaces plus `timeAgo` and `formatUptime` helpers
-- `frontend/src/App.tsx` — root component; sets up `react-router-dom` `BrowserRouter` with routes `/` → Dashboard and `/history` → History; renders a top-level nav bar
+- `frontend/src/App.tsx` — root component; sets up `react-router-dom` `BrowserRouter` with routes `/` → Dashboard, `/history` → History, and `/camera` → Camera; renders a top-level nav bar
 - `frontend/src/components/SystemMonitor.tsx` — polls `/api/system` every 5 s; renders animated gauge bars (green/yellow/red) for CPU, memory, disk, temp, and uptime
 - `frontend/src/components/DetectionCard.tsx` — loads thumbnail from `/api/images/{id}/thumbnail`; shows species, confidence %, and time-ago label; supports optional `onSelect`/`selected` props for bulk-select mode and `onOpenLightbox` prop to trigger the lightbox
 - `frontend/src/pages/Dashboard.tsx` — composes `SystemMonitor` + a horizontal-scroll strip of the last 10 `DetectionCard`s
 - `frontend/src/pages/History.tsx` — full-page history view; filter bar (species dropdown + from/to date pickers), tab switcher (Timeline | Gallery), infinite-scroll pagination (20/page via `IntersectionObserver`); owns all filter/pagination/lightbox/selection state and passes it down to sub-views
+- `frontend/src/pages/Camera.tsx` — Camera tab; a "Test Camera" button fetches `/api/camera/snapshot` as a blob (so HTTP errors surface as a message, not a broken image), cache-busts per click, and displays the returned frame; revokes object URLs on replace/unmount
 - `frontend/src/components/Timeline.tsx` — chronological paginated list of `DetectionCard`s with an `IntersectionObserver` sentinel for infinite scroll; opens lightbox on thumbnail click; full-res images are never loaded until the lightbox is opened
 - `frontend/src/components/Gallery.tsx` — uniform thumbnail grid with checkbox-based multi-select (checkbox overlay + ring); `IntersectionObserver` for infinite scroll; integrates `FileDownloader` toolbar; opens lightbox on thumbnail click
 - `frontend/src/components/Lightbox.tsx` — full-screen modal showing the full-res image on open; Esc/arrow-key keyboard navigation; prev/next arrows; caption bar with species, confidence, and time-ago; download link
@@ -142,6 +144,11 @@ monolithic `object_detection.py` was refactored along these seams):
 - Build: `npm run build` (from `frontend/`) outputs to `frontend/dist/`; served by FastAPI at `/` via `StaticFiles`
 - Dev: `npm run dev` proxies `/api/*` to `http://localhost:8080`
 - `Dockerfile.api` — multi-stage image: Node 20 builds the frontend, Python 3.11 runs the API; exposes port 8080
+
+**`src/camera_server.py`** — on-demand camera snapshot server:
+- `capture_jpeg(picam2)` — captures one frame from the running camera's `main` stream and encodes it to JPEG (RGB→BGR for OpenCV)
+- `start_camera_server(picam2, port)` — runs a stdlib `ThreadingHTTPServer` on a background daemon thread serving `GET /capture` (returns a fresh JPEG); `camera_server_port()` reads the port from `CAMERA_SERVER_PORT` (default 8000)
+- Wired into `main.py` after `picam2.start(...)` so the read-only API can surface a live "Test Camera" image even though the detector owns the camera exclusively; shut down on `KeyboardInterrupt`
 
 **`src/track_logging.py`** — `TrackingLogger` logs stable-track and track-deletion events to the `tracking` logger
 
@@ -198,6 +205,7 @@ docker compose logs -f detector
 - `.env` must be created from `.env.example` before the first run (it is git-ignored).
 - The `data` Docker volume is the single source of truth: the `detector` service writes images and the SQLite DB; the `api` service mounts it read-only.
 - `privileged: true` is scoped to `detector` only (required for IMX500 camera device access).
+- The `detector` `expose`s port 8000 (the on-demand snapshot server from `src/camera_server.py`) on the internal compose network only — it is **not** published to the host. The `api` reaches it via `DETECTOR_URL` (default `http://detector:8000`); the detector binds the port from `CAMERA_SERVER_PORT` (default 8000). Both vars live in `.env`/`.env.example` and the defaults work as-is — only change them together. This powers the Camera tab's "Test Camera" button.
 - The `detector` image (`Dockerfile.detector`) is based on `dtcooper/raspberrypi-os:bookworm` so the system `python3` can import the apt-installed `python3-picamera2` / `python3-libcamera` bindings (these are built natively against the Pi's libcamera and are **not** on PyPI). `numpy`, `opencv` and `pillow` are installed via apt (`python3-numpy` / `python3-opencv` / `python3-pil`); the apt `numpy` is `1.24.2`, which is what the apt-built picamera2/simplejpeg/opencv stack is compiled against. `requirements.detector.txt` therefore pins `numpy==1.24.2` (so pip does not pull numpy 2.x into `/usr/local` and shadow the apt copy — that crashes the detector with `numpy.dtype size changed`) and `onnxruntime==1.23.2` (the version known to run against numpy 1.24.2 on this Pi). These plus `sqlmodel` are pip-installed into the system interpreter with `--break-system-packages`. The IMX500 firmware + `.rpk` network models (`/usr/share/imx500-models/...`) come from the `imx500-all` apt package baked into the image. A plain `python:3.x` base will crash the detector with `ModuleNotFoundError: No module named 'libcamera'`.
 - The `detector` service additionally mounts `/run/udev:ro` (libcamera enumerates cameras via udev), the `/dev/dma_heap` device (picamera2 buffer allocation), and `/sys/kernel/debug` (debugfs) — all required for the camera to initialise inside the container. The debugfs mount is needed because `IMX500.__init__` opens `/sys/kernel/debug/imx500-fw:<id>/fw_progress` to track on-chip firmware upload; Docker does not expose debugfs to containers (even privileged ones) by default, so without this mount the detector crashes with `FileNotFoundError: ... /sys/kernel/debug/imx500-fw:11-001a/fw_progress`.
 - `main.py` configures the camera with `buffer_count=6` (not the bare-Pi example's `12`). Inside the container the kernel CMA / dma-heap pool is host-global (Docker memory limits don't apply to it) and is shared with the IMX500 firmware upload and the always-allocated 2028×1520 raw sensor stream (~3 MB/buffer, the dominant consumer — it's fixed at the sensor's smallest mode and allocated by the Pi 5 PiSP pipeline regardless of config, so it can't be shrunk). With 12 buffers this exhausted CMA and crashed `picam2.start()` with `OSError: [Errno 12] Cannot allocate memory` at the dma-heap `alloc` ioctl. 6 buffers halves DMA pressure while keeping jitter margin; the 640×640 `main` stream is left intact because the ConvNeXt classifier crops bird ROIs from it (the on-chip detector runs at a fixed 320×320 baked into the `.rpk`, independent of the streams). If 6 still ENOMEMs, increase the host CMA pool in `/boot/firmware/config.txt` rather than dropping `main` resolution.
