@@ -36,7 +36,8 @@ def list_detections(
         session: Injected database session.
 
     Returns:
-        List of ``DetectionRecord`` objects ordered by timestamp descending.
+        List of ``DetectionRecord`` objects ordered by timestamp descending,
+        with ``id`` descending as a tiebreaker for a deterministic page order.
     """
     query = select(DetectionRecord)
     if species is not None:
@@ -45,7 +46,18 @@ def list_detections(
         query = query.where(DetectionRecord.timestamp >= from_)
     if to is not None:
         query = query.where(DetectionRecord.timestamp <= to)
-    query = query.order_by(DetectionRecord.timestamp.desc()).offset(offset).limit(limit)  # type: ignore[attr-defined]
+    # Order by timestamp, then id, so rows with identical timestamps keep a
+    # stable order across paginated requests. Without the id tiebreaker SQLite
+    # may return tied rows in a different order per query, which makes
+    # offset-based pages overlap and surfaces duplicate detections in the UI.
+    query = (
+        query.order_by(
+            DetectionRecord.timestamp.desc(),  # type: ignore[attr-defined]
+            DetectionRecord.id.desc(),  # type: ignore[attr-defined]
+        )
+        .offset(offset)
+        .limit(limit)
+    )
     return list(session.exec(query).all())
 
 
