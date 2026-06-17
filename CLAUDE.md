@@ -84,6 +84,7 @@ monolithic `object_detection.py` was refactored along these seams):
 - `preprocess_roi` — expands a box to a padded square and crops the ROI
 - `draw_boxes` — annotates a frame with boxes + labels + optional classification result
 - `save_thumbnail` — writes a 200×200 JPEG thumbnail
+- `label_for_category` — bounds-checked label look-up; returns `None` when the class index is outside the label list. The IMX500 SSD model occasionally emits a spurious detection whose category index is out of range, so every `labels[category]` access goes through this helper. `draw_boxes` falls back to an `id:<n>` placeholder, and `process_detections` skips the detection entirely (logging a warning to the `tracking` logger) instead of crashing the camera callback with an `IndexError`
 
 **`src/tracking.py`** — multi-frame stability tracking:
 - `StableDetectionTracker` — IoU-based tracker; a detection must match across `min_stable_frames` consecutive frames before `should_run_bird_classification_for_detection` returns `True`; each track is classified at most once (`mark_classified`)
