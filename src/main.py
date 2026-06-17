@@ -1,6 +1,7 @@
 """Main entry point for bird detection and classification application."""
 
 import logging
+import os
 import sys
 import threading
 import time
@@ -25,8 +26,21 @@ import classification_pipeline
 from camera_server import camera_server_port, start_camera_server
 from config import config as app_config
 
-from db.database import make_engine, init_db, make_session_factory
-from db.writer import DetectionWriter
+# The `db` package lives at the repository root, one level above this file's
+# directory (src/). The flat sibling imports above resolve via sys.path[0]
+# (= src/), but `db` does not, so add the repo root to the path explicitly.
+# This lets `cd src && python main.py` work locally and mirrors the Docker
+# image's PYTHONPATH=/app without requiring the env var to be set.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from db.database import (  # noqa: E402  pylint: disable=wrong-import-position
+    make_engine,
+    init_db,
+    make_session_factory,
+)
+from db.writer import (  # noqa: E402  pylint: disable=wrong-import-position
+    DetectionWriter,
+)
 
 
 def wait_for_camera(model_path: str, retry_interval: float = 30.0) -> IMX500:
@@ -200,7 +214,21 @@ def main():
 
     # Expose on-demand snapshots so the read-only API can surface a live test
     # image (the detector owns the camera exclusively; the API proxies to this).
-    camera_server = start_camera_server(picam2, camera_server_port())
+    # The snapshot server is auxiliary: if its port is already in use (another
+    # service or a stale instance), log a warning and run without it rather than
+    # killing the detection pipeline.
+    snapshot_port = camera_server_port()
+    try:
+        camera_server = start_camera_server(picam2, snapshot_port)
+    except OSError as exc:
+        tracking_logger.warning(
+            "Camera snapshot server could not bind port %d (%s); continuing "
+            "without it. Set CAMERA_SERVER_PORT to a free port to enable the "
+            "Camera tab's Test Camera button.",
+            snapshot_port,
+            exc,
+        )
+        camera_server = None
 
     # Get labels for display
     labels = get_labels(intrinsics)
@@ -239,7 +267,8 @@ def main():
                 last_results, classification_pipeline.classification_results
             )
     except KeyboardInterrupt:
-        camera_server.shutdown()
+        if camera_server is not None:
+            camera_server.shutdown()
         manager.stop()
         detection_writer.stop()
 
