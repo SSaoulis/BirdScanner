@@ -30,6 +30,12 @@ def list_detections(
     to: Optional[datetime] = Query(
         default=None, description="Latest timestamp (inclusive)"
     ),
+    min_confidence: Optional[float] = Query(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Only return detections with confidence at or above this value (0–1)",
+    ),
     limit: int = Query(default=50, ge=1, le=500, description="Max records to return"),
     offset: int = Query(default=0, ge=0, description="Number of records to skip"),
     session: Session = Depends(get_session),
@@ -40,12 +46,15 @@ def list_detections(
         species: If provided, only return detections for this species.
         from_: If provided, only return detections at or after this timestamp.
         to: If provided, only return detections at or before this timestamp.
+        min_confidence: If provided, only return detections whose confidence is
+            at or above this value (0–1).
         limit: Maximum number of records to return (1–500, default 50).
         offset: Number of records to skip for pagination.
         session: Injected database session.
 
     Returns:
-        List of ``DetectionRecord`` objects ordered by timestamp descending.
+        List of ``DetectionRecord`` objects ordered by timestamp descending,
+        with ``id`` descending as a tiebreaker for a deterministic page order.
     """
     query = select(DetectionRecord)
     if species is not None:
@@ -54,7 +63,20 @@ def list_detections(
         query = query.where(DetectionRecord.timestamp >= from_)
     if to is not None:
         query = query.where(DetectionRecord.timestamp <= to)
-    query = query.order_by(DetectionRecord.timestamp.desc()).offset(offset).limit(limit)  # type: ignore[attr-defined]
+    if min_confidence is not None:
+        query = query.where(DetectionRecord.confidence >= min_confidence)
+    # Order by timestamp, then id, so rows with identical timestamps keep a
+    # stable order across paginated requests. Without the id tiebreaker SQLite
+    # may return tied rows in a different order per query, which makes
+    # offset-based pages overlap and surfaces duplicate detections in the UI.
+    query = (
+        query.order_by(
+            DetectionRecord.timestamp.desc(),  # type: ignore[attr-defined]
+            DetectionRecord.id.desc(),  # type: ignore[attr-defined]
+        )
+        .offset(offset)
+        .limit(limit)
+    )
     return list(session.exec(query).all())
 
 
