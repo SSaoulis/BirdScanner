@@ -92,7 +92,17 @@ export function History() {
         offset,
       });
 
-      setDetections((prev) => [...prev, ...data]);
+      // Drop any rows we already hold before appending. The detector writes
+      // new detections live, so a row inserted between page fetches shifts the
+      // offset window and makes the next page re-return rows we already have.
+      // Without this guard those rows render twice (in both Timeline and
+      // Gallery, which share this list). The offset cursor still advances by
+      // the raw page length so the server-side window keeps moving forward.
+      setDetections((prev) => {
+        const seen = new Set(prev.map((d) => d.id));
+        const fresh = data.filter((d) => !seen.has(d.id));
+        return [...prev, ...fresh];
+      });
       setOffset((prev) => prev + data.length);
       if (data.length < PAGE_SIZE) setExhausted(true);
     } catch (e) {

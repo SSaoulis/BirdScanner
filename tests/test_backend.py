@@ -180,6 +180,45 @@ class TestListDetections:
         timestamps = [d["timestamp"] for d in resp.json()]
         assert timestamps == sorted(timestamps, reverse=True)
 
+    def test_tied_timestamps_paginate_without_duplicates(
+        self, session_factory, image_dir
+    ):
+        """Pages must not overlap when many rows share one timestamp.
+
+        Without a deterministic tiebreaker SQLite can return tied rows in a
+        different order per query, so offset-based pages overlap and the UI
+        shows the same detection twice. The ``id`` tiebreaker keeps the order
+        stable so every paginated page is disjoint.
+        """
+        same_ts = datetime(2024, 7, 1, 9, 0, 0, tzinfo=timezone.utc)
+        with session_factory() as session:
+            for track_id in range(10):
+                _make_record(
+                    session, image_dir, track_id=track_id, ts=same_ts
+                )
+
+        from backend.main import app
+        from backend.dependencies import get_session, get_image_dir
+
+        def _override_session():
+            with session_factory() as session:
+                yield session
+
+        app.dependency_overrides[get_session] = _override_session
+        app.dependency_overrides[get_image_dir] = lambda: image_dir
+        try:
+            client = TestClient(app)
+            seen_ids: list[int] = []
+            for offset in range(0, 10, 3):
+                page = client.get(
+                    f"/api/detections?limit=3&offset={offset}"
+                ).json()
+                seen_ids.extend(d["id"] for d in page)
+        finally:
+            app.dependency_overrides.clear()
+
+        assert len(seen_ids) == len(set(seen_ids)) == 10
+
 
 class TestGetDetection:
     def test_returns_correct_record(self, client):
@@ -310,12 +349,24 @@ class TestSpecies:
 class _FakeHttpxResponse:
     """Minimal httpx.Response stand-in for the camera proxy."""
 
-    def __init__(self, content: bytes, content_type: str = "image/jpeg") -> None:
+    def __init__(
+        self,
+        content: bytes = b"",
+        content_type: str = "image/jpeg",
+        status_code: int = 200,
+        json_body=None,
+    ) -> None:
         self.content = content
         self.headers = {"Content-Type": content_type}
+        self.status_code = status_code
+        self.text = content.decode("utf-8", "replace")
+        self._json_body = json_body
 
     def raise_for_status(self) -> None:
         return None
+
+    def json(self):
+        return self._json_body
 
 
 class TestCamera:
@@ -346,3 +397,63 @@ class TestCamera:
         monkeypatch.setattr(camera.httpx, "get", _fake_get)
         resp = client.get("/api/camera/snapshot")
         assert resp.status_code == 503
+
+    def test_full_snapshot_proxies_detector_jpeg(self, client, monkeypatch):
+        from backend.routers import camera
+
+        captured = {}
+
+        def _fake_get(url, timeout):
+            captured["url"] = url
+            return _FakeHttpxResponse(b"FULLJPEG")
+
+        monkeypatch.setattr(camera.httpx, "get", _fake_get)
+        resp = client.get("/api/camera/snapshot/full")
+        assert resp.status_code == 200
+        assert resp.content == b"FULLJPEG"
+        assert captured["url"].endswith("/capture/full")
+
+    def test_get_crop_proxies_detector_json(self, client, monkeypatch):
+        from backend.routers import camera
+
+        state = {"x": 1, "y": 2, "w": 900, "h": 900, "sensor_w": 4056}
+
+        def _fake_get(url, timeout):
+            return _FakeHttpxResponse(content_type="application/json", json_body=state)
+
+        monkeypatch.setattr(camera.httpx, "get", _fake_get)
+        resp = client.get("/api/camera/crop")
+        assert resp.status_code == 200
+        assert resp.json() == state
+
+    def test_set_crop_proxies_post_body(self, client, monkeypatch):
+        from backend.routers import camera
+
+        captured = {}
+        state = {"x": 1, "y": 2, "w": 900, "h": 900}
+
+        def _fake_post(url, json, timeout):
+            captured["url"] = url
+            captured["json"] = json
+            return _FakeHttpxResponse(
+                content_type="application/json", json_body=state
+            )
+
+        monkeypatch.setattr(camera.httpx, "post", _fake_post)
+        resp = client.post(
+            "/api/camera/crop", json={"nx": 0.1, "ny": 0.2, "nw": 0.3, "nh": 0.4}
+        )
+        assert resp.status_code == 200
+        assert resp.json() == state
+        assert captured["url"].endswith("/crop")
+        assert captured["json"] == {"nx": 0.1, "ny": 0.2, "nw": 0.3, "nh": 0.4}
+
+    def test_set_crop_relays_detector_400(self, client, monkeypatch):
+        from backend.routers import camera
+
+        def _fake_post(url, json, timeout):
+            return _FakeHttpxResponse(b"bad body", status_code=400)
+
+        monkeypatch.setattr(camera.httpx, "post", _fake_post)
+        resp = client.post("/api/camera/crop", json={"nx": 0.1})
+        assert resp.status_code == 400
