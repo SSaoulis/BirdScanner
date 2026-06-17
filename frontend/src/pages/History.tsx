@@ -22,6 +22,11 @@ export function History() {
   const [filterFrom, setFilterFrom] = useState<string>("");
   const [filterTo, setFilterTo] = useState<string>("");
   // Minimum confidence as a 0–100 percentage; 0 means "show all".
+  // `sliderMinConfidence` tracks the live slider position for display only;
+  // `filterMinConfidence` is the committed value that drives the fetch and is
+  // only updated when the slider is released (so dragging doesn't refetch on
+  // every intermediate value).
+  const [sliderMinConfidence, setSliderMinConfidence] = useState<number>(0);
   const [filterMinConfidence, setFilterMinConfidence] = useState<number>(0);
 
   // ── Pagination state ─────────────────────────────────────────────
@@ -177,10 +182,10 @@ export function History() {
             />
           </div>
 
-          {/* Minimum confidence slider */}
+          {/* Minimum confidence slider — refetches only when released. */}
           <div className="flex flex-col gap-1 min-w-[180px]">
             <label className="text-xs text-slate-400 font-medium" htmlFor="filter-confidence">
-              Min confidence: {filterMinConfidence}%
+              Min confidence: {sliderMinConfidence}%
             </label>
             <input
               id="filter-confidence"
@@ -189,8 +194,11 @@ export function History() {
               max={100}
               step={1}
               className="accent-emerald-500 mt-2"
-              value={filterMinConfidence}
-              onChange={(e) => setFilterMinConfidence(Number(e.target.value))}
+              value={sliderMinConfidence}
+              onChange={(e) => setSliderMinConfidence(Number(e.target.value))}
+              onMouseUp={() => setFilterMinConfidence(sliderMinConfidence)}
+              onTouchEnd={() => setFilterMinConfidence(sliderMinConfidence)}
+              onKeyUp={() => setFilterMinConfidence(sliderMinConfidence)}
             />
           </div>
 
@@ -202,6 +210,7 @@ export function History() {
                 setFilterSpecies("");
                 setFilterFrom("");
                 setFilterTo("");
+                setSliderMinConfidence(0);
                 setFilterMinConfidence(0);
               }}
             >
