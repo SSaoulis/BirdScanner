@@ -14,7 +14,7 @@ _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-from tools import build_species_reference as builder  # noqa: E402
+from tools import build_species_reference as builder  # noqa: E402  # pylint: disable=wrong-import-position
 
 
 # --- slug + pure helpers ---------------------------------------------------
@@ -178,7 +178,7 @@ def test_build_manifest_incremental_skips_complete_entries(monkeypatch, tmp_path
 
     second = builder.build_manifest(["Arctic tern"], {}, first, throttle=0)
 
-    assert calls == []  # no refetch
+    assert not calls  # no refetch
     assert second["species"]["Arctic tern"] == first["species"]["Arctic tern"]
 
 

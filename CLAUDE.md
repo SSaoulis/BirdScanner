@@ -53,6 +53,33 @@ native bindings (`libcamera`, `picamera2`) and the untyped third-party libs
 (`onnxruntime`, `psutil`, `paramiko`), so mypy reports only genuine type errors in our
 own code.
 
+### Linting (pylint)
+
+Pylint is configured to rate the whole codebase **10.00/10** (exit 0). Like mypy, it
+runs in **two passes** because of the same flat-import vs `src.*` split, each with its
+own config:
+
+```bash
+pylint src backend db utils tools           # source tree (root .pylintrc)
+pylint tests --rcfile=tests/.pylintrc        # tests (test-tuned config)
+```
+
+- **`.pylintrc`** (root) lints the source tree. It silences the same Pi-only / untyped
+  native libs mypy ignores via `ignored-modules` (`libcamera`, `picamera2*`,
+  `onnxruntime*`, `onnx`) and sets `generated-members=cv2.*` (OpenCV's members are
+  populated dynamically, so pylint can't see them). `examples/` is excluded (it is the
+  original unrefactored reference script). A small set of opinionated/complexity checks
+  are disabled project-wide (`too-few-public-methods`, `too-many-locals`/`-branches`/
+  `-statements`, `too-many-positional-arguments`, `import-outside-toplevel` — used for
+  the deliberate lazy Pi-only imports, `broad-exception-caught`, `global-statement` —
+  the module-singleton pattern, `duplicate-code`); `max-line-length=120`, `max-args=8`,
+  `max-attributes=15`. All other findings were fixed in code (docstrings, encodings,
+  `raise ... from`, import order, `sys.exit`, unused names, etc.).
+- **`tests/.pylintrc`** additionally relaxes pytest idioms (`missing-*-docstring`,
+  `redefined-outer-name` from fixtures, `unused-argument`, `protected-access`) and
+  silences `import-error` (the same two-world import problem mypy documents). Run it
+  explicitly with `--rcfile=tests/.pylintrc`.
+
 ## Architecture
 
 ### Detection pipeline (frame loop)

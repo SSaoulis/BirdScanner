@@ -1,15 +1,14 @@
-import pytest
-import numpy as np
-from pathlib import Path
-from PIL import Image
 import re
-
-from src.classification import ONNXClassifier, Classifier, build_preprocessing
-
-# add src to path
 import sys
 from pathlib import Path
 
+import numpy as np
+import pytest
+from PIL import Image
+
+from src.classification import Classifier, ONNXClassifier, build_preprocessing
+
+# add src to path
 sys.path.append(str(Path(__file__).parent.parent / "src"))  # noqa: E
 
 # Paths

@@ -6,17 +6,19 @@ with a fixed sensor-level crop (ScalerCrop).
 
 import argparse
 import os
+import sys
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+
 import libcamera
-import time
 
 try:
     from picamera2 import Picamera2
 except ImportError:
     print("picamera2 is not installed. Install it with: pip install picamera2")
-    exit(1)
+    sys.exit(1)
 
 
 def take_photo(output_dir: str = ".", filename: Optional[str] = None) -> str:
@@ -43,11 +45,13 @@ def take_photo(output_dir: str = ".", filename: Optional[str] = None) -> str:
 
     # ---- Crop configuration (EXACT SAME LOGIC) ----
     # Raspberry Pi AI Camera (IMX500) in full resolution (4K): 4056x3040
+    # pylint: disable=invalid-name  # treat these as in-function constants
     SENSOR_W, SENSOR_H = 4056, 3040
     CROP_W, CROP_H = 900, 900
 
     ANCHOR_X_FRAC = 4 / 13
     ANCHOR_Y_FRAC = 5 / 10
+    # pylint: enable=invalid-name
 
     crop_x = int(SENSOR_W * ANCHOR_X_FRAC)
     crop_y = int(SENSOR_H * ANCHOR_Y_FRAC)

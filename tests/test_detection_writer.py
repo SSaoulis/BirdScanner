@@ -9,7 +9,7 @@ from datetime import datetime
 
 import pytest
 from sqlalchemy.pool import StaticPool
-from sqlmodel import Session, SQLModel, create_engine
+from sqlmodel import Session, create_engine
 
 from db.database import init_db, make_session_factory
 from db.models import DetectionRecord

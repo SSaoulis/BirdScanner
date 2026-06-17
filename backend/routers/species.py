@@ -37,6 +37,7 @@ def list_species(session: Session = Depends(get_session)) -> List[SpeciesSummary
     Returns:
         List of ``SpeciesSummary`` objects sorted by count descending.
     """
+    # pylint: disable=not-callable  # sqlalchemy's func.count is a dynamic callable
     rows = session.exec(
         select(
             DetectionRecord.species, func.count(col(DetectionRecord.id)).label("count")

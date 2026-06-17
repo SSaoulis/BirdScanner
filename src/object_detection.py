@@ -74,7 +74,7 @@ def parse_detections(
     bbox_order = intrinsics.bbox_order
 
     np_outputs = imx500.get_outputs(metadata, add_batch=True)
-    input_w, input_h = imx500.get_input_size()
+    _, input_h = imx500.get_input_size()
 
     if np_outputs is None:
         return last_detections

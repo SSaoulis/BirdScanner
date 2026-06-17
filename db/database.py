@@ -18,7 +18,9 @@ from typing import Callable
 
 from sqlmodel import Session, SQLModel, create_engine
 
-from db.models import DetectionRecord  # noqa: F401 — ensures model is registered
+# Imported for its side effect: importing the model registers it on SQLModel's
+# metadata so ``init_db`` can create the table.
+from db.models import DetectionRecord  # noqa: F401  # pylint: disable=unused-import
 
 _DEFAULT_DB_PATH = "detections.db"
 

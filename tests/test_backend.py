@@ -5,7 +5,6 @@ no external dependencies are required.
 """
 
 import io
-import os
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path

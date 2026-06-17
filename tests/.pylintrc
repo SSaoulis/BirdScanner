@@ -1,0 +1,42 @@
+# Pylint configuration for the test suite.
+#
+# Run as:  pylint tests --rcfile=tests/.pylintrc
+#
+# Tests legitimately use patterns pylint flags by default: pytest fixtures
+# shadow their function arguments (redefined-outer-name / unused-argument),
+# test functions don't need docstrings, and tests reach into internals
+# (protected-access).  Import resolution is the same two-world problem mypy
+# documents — tests import the detector modules as ``src.*`` while ``src/``
+# imports its siblings by flat name — so import-error is silenced here too.
+
+[MAIN]
+ignored-modules=libcamera,
+                picamera2,
+                picamera2.devices,
+                picamera2.devices.imx500,
+                onnxruntime,
+                onnxruntime.quantization,
+                onnx
+
+[MESSAGES CONTROL]
+disable=missing-module-docstring,
+        missing-class-docstring,
+        missing-function-docstring,
+        redefined-outer-name,
+        unused-argument,
+        protected-access,
+        too-few-public-methods,
+        too-many-locals,
+        too-many-branches,
+        too-many-statements,
+        too-many-arguments,
+        too-many-positional-arguments,
+        import-outside-toplevel,
+        broad-exception-caught,
+        global-statement,
+        duplicate-code,
+        consider-using-with,
+        import-error
+
+[FORMAT]
+max-line-length=120
