@@ -159,6 +159,17 @@ class TestListDetections:
         assert resp.status_code == 200
         assert len(resp.json()) == 1
 
+    def test_min_confidence_filter(self, client):
+        resp = client.get("/api/detections?min_confidence=0.9")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 2
+        assert all(d["confidence"] >= 0.9 for d in data)
+
+    def test_min_confidence_out_of_range_rejected(self, client):
+        resp = client.get("/api/detections?min_confidence=1.5")
+        assert resp.status_code == 422
+
     def test_pagination(self, client):
         resp = client.get("/api/detections?limit=2&offset=0")
         assert resp.status_code == 200

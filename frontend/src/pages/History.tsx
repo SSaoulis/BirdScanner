@@ -21,6 +21,8 @@ export function History() {
   const [filterSpecies, setFilterSpecies] = useState<string>("");
   const [filterFrom, setFilterFrom] = useState<string>("");
   const [filterTo, setFilterTo] = useState<string>("");
+  // Minimum confidence as a 0–100 percentage; 0 means "show all".
+  const [filterMinConfidence, setFilterMinConfidence] = useState<number>(0);
 
   // ── Pagination state ─────────────────────────────────────────────
   const [detections, setDetections] = useState<Detection[]>([]);
@@ -56,6 +58,7 @@ export function History() {
         species: filterSpecies || undefined,
         from: filterFrom || undefined,
         to: filterTo || undefined,
+        min_confidence: filterMinConfidence > 0 ? filterMinConfidence / 100 : undefined,
         limit: PAGE_SIZE,
         offset: 0,
       });
@@ -68,7 +71,7 @@ export function History() {
     } finally {
       setLoading(false);
     }
-  }, [filterSpecies, filterFrom, filterTo]);
+  }, [filterSpecies, filterFrom, filterTo, filterMinConfidence]);
 
   useEffect(() => {
     loadFirstPage();
@@ -84,6 +87,7 @@ export function History() {
         species: filterSpecies || undefined,
         from: filterFrom || undefined,
         to: filterTo || undefined,
+        min_confidence: filterMinConfidence > 0 ? filterMinConfidence / 100 : undefined,
         limit: PAGE_SIZE,
         offset,
       });
@@ -106,7 +110,7 @@ export function History() {
     } finally {
       setLoadingMore(false);
     }
-  }, [loadingMore, exhausted, filterSpecies, filterFrom, filterTo, offset]);
+  }, [loadingMore, exhausted, filterSpecies, filterFrom, filterTo, filterMinConfidence, offset]);
 
   // ── Lightbox helpers ──────────────────────────────────────────────
   function handleOpenLightbox(index: number) {
@@ -173,14 +177,32 @@ export function History() {
             />
           </div>
 
+          {/* Minimum confidence slider */}
+          <div className="flex flex-col gap-1 min-w-[180px]">
+            <label className="text-xs text-slate-400 font-medium" htmlFor="filter-confidence">
+              Min confidence: {filterMinConfidence}%
+            </label>
+            <input
+              id="filter-confidence"
+              type="range"
+              min={0}
+              max={100}
+              step={1}
+              className="accent-emerald-500 mt-2"
+              value={filterMinConfidence}
+              onChange={(e) => setFilterMinConfidence(Number(e.target.value))}
+            />
+          </div>
+
           {/* Clear filters */}
-          {(filterSpecies || filterFrom || filterTo) && (
+          {(filterSpecies || filterFrom || filterTo || filterMinConfidence > 0) && (
             <button
               className="text-sm text-slate-400 hover:text-white underline self-end pb-2"
               onClick={() => {
                 setFilterSpecies("");
                 setFilterFrom("");
                 setFilterTo("");
+                setFilterMinConfidence(0);
               }}
             >
               Clear filters
