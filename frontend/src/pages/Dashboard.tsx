@@ -10,6 +10,11 @@ export function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   // Minimum confidence as a 0–100 percentage; 0 means "show all".
+  // `sliderConfidence` tracks the live slider position for display only;
+  // `minConfidence` is the committed value that drives the fetch and is only
+  // updated when the slider is released (so dragging doesn't refetch on every
+  // intermediate value).
+  const [sliderConfidence, setSliderConfidence] = useState<number>(0);
   const [minConfidence, setMinConfidence] = useState<number>(0);
 
   useEffect(() => {
@@ -48,7 +53,7 @@ export function Dashboard() {
               className="text-xs text-slate-400 font-medium whitespace-nowrap"
               htmlFor="dashboard-confidence"
             >
-              Min confidence: {minConfidence}%
+              Min confidence: {sliderConfidence}%
             </label>
             <input
               id="dashboard-confidence"
@@ -57,8 +62,11 @@ export function Dashboard() {
               max={100}
               step={1}
               className="accent-emerald-500 w-40"
-              value={minConfidence}
-              onChange={(e) => setMinConfidence(Number(e.target.value))}
+              value={sliderConfidence}
+              onChange={(e) => setSliderConfidence(Number(e.target.value))}
+              onMouseUp={() => setMinConfidence(sliderConfidence)}
+              onTouchEnd={() => setMinConfidence(sliderConfidence)}
+              onKeyUp={() => setMinConfidence(sliderConfidence)}
             />
           </div>
         </div>
