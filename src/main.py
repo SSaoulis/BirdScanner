@@ -27,6 +27,7 @@ from config import config as app_config
 
 from db.database import make_engine, init_db, make_session_factory
 from db.writer import DetectionWriter
+from db.deleter import delete_detection
 
 
 def wait_for_camera(model_path: str, retry_interval: float = 30.0) -> IMX500:
@@ -198,9 +199,23 @@ def main():
     if intrinsics.preserve_aspect_ratio:
         imx500.set_auto_aspect_ratio()
 
-    # Expose on-demand snapshots so the read-only API can surface a live test
-    # image (the detector owns the camera exclusively; the API proxies to this).
-    camera_server = start_camera_server(picam2, camera_server_port())
+    # Expose on-demand snapshots + detection deletion so the read-only API can
+    # surface a live test image and remove detections (the detector owns the
+    # camera and the read-write data volume exclusively; the API proxies here).
+    # Deletion runs synchronously on the server thread against the same engine
+    # the writer uses, removing the DB row and the image + thumbnail files.
+    from pathlib import Path
+
+    image_root = Path(classification_pipeline.IMAGE_DIR)
+    delete_session_factory = make_session_factory(engine)
+
+    def handle_delete(detection_id: int) -> bool:
+        """Delete a detection by id; returns True if a record existed."""
+        return delete_detection(delete_session_factory, image_root, detection_id)
+
+    camera_server = start_camera_server(
+        picam2, camera_server_port(), delete_detection=handle_delete
+    )
 
     # Get labels for display
     labels = get_labels(intrinsics)

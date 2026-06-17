@@ -1,10 +1,13 @@
-"""On-demand camera snapshot HTTP server for the detector process.
+"""Detector control HTTP server (camera snapshots + detection deletion).
 
-The detector owns the IMX500 camera exclusively, so the read-only API
-container cannot open the camera itself.  This module runs a tiny stdlib
-HTTP server on a background daemon thread inside the detector that captures
-a fresh JPEG frame on demand.  The API proxies browser snapshot requests
-through to it (see ``backend/routers/camera.py``).
+The detector owns the IMX500 camera and the data volume (database + images)
+read-write, so the read-only API container cannot do these things itself.  This
+module runs a tiny stdlib HTTP server on a background daemon thread inside the
+detector and the API proxies browser requests through to it:
+
+* ``GET /capture`` — capture a fresh JPEG frame (see ``backend/routers/camera.py``).
+* ``DELETE /detections/{id}`` — delete a detection row + its image files (see
+  ``backend/routers/detections.py``).
 
 The port is read from the ``CAMERA_SERVER_PORT`` environment variable and
 defaults to :data:`DEFAULT_CAMERA_SERVER_PORT`.
@@ -14,7 +17,7 @@ import logging
 import os
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any, Type
+from typing import Any, Callable, Optional, Type
 
 import cv2
 import numpy as np
@@ -22,6 +25,12 @@ import numpy as np
 logger = logging.getLogger("tracking")
 
 DEFAULT_CAMERA_SERVER_PORT = 8000
+
+# A callable that deletes the detection with the given id and returns True if a
+# record existed (False otherwise).  See :func:`db.deleter.delete_detection`.
+DeleteCallback = Callable[[int], bool]
+
+_DETECTIONS_PREFIX = "/detections/"
 
 
 def capture_jpeg(picam2: Any, stream: str = "main") -> bytes:
@@ -50,18 +59,44 @@ def capture_jpeg(picam2: Any, stream: str = "main") -> bytes:
     return buffer.tobytes()
 
 
-def _make_handler(picam2: Any) -> Type[BaseHTTPRequestHandler]:
-    """Build a request handler class bound to a specific camera instance.
+def _parse_detection_id(path: str) -> Optional[int]:
+    """Extract the integer detection id from a ``/detections/{id}`` path.
+
+    Args:
+        path: The request path, possibly including a query string.
+
+    Returns:
+        The parsed id, or ``None`` if the path does not match the expected
+        ``/detections/{int}`` shape.
+    """
+    route = path.split("?", 1)[0]
+    if not route.startswith(_DETECTIONS_PREFIX):
+        return None
+    tail = route[len(_DETECTIONS_PREFIX):]
+    try:
+        return int(tail)
+    except ValueError:
+        return None
+
+
+def _make_handler(
+    picam2: Any, delete_detection: Optional[DeleteCallback] = None
+) -> Type[BaseHTTPRequestHandler]:
+    """Build a request handler class bound to a camera and delete callback.
 
     Args:
         picam2: The started ``Picamera2`` instance to capture frames from.
+        delete_detection: Optional callable that deletes a detection by id and
+            returns ``True`` if a record existed.  When ``None``, ``DELETE``
+            requests are answered with 404 (deletion not configured).
 
     Returns:
-        A ``BaseHTTPRequestHandler`` subclass that serves ``GET /capture``.
+        A ``BaseHTTPRequestHandler`` subclass serving ``GET /capture`` and
+        ``DELETE /detections/{id}``.
     """
 
     class CameraRequestHandler(BaseHTTPRequestHandler):
-        """Serves a freshly captured JPEG frame on ``GET /capture``."""
+        """Serves camera snapshots and detection deletions."""
 
         # do_GET is the stdlib-mandated handler name; the broad except is
         # intentional so any capture failure becomes a clean 503.
@@ -83,6 +118,26 @@ def _make_handler(picam2: Any) -> Type[BaseHTTPRequestHandler]:
             self.end_headers()
             self.wfile.write(jpeg)
 
+        # do_DELETE is the stdlib-mandated handler name; the broad except is
+        # intentional so any deletion failure becomes a clean 500.
+        def do_DELETE(self) -> None:  # pylint: disable=invalid-name
+            """Handle ``DELETE /detections/{id}``: remove a detection."""
+            detection_id = _parse_detection_id(self.path)
+            if delete_detection is None or detection_id is None:
+                self.send_error(404, "Not Found")
+                return
+            try:
+                deleted = delete_detection(detection_id)
+            except Exception as exc:  # pylint: disable=broad-exception-caught
+                logger.warning("Detection delete failed: %s", exc)
+                self.send_error(500, "Delete failed")
+                return
+            if not deleted:
+                self.send_error(404, "Detection not found")
+                return
+            self.send_response(204)
+            self.end_headers()
+
         # Signature mirrors stdlib BaseHTTPRequestHandler.log_message.
         def log_message(  # pylint: disable=redefined-builtin
             self, format: str, *args: Any
@@ -94,23 +149,30 @@ def _make_handler(picam2: Any) -> Type[BaseHTTPRequestHandler]:
 
 
 def start_camera_server(
-    picam2: Any, port: int = DEFAULT_CAMERA_SERVER_PORT
+    picam2: Any,
+    port: int = DEFAULT_CAMERA_SERVER_PORT,
+    delete_detection: Optional[DeleteCallback] = None,
 ) -> ThreadingHTTPServer:
-    """Start the snapshot HTTP server on a background daemon thread.
+    """Start the detector control HTTP server on a background daemon thread.
 
     Args:
         picam2: The started ``Picamera2`` instance to capture frames from.
         port: TCP port to listen on (all interfaces).
+        delete_detection: Optional callable that deletes a detection by id and
+            returns ``True`` if a record existed.  When omitted, ``DELETE``
+            requests are answered with 404.
 
     Returns:
         The running ``ThreadingHTTPServer``; call ``shutdown()`` to stop it.
     """
-    server = ThreadingHTTPServer(("0.0.0.0", port), _make_handler(picam2))
+    server = ThreadingHTTPServer(
+        ("0.0.0.0", port), _make_handler(picam2, delete_detection)
+    )
     thread = threading.Thread(
         target=server.serve_forever, daemon=True, name="camera-server"
     )
     thread.start()
-    logger.info("Camera snapshot server listening on port %d", port)
+    logger.info("Detector control server listening on port %d", port)
     return server
 
 

@@ -108,3 +108,95 @@ def test_capture_failure_returns_503(running_server) -> None:
     with pytest.raises(urllib.error.HTTPError) as exc_info:
         urllib.request.urlopen(f"{base_url}/capture", timeout=5)
     assert exc_info.value.code == 503
+
+
+# ---------------------------------------------------------------------------
+# Detection deletion (DELETE /detections/{id})
+# ---------------------------------------------------------------------------
+
+
+def _delete(url: str) -> int:
+    """Issue a DELETE request and return the HTTP status code."""
+    req = urllib.request.Request(url, method="DELETE")
+    with urllib.request.urlopen(req, timeout=5) as resp:
+        return resp.status
+
+
+@pytest.fixture()
+def deleting_server(request):
+    """Start the control server with a delete callback; yield (base_url, calls).
+
+    ``request.param`` is the callback's return value (True/False) or an
+    exception instance to raise.  ``calls`` records the ids passed in.
+    """
+    outcome = request.param
+    calls: list[int] = []
+
+    def _delete_callback(detection_id: int) -> bool:
+        calls.append(detection_id)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    server = start_camera_server(
+        _FakeCamera(_solid_frame()), port=0, delete_detection=_delete_callback
+    )
+    host, port = server.server_address
+    try:
+        yield f"http://127.0.0.1:{port}", calls
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+@pytest.mark.parametrize("deleting_server", [True], indirect=True)
+def test_delete_existing_returns_204(deleting_server) -> None:
+    base_url, calls = deleting_server
+    assert _delete(f"{base_url}/detections/42") == 204
+    assert calls == [42]
+
+
+@pytest.mark.parametrize("deleting_server", [False], indirect=True)
+def test_delete_missing_returns_404(deleting_server) -> None:
+    base_url, calls = deleting_server
+    with pytest.raises(urllib.error.HTTPError) as exc_info:
+        urllib.request.urlopen(
+            urllib.request.Request(f"{base_url}/detections/7", method="DELETE"),
+            timeout=5,
+        )
+    assert exc_info.value.code == 404
+    assert calls == [7]
+
+
+@pytest.mark.parametrize("deleting_server", [True], indirect=True)
+def test_delete_non_integer_id_returns_404(deleting_server) -> None:
+    base_url, calls = deleting_server
+    with pytest.raises(urllib.error.HTTPError) as exc_info:
+        urllib.request.urlopen(
+            urllib.request.Request(f"{base_url}/detections/abc", method="DELETE"),
+            timeout=5,
+        )
+    assert exc_info.value.code == 404
+    assert calls == []
+
+
+@pytest.mark.parametrize("deleting_server", [RuntimeError("boom")], indirect=True)
+def test_delete_callback_error_returns_500(deleting_server) -> None:
+    base_url, _ = deleting_server
+    with pytest.raises(urllib.error.HTTPError) as exc_info:
+        urllib.request.urlopen(
+            urllib.request.Request(f"{base_url}/detections/1", method="DELETE"),
+            timeout=5,
+        )
+    assert exc_info.value.code == 500
+
+
+@pytest.mark.parametrize("running_server", [_FakeCamera(_solid_frame())], indirect=True)
+def test_delete_without_callback_returns_404(running_server) -> None:
+    base_url, _ = running_server
+    with pytest.raises(urllib.error.HTTPError) as exc_info:
+        urllib.request.urlopen(
+            urllib.request.Request(f"{base_url}/detections/1", method="DELETE"),
+            timeout=5,
+        )
+    assert exc_info.value.code == 404

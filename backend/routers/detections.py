@@ -1,15 +1,24 @@
-"""Detection list and detail endpoints."""
+"""Detection list, detail, and delete endpoints."""
 
+import os
 from datetime import datetime
 from typing import List, Optional
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import Response
 from sqlmodel import Session, select
 
 from db.models import DetectionRecord
 from backend.dependencies import get_session
 
 router = APIRouter(prefix="/api/detections", tags=["detections"])
+
+# The API mounts the database and images read-only, so it cannot delete them
+# itself.  Deletes are proxied to the detector's control server (it owns the
+# data volume read-write), mirroring the camera-snapshot proxy.
+_DEFAULT_DETECTOR_URL = "http://detector:8000"
+_DELETE_TIMEOUT_SEC = 10.0
 
 
 @router.get("", response_model=List[DetectionRecord])
@@ -70,3 +79,39 @@ def get_detection(
     if record is None:
         raise HTTPException(status_code=404, detail="Detection not found")
     return record
+
+
+@router.delete("/{detection_id}", status_code=204)
+def delete_detection(detection_id: int) -> Response:
+    """Delete a detection by proxying to the detector's control server.
+
+    The API has no write access to the database or image files; the detector
+    owns them (see ``src/camera_server.py``).  This endpoint forwards the
+    delete to the detector and relays the outcome.
+
+    Args:
+        detection_id: Primary key of the detection to delete.
+
+    Returns:
+        An empty ``204 No Content`` response on success.
+
+    Raises:
+        HTTPException: 404 if the detection does not exist, 503 if the detector
+            is unreachable, or 502 if the detector returns an unexpected error.
+    """
+    base_url = os.environ.get("DETECTOR_URL", _DEFAULT_DETECTOR_URL).rstrip("/")
+    delete_url = f"{base_url}/detections/{detection_id}"
+    try:
+        resp = httpx.delete(delete_url, timeout=_DELETE_TIMEOUT_SEC)
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=503, detail=f"Detector unavailable: {exc}"
+        ) from exc
+    if resp.status_code == 404:
+        raise HTTPException(status_code=404, detail="Detection not found")
+    if resp.status_code >= 400:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Detector failed to delete detection ({resp.status_code})",
+        )
+    return Response(status_code=204)

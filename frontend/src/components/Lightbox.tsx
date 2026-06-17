@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { api, timeAgo, type Detection } from "../api";
 
 interface LightboxProps {
@@ -10,6 +10,8 @@ interface LightboxProps {
   onPrev: (() => void) | null;
   /** Called to navigate to the next detection. Omit or pass null when at the end. */
   onNext: (() => void) | null;
+  /** Called with the detection id after it has been successfully deleted. */
+  onDelete: (id: number) => void;
 }
 
 /**
@@ -17,10 +19,30 @@ interface LightboxProps {
  * detection on open. Supports keyboard navigation (Esc, ArrowLeft,
  * ArrowRight) and prev/next arrow buttons.
  */
-export function Lightbox({ detection, onClose, onPrev, onNext }: LightboxProps) {
+export function Lightbox({ detection, onClose, onPrev, onNext, onDelete }: LightboxProps) {
   const { id, species, confidence, timestamp } = detection;
   const fullUrl = api.images.fullUrl(id);
   const confidencePct = (confidence * 100).toFixed(1);
+
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  /** Confirm, delete the detection via the API, then notify the parent. */
+  async function handleDelete() {
+    if (deleting) return;
+    if (!window.confirm(`Permanently delete this ${species} detection and its image?`)) {
+      return;
+    }
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await api.detections.delete(id);
+      onDelete(id);
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : "Delete failed");
+      setDeleting(false);
+    }
+  }
 
   // Keyboard navigation
   useEffect(() => {
@@ -93,7 +115,18 @@ export function Lightbox({ detection, onClose, onPrev, onNext }: LightboxProps) 
           >
             Download
           </a>
+          <button
+            className="text-red-400 hover:text-red-300 underline disabled:opacity-50"
+            onClick={(e) => { e.stopPropagation(); handleDelete(); }}
+            disabled={deleting}
+          >
+            {deleting ? "Deleting…" : "Delete"}
+          </button>
         </div>
+
+        {deleteError && (
+          <p className="text-xs text-red-400">{deleteError}</p>
+        )}
       </div>
 
       {/* Next arrow */}
