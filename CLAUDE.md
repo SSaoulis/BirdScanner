@@ -155,7 +155,7 @@ monolithic `object_detection.py` was refactored along these seams):
 **`src/crop.py`** — pure, camera-independent crop domain (fully unit-tested in `tests/test_crop.py`):
 - `CropRegion` — `(x, y, w, h)` in **unflipped raw sensor pixels**; `.clamped()` enforces `MIN_CROP_PX` and sensor bounds (`SENSOR_W=4056`, `SENSOR_H=3040`)
 - `default_crop_region()` — the historical 900×900 feeder crop
-- `normalized_to_sensor()` / `sensor_to_normalized()` — convert between a UI box (`nx,ny,nw,nh` fractions over the displayed preview) and sensor coords, **inverting the 180° `vflip+hflip`** (the displayed top-left maps to the sensor's bottom-right)
+- `normalized_to_sensor()` / `sensor_to_normalized()` — convert between a UI box (`nx,ny,nw,nh` fractions over the displayed preview) and sensor coords via a **direct per-axis scale, no rotation**: libcamera applies `ScalerCrop` in the same orientation as the (vflip+hflip) transformed preview, so the displayed box maps straight to the matching sensor region (verified empirically — inverting the rotation cropped the diagonally-opposite corner)
 - `main_stream_size_for_crop()` — the `main` ISP output size matching a crop's aspect ratio (longer edge `DEFAULT_LONG_SIDE=640`, even-aligned), so a non-square crop is not stretched
 - `load_crop_region()` / `save_crop_region()` (atomic) — JSON persistence at `crop_config_path()` (env `CROP_CONFIG_PATH`, default `/data/crop.json`); any read error falls back to the default so a corrupt file never blocks startup
 
