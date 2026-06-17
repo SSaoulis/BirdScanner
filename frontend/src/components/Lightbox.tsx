@@ -164,13 +164,13 @@ export function Lightbox({ detection, onClose, onPrev, onNext, onDelete }: Light
               <a
                 href={fullUrl}
                 download
-                className="ml-auto text-slate-400 hover:text-white underline"
+                className="ml-auto rounded-md bg-slate-700 px-3 py-1.5 text-xs font-medium text-slate-100 transition-colors hover:bg-slate-600"
                 onClick={(e) => e.stopPropagation()}
               >
                 Download
               </a>
               <button
-                className="text-red-400 hover:text-red-300 underline disabled:opacity-50"
+                className="rounded-md bg-red-600/90 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-red-500 disabled:opacity-50"
                 onClick={(e) => { e.stopPropagation(); handleDelete(); }}
                 disabled={deleting}
               >
