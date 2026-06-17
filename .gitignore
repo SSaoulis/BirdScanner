@@ -32,6 +32,12 @@ MANIFEST
 *.json
 *.pt
 
+# Species reference data bank: the generated manifest/coverage JSON (above *.json rule)
+# and downloaded reference images are build artifacts shipped out-of-band (like the ONNX
+# model), not committed. The curated overrides map IS source, so re-include it.
+/assets/species_reference/images/
+!/assets/species_reference/overrides.json
+
 # PyInstaller
 #  Usually these files are written by a python script from a template
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.

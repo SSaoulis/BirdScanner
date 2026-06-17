@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api, type Detection } from "../api";
 import { DetectionCard } from "../components/DetectionCard";
 import { SystemMonitor } from "../components/SystemMonitor";
+import { Lightbox } from "../components/Lightbox";
 
 const RECENT_LIMIT = 10;
 
@@ -16,6 +17,8 @@ export function Dashboard() {
   // intermediate value).
   const [sliderConfidence, setSliderConfidence] = useState<number>(0);
   const [minConfidence, setMinConfidence] = useState<number>(0);
+  // Index into `detections` of the card open in the comparison panel, or null.
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
 
   useEffect(() => {
     setLoading(true);
@@ -28,6 +31,7 @@ export function Dashboard() {
         setDetections(data);
         setError(null);
         setLoading(false);
+        setLightboxIndex(null);
       })
       .catch((e: unknown) => {
         setError(e instanceof Error ? e.message : "Failed to load detections");
@@ -35,8 +39,24 @@ export function Dashboard() {
       });
   }, [minConfidence]);
 
+  const currentDetection = lightboxIndex !== null ? detections[lightboxIndex] ?? null : null;
+
   return (
     <div className="min-h-screen bg-slate-900 text-white p-6 space-y-6">
+      {/* Comparison panel overlay */}
+      {currentDetection && lightboxIndex !== null && (
+        <Lightbox
+          detection={currentDetection}
+          onClose={() => setLightboxIndex(null)}
+          onPrev={lightboxIndex > 0 ? () => setLightboxIndex(lightboxIndex - 1) : null}
+          onNext={
+            lightboxIndex < detections.length - 1
+              ? () => setLightboxIndex(lightboxIndex + 1)
+              : null
+          }
+        />
+      )}
+
       <header>
         <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
       </header>
@@ -89,8 +109,12 @@ export function Dashboard() {
 
         {!loading && detections.length > 0 && (
           <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-slate-700">
-            {detections.map((d) => (
-              <DetectionCard key={d.id} detection={d} />
+            {detections.map((d, i) => (
+              <DetectionCard
+                key={d.id}
+                detection={d}
+                onOpenLightbox={() => setLightboxIndex(i)}
+              />
             ))}
           </div>
         )}

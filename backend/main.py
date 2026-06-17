@@ -16,7 +16,14 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from backend.routers import camera, detections, images, species, system
+from backend.routers import (
+    camera,
+    detections,
+    images,
+    reference,
+    species,
+    system,
+)
 
 _FRONTEND_DIST = Path(__file__).parent.parent / "frontend" / "dist"
 
@@ -30,6 +37,7 @@ app.include_router(detections.router)
 app.include_router(images.router)
 app.include_router(system.router)
 app.include_router(species.router)
+app.include_router(reference.router)
 app.include_router(camera.router)
 
 # Serve the React frontend if the build output exists.
