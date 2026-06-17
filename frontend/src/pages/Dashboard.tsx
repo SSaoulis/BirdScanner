@@ -54,6 +54,10 @@ export function Dashboard() {
               ? () => setLightboxIndex(lightboxIndex + 1)
               : null
           }
+          onDelete={(deletedId) => {
+            setDetections((prev) => prev.filter((d) => d.id !== deletedId));
+            setLightboxIndex(null);
+          }}
         />
       )}
 

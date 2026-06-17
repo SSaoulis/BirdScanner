@@ -233,6 +233,52 @@ class TestGetDetection:
         assert resp.status_code == 404
 
 
+class _FakeDeleteResponse:
+    """Minimal httpx.Response stand-in for the delete proxy."""
+
+    def __init__(self, status_code: int) -> None:
+        self.status_code = status_code
+
+
+class TestDeleteDetection:
+    def test_proxies_delete_to_detector(self, client, monkeypatch):
+        from backend.routers import detections
+
+        captured = {}
+
+        def _fake_delete(url, timeout):
+            captured["url"] = url
+            return _FakeDeleteResponse(204)
+
+        monkeypatch.setattr(detections.httpx, "delete", _fake_delete)
+        resp = client.delete("/api/detections/123")
+        assert resp.status_code == 204
+        assert captured["url"].endswith("/detections/123")
+
+    def test_relays_404_from_detector(self, client, monkeypatch):
+        from backend.routers import detections
+
+        monkeypatch.setattr(
+            detections.httpx,
+            "delete",
+            lambda url, timeout: _FakeDeleteResponse(404),
+        )
+        resp = client.delete("/api/detections/123")
+        assert resp.status_code == 404
+
+    def test_returns_503_when_detector_unreachable(self, client, monkeypatch):
+        import httpx
+
+        from backend.routers import detections
+
+        def _fake_delete(url, timeout):
+            raise httpx.ConnectError("connection refused")
+
+        monkeypatch.setattr(detections.httpx, "delete", _fake_delete)
+        resp = client.delete("/api/detections/123")
+        assert resp.status_code == 503
+
+
 # ---------------------------------------------------------------------------
 # Images
 # ---------------------------------------------------------------------------
@@ -457,3 +503,48 @@ class TestCamera:
         monkeypatch.setattr(camera.httpx, "post", _fake_post)
         resp = client.post("/api/camera/crop", json={"nx": 0.1})
         assert resp.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# SPA static-file serving (client-side routing fallback)
+# ---------------------------------------------------------------------------
+
+
+class TestSPAStaticFiles:
+    """SPAStaticFiles must serve index.html for client-side routes.
+
+    The React app uses BrowserRouter, so deep links like ``/history`` have no
+    file on disk. The mount must fall back to ``index.html`` instead of 404 so
+    the SPA loads and renders the route client-side.
+    """
+
+    @pytest.fixture()
+    def spa_client(self, tmp_path: Path) -> TestClient:
+        """App with SPAStaticFiles mounted over a temporary dist directory."""
+        from fastapi import FastAPI
+
+        from backend.main import SPAStaticFiles
+
+        (tmp_path / "index.html").write_text("<!doctype html><div id=root>")
+        (tmp_path / "asset.js").write_text("console.log('asset');")
+
+        app = FastAPI()
+        app.mount(
+            "/", SPAStaticFiles(directory=str(tmp_path), html=True), name="frontend"
+        )
+        return TestClient(app)
+
+    def test_root_serves_index(self, spa_client):
+        resp = spa_client.get("/")
+        assert resp.status_code == 200
+        assert "id=root" in resp.text
+
+    def test_deep_link_falls_back_to_index(self, spa_client):
+        resp = spa_client.get("/history")
+        assert resp.status_code == 200
+        assert "id=root" in resp.text
+
+    def test_real_asset_still_served(self, spa_client):
+        resp = spa_client.get("/asset.js")
+        assert resp.status_code == 200
+        assert "console.log" in resp.text
