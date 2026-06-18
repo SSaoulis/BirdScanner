@@ -45,6 +45,17 @@ export function Lightbox({ detection, onClose, onPrev, onNext, onDelete }: Light
   const fullUrl = api.images.fullUrl(id);
   const confidencePct = (confidence * 100).toFixed(1);
 
+  // A persisted detection box (normalized [0, 1]) lets us overlay the bounding
+  // box on the otherwise-clean saved image. Legacy rows predate this and have
+  // null coordinates, so the toggle/overlay are hidden for them.
+  const hasBox =
+    detection.box_x !== null &&
+    detection.box_y !== null &&
+    detection.box_w !== null &&
+    detection.box_h !== null;
+  // Visible by default — toggled off to inspect the clean image.
+  const [showBox, setShowBox] = useState(true);
+
   const [refState, setRefState] = useState<ReferenceState>({ kind: "loading" });
   // Index of the reference image shown prominently (for the multi-image case).
   const [activeImageIndex, setActiveImageIndex] = useState(0);
@@ -173,6 +184,22 @@ export function Lightbox({ detection, onClose, onPrev, onNext, onDelete }: Light
               className="block max-h-[80vh] max-w-[44vw] rounded-lg bg-ink shadow-plate-lift"
             />
 
+            {/* Detection box overlay — positioned in normalized [0,1] space over
+                the rendered image, so it scales with whatever size the image is
+                capped to. Hidden when toggled off or for legacy boxless rows. */}
+            {hasBox && showBox && (
+              <div
+                className="pointer-events-none absolute rounded-sm border-2 border-gold shadow-[0_0_0_1px_rgba(0,0,0,0.45)]"
+                style={{
+                  left: `${detection.box_x! * 100}%`,
+                  top: `${detection.box_y! * 100}%`,
+                  width: `${detection.box_w! * 100}%`,
+                  height: `${detection.box_h! * 100}%`,
+                }}
+                aria-hidden="true"
+              />
+            )}
+
             {/* Close button */}
             <button
               className="absolute top-2 right-2 z-10 p-1.5 rounded-full bg-card/90 hover:bg-card text-ink text-lg leading-none shadow-plate"
@@ -202,10 +229,25 @@ export function Lightbox({ detection, onClose, onPrev, onNext, onDelete }: Light
             <span className="font-display text-base font-medium text-ink">{species}</span>
             <span className="tnum font-medium text-gold-deep">{confidencePct}% match</span>
             <span className="text-bark">{timeAgo(timestamp)}</span>
+            {hasBox && (
+              <button
+                className={`ml-auto rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
+                  showBox
+                    ? "border-gold bg-gold text-card hover:brightness-110"
+                    : "border-line bg-paper text-ink hover:bg-card"
+                }`}
+                onClick={(e) => { e.stopPropagation(); setShowBox((v) => !v); }}
+                aria-pressed={showBox}
+              >
+                {showBox ? "Box on" : "Box off"}
+              </button>
+            )}
             <a
               href={fullUrl}
               download
-              className="ml-auto rounded-md border border-line bg-paper px-3 py-1.5 text-xs font-medium text-ink transition-colors hover:bg-card"
+              className={`rounded-md border border-line bg-paper px-3 py-1.5 text-xs font-medium text-ink transition-colors hover:bg-card${
+                hasBox ? "" : " ml-auto"
+              }`}
               onClick={(e) => e.stopPropagation()}
             >
               Download

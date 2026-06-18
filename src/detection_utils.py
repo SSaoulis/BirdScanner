@@ -37,6 +37,38 @@ def label_for_category(labels: list, category: int) -> Optional[str]:
     return None
 
 
+def normalized_box(box: tuple, image_shape: tuple) -> tuple:
+    """Convert a pixel-space box to fractions of the image dimensions.
+
+    The detection box is stored normalized so the frontend can overlay it on the
+    saved image at any rendered size without needing the original pixel
+    dimensions. The result is clamped to ``[0, 1]`` so a box that extends past
+    the frame edge never renders outside the image.
+
+    Args:
+        box: Bounding box in ``(x, y, w, h)`` pixel coordinates.
+        image_shape: The image's ``numpy`` shape, i.e. ``(height, width, ...)``.
+
+    Returns:
+        tuple: ``(x, y, w, h)`` as fractions in ``[0, 1]`` of the image's width
+        and height.
+    """
+    x, y, w, h = box
+    img_h, img_w = image_shape[:2]
+    if img_w <= 0 or img_h <= 0:
+        return (0.0, 0.0, 0.0, 0.0)
+
+    def _clamp(value: float) -> float:
+        return max(0.0, min(1.0, value))
+
+    return (
+        _clamp(x / img_w),
+        _clamp(y / img_h),
+        _clamp(w / img_w),
+        _clamp(h / img_h),
+    )
+
+
 def iou(box1: tuple, box2: tuple) -> float:
     """Calculate Intersection over Union (IoU) between two boxes.
 

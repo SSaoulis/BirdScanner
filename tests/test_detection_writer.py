@@ -111,6 +111,34 @@ def test_optional_fields_default_to_none(writer, engine):
     assert r.stable_frames is None
     assert r.duration_sec is None
     assert r.uploaded_at is None
+    assert r.box_x is None
+    assert r.box_y is None
+    assert r.box_w is None
+    assert r.box_h is None
+
+
+def test_write_persists_normalized_box(writer, engine):
+    """The normalized detection box is persisted when supplied."""
+    writer.write(
+        timestamp=datetime.now(),
+        species="Erithacus rubecula",
+        confidence=0.88,
+        image_path="Erithacus rubecula/img.png",
+        thumbnail_path="Erithacus rubecula/img_thumb.jpg",
+        box_x=0.1,
+        box_y=0.2,
+        box_w=0.3,
+        box_h=0.4,
+    )
+    writer.stop()
+
+    records = _all_records(engine)
+    assert len(records) == 1
+    r = records[0]
+    assert r.box_x == pytest.approx(0.1)
+    assert r.box_y == pytest.approx(0.2)
+    assert r.box_w == pytest.approx(0.3)
+    assert r.box_h == pytest.approx(0.4)
 
 
 def test_id_autoincrement(writer, engine):
@@ -189,5 +217,33 @@ def test_init_db_creates_table(engine):
         "stable_frames",
         "duration_sec",
         "uploaded_at",
+        "box_x",
+        "box_y",
+        "box_w",
+        "box_h",
     }
     assert expected == col_names
+
+
+def test_init_db_backfills_box_columns_on_legacy_table():
+    """init_db adds the box columns to a table created before they existed."""
+    from sqlalchemy import inspect
+    from sqlmodel import text
+
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    # Create a legacy detections table without the box_* columns.
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "CREATE TABLE detections ("
+                "id INTEGER PRIMARY KEY, timestamp DATETIME, species TEXT, "
+                "confidence FLOAT, image_path TEXT, thumbnail_path TEXT)"
+            )
+        )
+
+    init_db(engine)
+
+    col_names = {col["name"] for col in inspect(engine).get_columns("detections")}
+    assert {"box_x", "box_y", "box_w", "box_h"} <= col_names

@@ -20,6 +20,7 @@ from detection_utils import (
     draw_boxes,
     iou,
     label_for_category,
+    normalized_box,
     preprocess_roi,
     save_thumbnail,
 )
@@ -114,7 +115,9 @@ def process_single_detection_with_stable_tracks(
     if classify_fn is None:
         classify_fn = run_bird_classification
 
-    image, detection_id, detection, labels, classifier_class = item
+    # ``labels`` is part of the queued tuple but no longer used here now that the
+    # bounding box is not drawn onto the saved image.
+    image, detection_id, detection, _labels, classifier_class = item
 
     species = None
     confidence = None
@@ -125,18 +128,17 @@ def process_single_detection_with_stable_tracks(
         classifier_class.lower() == "bird"
         and should_run_bird_classification_for_detection(detection_id, tracker=tracker)
     ):
-        roi, coords = preprocess_roi(image, detection.box)
+        roi, _ = preprocess_roi(image, detection.box)
         species, confidence = classify_fn(classifier, roi)
 
         track = tracker.track_for_detection_id(detection_id)
         if track is not None:
             tracker.mark_classified(track.track_id, species=species)
 
-    # Always draw boxes; include optional classification result.
-    roi, coords = preprocess_roi(image, detection.box)
-    image_with_boxes = draw_boxes(
-        image.copy(), coords, detection, labels, species, confidence
-    )
+    # The ROI is needed for the saved thumbnail. The bounding box is no longer
+    # burned into the saved full image — the raw frame is kept clean and the box
+    # is persisted as normalized coordinates so the UI can overlay it on demand.
+    roi, _ = preprocess_roi(image, detection.box)
 
     # Save only after a classification actually happened.
     if (
@@ -153,11 +155,12 @@ def process_single_detection_with_stable_tracks(
         image_rel = f"{species}/{stem}.png"
         thumb_rel = f"{species}/{stem}_thumb.jpg"
 
-        output_image = cv2.cvtColor(image_with_boxes, cv2.COLOR_RGB2BGR)
+        output_image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
         cv2.imwrite(str(species_dir / f"{stem}.png"), output_image)
 
         save_thumbnail(roi, str(species_dir / f"{stem}_thumb.jpg"))
 
+        box = normalized_box(detection.box, image.shape)
         if detection_writer is not None:
             detection_writer.write(
                 timestamp=ts,
@@ -167,6 +170,10 @@ def process_single_detection_with_stable_tracks(
                 thumbnail_path=thumb_rel,
                 track_id=track.track_id if track is not None else None,
                 stable_frames=track.stable_frames if track is not None else None,
+                box_x=box[0],
+                box_y=box[1],
+                box_w=box[2],
+                box_h=box[3],
             )
 
     with results_lock:

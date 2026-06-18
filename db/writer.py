@@ -50,7 +50,9 @@ class DetectionWriter:
         )
         self._thread.start()
 
-    def write(
+    def write(  # pylint: disable=too-many-arguments
+        # The parameters mirror the DetectionRecord columns one-to-one; they are
+        # keyword-only, so the count never hurts call-site readability.
         self,
         *,
         timestamp: datetime,
@@ -61,6 +63,10 @@ class DetectionWriter:
         track_id: Optional[int] = None,
         stable_frames: Optional[int] = None,
         duration_sec: Optional[float] = None,
+        box_x: Optional[float] = None,
+        box_y: Optional[float] = None,
+        box_w: Optional[float] = None,
+        box_h: Optional[float] = None,
     ) -> None:
         """Enqueue a detection record for asynchronous persistence.
 
@@ -75,6 +81,10 @@ class DetectionWriter:
             track_id: Stable-tracker track identifier (optional).
             stable_frames: Consecutive stable frames before classification (optional).
             duration_sec: Approximate track lifetime in seconds (optional).
+            box_x: Detection box left edge as a fraction [0, 1] of image width (optional).
+            box_y: Detection box top edge as a fraction [0, 1] of image height (optional).
+            box_w: Detection box width as a fraction [0, 1] of image width (optional).
+            box_h: Detection box height as a fraction [0, 1] of image height (optional).
         """
         record = DetectionRecord(
             timestamp=timestamp,
@@ -85,6 +95,10 @@ class DetectionWriter:
             track_id=track_id,
             stable_frames=stable_frames,
             duration_sec=duration_sec,
+            box_x=box_x,
+            box_y=box_y,
+            box_w=box_w,
+            box_h=box_h,
         )
         try:
             self._queue.put_nowait(record)
