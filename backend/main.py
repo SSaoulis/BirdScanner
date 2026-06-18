@@ -1,6 +1,6 @@
 """FastAPI application for the BirdScanner backend.
 
-Mounts the four API routers and serves the pre-built React frontend from
+Mounts the API routers and serves the pre-built React frontend from
 ``frontend/dist/`` at the root path.  When the dist directory is absent (e.g.
 during development or testing) the static-file mount is skipped so the API
 remains fully functional without a frontend build.
@@ -23,6 +23,7 @@ from backend.routers import (
     camera,
     detections,
     images,
+    network,
     reference,
     species,
     system,
@@ -71,6 +72,7 @@ app = FastAPI(
 app.include_router(detections.router)
 app.include_router(images.router)
 app.include_router(system.router)
+app.include_router(network.router)
 app.include_router(species.router)
 app.include_router(reference.router)
 app.include_router(camera.router)

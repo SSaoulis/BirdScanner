@@ -371,6 +371,62 @@ class TestSystem:
 
 
 # ---------------------------------------------------------------------------
+# Network
+# ---------------------------------------------------------------------------
+
+
+class TestNetworkHistory:
+    def test_returns_interval_and_samples(self, client):
+        resp = client.get("/api/network/history?range=5m")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "interval_sec" in data
+        assert isinstance(data["samples"], list)
+
+    def test_default_range_is_valid(self, client):
+        resp = client.get("/api/network/history")
+        assert resp.status_code == 200
+
+    def test_rejects_unknown_range(self, client):
+        resp = client.get("/api/network/history?range=bogus")
+        assert resp.status_code == 400
+
+
+class TestNetworkSpeedTest:
+    def test_returns_measured_rates(self, client, monkeypatch):
+        from backend.routers import network
+        from backend.routers.network import SpeedTestResult
+
+        def _fake_run() -> SpeedTestResult:
+            return SpeedTestResult(
+                download_mbps=12.5,
+                upload_mbps=3.25,
+                download_bytes=1_048_576,
+                upload_bytes=262_144,
+                ran_at=1_700_000_000.0,
+            )
+
+        monkeypatch.setattr(network, "run_speed_test", _fake_run)
+        resp = client.post("/api/network/speedtest")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["download_mbps"] == 12.5
+        assert data["upload_mbps"] == 3.25
+
+    def test_unreachable_endpoint_returns_503(self, client, monkeypatch):
+        import httpx
+
+        from backend.routers import network
+
+        def _boom() -> None:
+            raise httpx.ConnectError("no route to host")
+
+        monkeypatch.setattr(network, "run_speed_test", _boom)
+        resp = client.post("/api/network/speedtest")
+        assert resp.status_code == 503
+
+
+# ---------------------------------------------------------------------------
 # Species
 # ---------------------------------------------------------------------------
 
