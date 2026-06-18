@@ -37,6 +37,37 @@ export interface SpeciesSummary {
   count: number;
 }
 
+/** One network-throughput sample from the passive NIC monitor. */
+export interface NetworkSample {
+  /** Unix timestamp (seconds) the sample was taken. */
+  t: number;
+  /** Download rate at that instant, in kilobits/sec. */
+  rx_kbps: number;
+  /** Upload rate at that instant, in kilobits/sec. */
+  tx_kbps: number;
+}
+
+/** A window of network throughput samples. */
+export interface NetworkHistory {
+  /** Nominal seconds between samples (the sampler cadence). */
+  interval_sec: number;
+  /** Samples within the requested window, oldest first. */
+  samples: NetworkSample[];
+}
+
+/** Selectable history windows for the usage graph. */
+export type NetworkRange = "5m" | "30m" | "1h";
+
+/** Result of one on-demand internet speed test. */
+export interface SpeedTestResult {
+  download_mbps: number;
+  upload_mbps: number;
+  download_bytes: number;
+  upload_bytes: number;
+  /** Unix timestamp (seconds) the test completed. */
+  ran_at: number;
+}
+
 export interface SpeciesReferenceImage {
   /** Ready-to-use API path for the reference image; render directly in <img src>. */
   url: string;
@@ -141,6 +172,16 @@ export const api = {
 
   system: {
     get: (): Promise<SystemStatus> => apiFetch<SystemStatus>("/api/system"),
+  },
+
+  network: {
+    /** Fetch passive NIC throughput samples for the given time window. */
+    history: (range: NetworkRange): Promise<NetworkHistory> =>
+      apiFetch<NetworkHistory>("/api/network/history", { range }),
+
+    /** Run an on-demand internet speed test (download + upload). */
+    speedTest: (): Promise<SpeedTestResult> =>
+      postJson<SpeedTestResult>("/api/network/speedtest", {}),
   },
 
   species: {

@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, NavLink } from "react-router-dom";
 import { Dashboard } from "./pages/Dashboard";
 import { History } from "./pages/History";
 import { Camera } from "./pages/Camera";
+import { Hardware } from "./pages/Hardware";
 
 /** A simple naturalist's feather mark, drawn rather than emoji'd. */
 function FeatherMark() {
@@ -40,6 +41,7 @@ const navLinkClass = ({ isActive }: { isActive: boolean }): string =>
  *   /          → Dashboard (today's sightings + station vitals)
  *   /history   → History (filter bar + Timeline / Gallery + bulk download)
  *   /camera    → Camera (on-demand snapshot + detection-region editor)
+ *   /hardware  → Hardware (station vitals + network usage graph + speed test)
  *
  * A journal masthead is rendered on every page.
  */
@@ -72,6 +74,9 @@ export function App() {
               <NavLink to="/camera" className={navLinkClass}>
                 Camera
               </NavLink>
+              <NavLink to="/hardware" className={navLinkClass}>
+                Hardware
+              </NavLink>
             </div>
           </div>
         </nav>
@@ -82,6 +87,7 @@ export function App() {
             <Route path="/" element={<Dashboard />} />
             <Route path="/history" element={<History />} />
             <Route path="/camera" element={<Camera />} />
+            <Route path="/hardware" element={<Hardware />} />
           </Routes>
         </div>
       </div>
