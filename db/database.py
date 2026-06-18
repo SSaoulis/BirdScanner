@@ -16,6 +16,7 @@ Typical usage::
 import os
 from typing import Callable
 
+from sqlalchemy import inspect, text
 from sqlmodel import Session, SQLModel, create_engine
 
 # Imported for its side effect: importing the model registers it on SQLModel's
@@ -60,13 +61,56 @@ def make_engine(db_path: str | None = None, *, read_only: bool = False):
     )
 
 
+# Columns added after the initial schema shipped. ``create_all`` only creates
+# missing *tables*, never new columns on an existing one, so a database written
+# by an older build keeps its old shape. Each entry is a nullable column that is
+# back-filled with ``ALTER TABLE ... ADD COLUMN`` on startup; SQLite adds it with
+# a NULL default, which legacy rows carry harmlessly.
+_DETECTIONS_ADDED_COLUMNS: dict[str, str] = {
+    "box_x": "FLOAT",
+    "box_y": "FLOAT",
+    "box_w": "FLOAT",
+    "box_h": "FLOAT",
+}
+
+
+def _migrate_detections_columns(engine) -> None:
+    """Add any newly-introduced nullable columns to an existing detections table.
+
+    SQLModel's ``create_all`` does not alter a table that already exists, so a
+    database created by an earlier build is missing columns added since. This
+    backfills them in place (no data migration needed — they are nullable).
+
+    Args:
+        engine: The SQLAlchemy engine to migrate.
+    """
+    inspector = inspect(engine)
+    if "detections" not in inspector.get_table_names():
+        return
+    existing = {col["name"] for col in inspector.get_columns("detections")}
+    missing = {
+        name: sql_type
+        for name, sql_type in _DETECTIONS_ADDED_COLUMNS.items()
+        if name not in existing
+    }
+    if not missing:
+        return
+    with engine.begin() as conn:
+        for name, sql_type in missing.items():
+            conn.execute(text(f"ALTER TABLE detections ADD COLUMN {name} {sql_type}"))
+
+
 def init_db(engine) -> None:
     """Create all tables defined by SQLModel metadata if they do not exist.
+
+    Also runs lightweight in-place column migrations for tables that predate
+    columns added in later builds (see ``_migrate_detections_columns``).
 
     Args:
         engine: The SQLAlchemy engine to initialise.
     """
     SQLModel.metadata.create_all(engine)
+    _migrate_detections_columns(engine)
 
 
 def make_session_factory(engine) -> SessionFactory:

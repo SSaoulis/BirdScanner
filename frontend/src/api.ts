@@ -11,6 +11,14 @@ export interface Detection {
   stable_frames: number | null;
   duration_sec: number | null;
   uploaded_at: string | null;
+  /** Detection box left edge as a fraction [0, 1] of image width (null for legacy rows). */
+  box_x: number | null;
+  /** Detection box top edge as a fraction [0, 1] of image height (null for legacy rows). */
+  box_y: number | null;
+  /** Detection box width as a fraction [0, 1] of image width (null for legacy rows). */
+  box_w: number | null;
+  /** Detection box height as a fraction [0, 1] of image height (null for legacy rows). */
+  box_h: number | null;
 }
 
 export interface SystemStatus {

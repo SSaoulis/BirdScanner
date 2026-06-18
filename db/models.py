@@ -20,6 +20,11 @@ class DetectionRecord(SQLModel, table=True):
         stable_frames: Number of consecutive frames the track was stable before classification.
         duration_sec: Approximate track lifetime in seconds (nullable if unavailable).
         uploaded_at: Timestamp of cloud upload; NULL means not yet uploaded.
+        box_x: Detection box left edge as a fraction [0, 1] of the saved image width
+            (nullable for legacy rows written before boxes were persisted).
+        box_y: Detection box top edge as a fraction [0, 1] of the saved image height.
+        box_w: Detection box width as a fraction [0, 1] of the saved image width.
+        box_h: Detection box height as a fraction [0, 1] of the saved image height.
     """
 
     __tablename__ = "detections"  # type: ignore[assignment]
@@ -34,3 +39,7 @@ class DetectionRecord(SQLModel, table=True):
     stable_frames: Optional[int] = Field(default=None, nullable=True)
     duration_sec: Optional[float] = Field(default=None, nullable=True)
     uploaded_at: Optional[datetime] = Field(default=None, nullable=True)
+    box_x: Optional[float] = Field(default=None, nullable=True)
+    box_y: Optional[float] = Field(default=None, nullable=True)
+    box_w: Optional[float] = Field(default=None, nullable=True)
+    box_h: Optional[float] = Field(default=None, nullable=True)
