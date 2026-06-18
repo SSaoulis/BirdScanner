@@ -52,6 +52,7 @@ def _make_record(
     image_dir: Path,
     species: str = "Robin",
     confidence: float = 0.95,
+    detection_confidence: float = 0.8,
     track_id: int = 1,
     ts: datetime | None = None,
 ) -> DetectionRecord:
@@ -67,6 +68,7 @@ def _make_record(
         timestamp=ts,
         species=species,
         confidence=confidence,
+        detection_confidence=detection_confidence,
         image_path=img_rel,
         thumbnail_path=thumb_rel,
         track_id=track_id,
@@ -139,6 +141,13 @@ class TestListDetections:
         resp = client.get("/api/detections")
         assert resp.status_code == 200
         assert len(resp.json()) == 3
+
+    def test_includes_both_confidences(self, client):
+        resp = client.get("/api/detections")
+        assert resp.status_code == 200
+        record = resp.json()[0]
+        assert "confidence" in record
+        assert record["detection_confidence"] == pytest.approx(0.8)
 
     def test_species_filter(self, client):
         resp = client.get("/api/detections?species=Robin")

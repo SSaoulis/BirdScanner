@@ -29,9 +29,11 @@ interface DetectionCardProps {
  * - Select: calls onSelect on click; shows a checkbox + selection ring.
  */
 export function DetectionCard({ detection, onSelect, selected, onOpenLightbox }: DetectionCardProps) {
-  const { id, species, confidence, timestamp } = detection;
+  const { id, species, confidence, detection_confidence, timestamp } = detection;
   const thumbnailUrl = api.images.thumbnailUrl(id);
   const confidencePct = (confidence * 100).toFixed(0);
+  const detectionPct =
+    detection_confidence != null ? (detection_confidence * 100).toFixed(0) : null;
 
   const isSelectable = Boolean(onSelect);
 
@@ -107,7 +109,16 @@ export function DetectionCard({ detection, onSelect, selected, onOpenLightbox }:
           {species}
         </p>
         <div className="mt-1 flex items-center justify-between text-xs">
-          <span className="tnum font-medium text-gold-deep">{confidencePct}% match</span>
+          <span className="flex items-center gap-1.5">
+            <span className="tnum font-medium text-gold-deep" title="Species-classification confidence">
+              {confidencePct}% match
+            </span>
+            {detectionPct !== null && (
+              <span className="tnum text-bark" title="Object-detection confidence (YOLO)">
+                · {detectionPct}% spotted
+              </span>
+            )}
+          </span>
           <span className="text-bark">{timeAgo(timestamp)}</span>
         </div>
       </div>

@@ -67,6 +67,7 @@ def make_engine(db_path: str | None = None, *, read_only: bool = False):
 # back-filled with ``ALTER TABLE ... ADD COLUMN`` on startup; SQLite adds it with
 # a NULL default, which legacy rows carry harmlessly.
 _DETECTIONS_ADDED_COLUMNS: dict[str, str] = {
+    "detection_confidence": "FLOAT",
     "box_x": "FLOAT",
     "box_y": "FLOAT",
     "box_w": "FLOAT",
