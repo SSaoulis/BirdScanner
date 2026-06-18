@@ -19,16 +19,19 @@ interface DetectionCardProps {
 }
 
 /**
- * Card component that renders a detection thumbnail, species label,
- * confidence badge, and timestamp. Supports three interaction modes:
- * - Default: wraps image in a link to full-res.
+ * A single detection rendered as a field-guide "specimen plate": the captured
+ * photo mounted above a ruled caption bearing the species (in the journal
+ * serif), how sure the match is, and how long ago it was spotted.
+ *
+ * Supports three interaction modes:
+ * - Default: wraps the image in a link to the full-res photo.
  * - Lightbox: calls onOpenLightbox on click.
- * - Select: calls onSelect on click; shows checkbox + selection ring.
+ * - Select: calls onSelect on click; shows a checkbox + selection ring.
  */
 export function DetectionCard({ detection, onSelect, selected, onOpenLightbox }: DetectionCardProps) {
   const { id, species, confidence, timestamp } = detection;
   const thumbnailUrl = api.images.thumbnailUrl(id);
-  const confidencePct = (confidence * 100).toFixed(1);
+  const confidencePct = (confidence * 100).toFixed(0);
 
   const isSelectable = Boolean(onSelect);
 
@@ -39,19 +42,18 @@ export function DetectionCard({ detection, onSelect, selected, onOpenLightbox }:
     }
   }
 
-  const ringClass = isSelectable && selected
-    ? "ring-2 ring-emerald-400"
-    : isSelectable
-    ? "hover:ring-2 hover:ring-slate-500"
-    : "hover:ring-2 hover:ring-emerald-500";
+  const ringClass =
+    isSelectable && selected
+      ? "ring-2 ring-gold border-gold"
+      : "border-line hover:-translate-y-0.5 hover:shadow-plate-lift";
 
   const imageContent = (
     <>
-      <div className={`relative w-full h-36 bg-slate-900 ${isSelectable ? "cursor-pointer" : ""}`}>
+      <div className={`relative w-full h-36 bg-paper ${isSelectable ? "cursor-pointer" : ""}`}>
         <img
           src={thumbnailUrl}
           alt={species}
-          className="w-full h-full object-cover group-hover:opacity-90 transition-opacity duration-150"
+          className="w-full h-full object-cover"
           loading="lazy"
         />
         {/* Checkbox overlay (selectable mode) */}
@@ -60,12 +62,12 @@ export function DetectionCard({ detection, onSelect, selected, onOpenLightbox }:
             <div
               className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${
                 selected
-                  ? "bg-emerald-500 border-emerald-500"
-                  : "bg-slate-900/60 border-slate-400"
+                  ? "bg-gold border-gold"
+                  : "bg-card/80 border-line"
               }`}
             >
               {selected && (
-                <svg className="w-3 h-3 text-white" viewBox="0 0 12 12" fill="none">
+                <svg className="w-3 h-3 text-card" viewBox="0 0 12 12" fill="none">
                   <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
               )}
@@ -75,19 +77,21 @@ export function DetectionCard({ detection, onSelect, selected, onOpenLightbox }:
         {/* Lightbox trigger (non-selectable mode: full-image hover overlay) */}
         {onOpenLightbox && !isSelectable && (
           <button
-            className="absolute inset-0 w-full h-full opacity-0 group-hover:opacity-100 flex items-center justify-center bg-black/40 transition-opacity duration-150"
+            className="absolute inset-0 w-full h-full opacity-0 group-hover:opacity-100 flex items-center justify-center bg-ink/35 transition-opacity duration-200"
             onClick={(e) => { e.preventDefault(); onOpenLightbox(detection); }}
-            aria-label={`Open lightbox for ${species}`}
+            aria-label={`Take a closer look at ${species}`}
           >
-            <span className="text-white text-xs font-semibold bg-slate-800/80 px-2 py-1 rounded">View</span>
+            <span className="rounded-full bg-paper px-3 py-1 text-xs font-semibold text-ink shadow-plate">
+              Closer look
+            </span>
           </button>
         )}
         {/* Lightbox trigger (selectable mode: small icon in top-right corner) */}
         {onOpenLightbox && isSelectable && (
           <button
-            className="absolute top-2 right-2 p-1 rounded bg-slate-900/70 hover:bg-slate-700 text-white opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-10"
+            className="absolute top-2 right-2 p-1 rounded bg-card/85 hover:bg-card text-ink opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10 shadow-plate"
             onClick={(e) => { e.stopPropagation(); e.preventDefault(); onOpenLightbox(detection); }}
-            aria-label={`Open lightbox for ${species}`}
+            aria-label={`Take a closer look at ${species}`}
             tabIndex={-1}
           >
             {/* Expand / view icon */}
@@ -97,22 +101,26 @@ export function DetectionCard({ detection, onSelect, selected, onOpenLightbox }:
           </button>
         )}
       </div>
-      <div className="p-2 space-y-0.5">
-        <p className="text-sm font-semibold text-white truncate" title={species}>
+      {/* Caption plate — ruled off from the photo like a guide's specimen label */}
+      <div className="border-t border-line px-3 py-2">
+        <p className="font-display text-[0.95rem] font-medium leading-tight text-ink truncate" title={species}>
           {species}
         </p>
-        <div className="flex items-center justify-between">
-          <span className="text-xs text-emerald-400 font-mono">{confidencePct}%</span>
-          <span className="text-xs text-slate-500">{timeAgo(timestamp)}</span>
+        <div className="mt-1 flex items-center justify-between text-xs">
+          <span className="tnum font-medium text-gold-deep">{confidencePct}% match</span>
+          <span className="text-bark">{timeAgo(timestamp)}</span>
         </div>
       </div>
     </>
   );
 
+  const baseClass =
+    "flex-shrink-0 w-44 overflow-hidden rounded-xl border bg-card shadow-plate transition-all duration-200 group";
+
   if (isSelectable) {
     return (
       <div
-        className={`flex-shrink-0 w-44 bg-slate-800 rounded-xl overflow-hidden transition-all duration-150 group cursor-pointer ${ringClass}`}
+        className={`${baseClass} cursor-pointer ${ringClass}`}
         onClick={handleClick}
         role="checkbox"
         aria-checked={selected ?? false}
@@ -129,7 +137,7 @@ export function DetectionCard({ detection, onSelect, selected, onOpenLightbox }:
       href={api.images.fullUrl(id)}
       target="_blank"
       rel="noopener noreferrer"
-      className={`flex-shrink-0 w-44 bg-slate-800 rounded-xl overflow-hidden transition-all duration-150 group ${ringClass}`}
+      className={`${baseClass} ${ringClass}`}
       onClick={onOpenLightbox ? (e) => { e.preventDefault(); onOpenLightbox(detection); } : undefined}
     >
       {imageContent}

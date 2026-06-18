@@ -5,3 +5,88 @@
 * {
   box-sizing: border-box;
 }
+
+@layer base {
+  html {
+    /* Forest ink on aged paper — the journal's resting state. */
+    color: #2c3a2e;
+    background-color: #e9e2cf;
+    font-family: "Hanken Grotesk", system-ui, sans-serif;
+    /* A barely-there speckle, like the grain of pressed paper. Two faint
+       dot fields at different scales keep it from reading as a regular grid. */
+    background-image:
+      radial-gradient(rgba(86, 96, 72, 0.05) 1px, transparent 1px),
+      radial-gradient(rgba(138, 97, 19, 0.04) 1px, transparent 1px);
+    background-size: 22px 22px, 38px 38px;
+    background-position: 0 0, 11px 7px;
+  }
+
+  body {
+    margin: 0;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Numerals line up in columns wherever we show readings (confidence, vitals). */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer components {
+  /* Field-guide eyebrow: a small ruled label that titles a section the way a
+     guide names a plate. The rule grows out of the text rather than boxing it. */
+  .eyebrow {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    font-family: "Hanken Grotesk", system-ui, sans-serif;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: #566048;
+  }
+  .eyebrow::after {
+    content: "";
+    flex: 1 1 auto;
+    height: 1px;
+    background-color: #d8cdb0;
+  }
+}
+
+/* Warm, slim scrollbars so the horizontal strips don't show a cold grey bar. */
+::-webkit-scrollbar {
+  height: 10px;
+  width: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #d8cdb0;
+  border-radius: 9999px;
+  border: 2px solid #e9e2cf;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #c2b58f;
+}
+
+/* Visible, on-brand keyboard focus everywhere. */
+:focus-visible {
+  outline: 2px solid #c08a2d;
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Honour a reduced-motion preference: hold still. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -141,18 +141,18 @@ export function Lightbox({ detection, onClose, onPrev, onNext, onDelete }: Light
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/95 p-4"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
-      aria-label={`Comparison view for ${species}`}
+      aria-label={`A closer look at ${species}`}
     >
       {/* Prev arrow */}
       {onPrev && (
         <button
-          className="absolute left-4 top-1/2 -translate-y-1/2 p-3 rounded-full bg-slate-800/80 hover:bg-slate-700 text-white text-2xl transition-colors z-10"
+          className="absolute left-4 top-1/2 -translate-y-1/2 p-3 rounded-full bg-card/90 hover:bg-card text-ink text-2xl shadow-plate transition-colors z-10"
           onClick={(e) => { e.stopPropagation(); onPrev(); }}
-          aria-label="Previous detection"
+          aria-label="Previous sighting"
         >
           &#8592;
         </button>
@@ -170,14 +170,14 @@ export function Lightbox({ detection, onClose, onPrev, onNext, onDelete }: Light
               ref={imgRef}
               src={fullUrl}
               alt={`Captured ${species}`}
-              className="block max-h-[80vh] max-w-[44vw] rounded-lg bg-black shadow-2xl"
+              className="block max-h-[80vh] max-w-[44vw] rounded-lg bg-ink shadow-plate-lift"
             />
 
             {/* Close button */}
             <button
-              className="absolute top-2 right-2 z-10 p-1.5 rounded-full bg-slate-800/80 hover:bg-slate-700 text-white text-lg leading-none"
+              className="absolute top-2 right-2 z-10 p-1.5 rounded-full bg-card/90 hover:bg-card text-ink text-lg leading-none shadow-plate"
               onClick={onClose}
-              aria-label="Close lightbox"
+              aria-label="Close"
             >
               ✕
             </button>
@@ -186,39 +186,39 @@ export function Lightbox({ detection, onClose, onPrev, onNext, onDelete }: Light
             <button
               className={`absolute top-1/2 left-full -translate-y-1/2 px-1.5 py-3 rounded-r-lg text-xs font-semibold uppercase tracking-wide [writing-mode:vertical-rl] transition-colors ${
                 showReference
-                  ? "bg-emerald-600 text-white"
-                  : "bg-slate-800/90 text-slate-200 hover:bg-slate-700"
+                  ? "bg-gold text-card"
+                  : "bg-card/90 text-ink hover:bg-card"
               }`}
               onClick={() => setShowReference((v) => !v)}
               aria-pressed={showReference}
-              aria-label={showReference ? "Hide species reference" : "Show species reference"}
+              aria-label={showReference ? "Hide field guide" : "Show field guide"}
             >
-              Reference
+              Field guide
             </button>
           </div>
 
           {/* Caption bar */}
-          <div className="flex flex-wrap items-center gap-3 px-3 py-2 bg-slate-800/90 rounded-xl text-sm">
-            <span className="font-semibold text-white">{species}</span>
-            <span className="text-emerald-400 font-mono">{confidencePct}%</span>
-            <span className="text-slate-400">{timeAgo(timestamp)}</span>
+          <div className="flex flex-wrap items-center gap-3 rounded-xl border border-line bg-card/95 px-3 py-2 text-sm">
+            <span className="font-display text-base font-medium text-ink">{species}</span>
+            <span className="tnum font-medium text-gold-deep">{confidencePct}% match</span>
+            <span className="text-bark">{timeAgo(timestamp)}</span>
             <a
               href={fullUrl}
               download
-              className="ml-auto rounded-md bg-slate-700 px-3 py-1.5 text-xs font-medium text-slate-100 transition-colors hover:bg-slate-600"
+              className="ml-auto rounded-md border border-line bg-paper px-3 py-1.5 text-xs font-medium text-ink transition-colors hover:bg-card"
               onClick={(e) => e.stopPropagation()}
             >
               Download
             </a>
             <button
-              className="rounded-md bg-red-600/90 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-red-500 disabled:opacity-50"
+              className="rounded-md bg-rust px-3 py-1.5 text-xs font-medium text-card transition-colors hover:brightness-110 disabled:opacity-50"
               onClick={(e) => { e.stopPropagation(); handleDelete(); }}
               disabled={deleting}
             >
               {deleting ? "Deleting…" : "Delete"}
             </button>
             {deleteError && (
-              <span className="w-full text-xs text-red-400">{deleteError}</span>
+              <span className="w-full text-xs text-rust">{deleteError}</span>
             )}
           </div>
         </div>
@@ -226,12 +226,10 @@ export function Lightbox({ detection, onClose, onPrev, onNext, onDelete }: Light
         {/* ── Reference panel — locked to the image's exact rendered size ── */}
         {showReference && imgSize && (
           <div
-            className="shrink-0 overflow-y-auto rounded-lg bg-slate-900 shadow-2xl p-4"
+            className="shrink-0 overflow-y-auto rounded-lg border border-line bg-card shadow-plate-lift p-4"
             style={{ width: imgSize.w, height: imgSize.h }}
           >
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-3">
-              Reference
-            </h3>
+            <h3 className="eyebrow mb-3">Field guide</h3>
             <ReferencePane
               state={refState}
               activeImageIndex={activeImageIndex}
@@ -244,9 +242,9 @@ export function Lightbox({ detection, onClose, onPrev, onNext, onDelete }: Light
       {/* Next arrow */}
       {onNext && (
         <button
-          className="absolute right-4 top-1/2 -translate-y-1/2 p-3 rounded-full bg-slate-800/80 hover:bg-slate-700 text-white text-2xl transition-colors z-10"
+          className="absolute right-4 top-1/2 -translate-y-1/2 p-3 rounded-full bg-card/90 hover:bg-card text-ink text-2xl shadow-plate transition-colors z-10"
           onClick={(e) => { e.stopPropagation(); onNext(); }}
-          aria-label="Next detection"
+          aria-label="Next sighting"
         >
           &#8594;
         </button>
@@ -271,12 +269,12 @@ interface ReferencePaneProps {
 function ReferencePane({ state, activeImageIndex, onSelectImage }: ReferencePaneProps) {
   if (state.kind === "loading") {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[200px] gap-3 text-slate-500">
+      <div className="flex flex-col items-center justify-center min-h-[200px] gap-3 text-bark">
         <div
-          className="w-8 h-8 border-2 border-slate-600 border-t-emerald-500 rounded-full animate-spin"
+          className="w-8 h-8 border-2 border-line border-t-gold rounded-full animate-spin"
           aria-hidden="true"
         />
-        <p className="text-sm animate-pulse">Loading reference…</p>
+        <p className="text-sm animate-pulse">Opening the guide…</p>
       </div>
     );
   }
@@ -284,8 +282,8 @@ function ReferencePane({ state, activeImageIndex, onSelectImage }: ReferencePane
   if (state.kind === "none") {
     return (
       <div className="flex items-center justify-center min-h-[200px] text-center px-4">
-        <p className="text-sm text-slate-500">
-          No reference available for this species yet.
+        <p className="text-sm text-bark">
+          No guide entry for this species yet.
         </p>
       </div>
     );
@@ -294,8 +292,8 @@ function ReferencePane({ state, activeImageIndex, onSelectImage }: ReferencePane
   if (state.kind === "error") {
     return (
       <div className="flex items-center justify-center min-h-[200px] text-center px-4">
-        <p className="text-sm text-amber-400">
-          Couldn’t load reference: {state.message}
+        <p className="text-sm text-rust">
+          Couldn’t open the guide: {state.message}
         </p>
       </div>
     );
@@ -313,16 +311,16 @@ function ReferencePane({ state, activeImageIndex, onSelectImage }: ReferencePane
           <img
             src={activeImage.url}
             alt={`Reference photo of ${reference.common_name}`}
-            className="w-full object-contain rounded-lg bg-black"
+            className="w-full object-contain rounded-lg bg-paper"
           />
-          <p className="text-[11px] text-slate-500 leading-snug">
+          <p className="text-[11px] text-bark leading-snug">
             {activeImage.attribution}
             {activeImage.license ? ` · ${activeImage.license}` : ""}
           </p>
         </div>
       ) : (
-        <div className="flex items-center justify-center h-32 rounded-lg bg-slate-800 text-sm text-slate-500">
-          No reference image
+        <div className="flex items-center justify-center h-32 rounded-lg bg-paper text-sm text-bark">
+          No guide photo
         </div>
       )}
 
@@ -335,8 +333,8 @@ function ReferencePane({ state, activeImageIndex, onSelectImage }: ReferencePane
               onClick={() => onSelectImage(i)}
               className={`w-14 h-14 rounded-md overflow-hidden border-2 transition-colors ${
                 i === safeIndex
-                  ? "border-emerald-500"
-                  : "border-transparent hover:border-slate-500"
+                  ? "border-gold"
+                  : "border-transparent hover:border-line"
               }`}
               aria-label={`Show reference image ${i + 1}`}
               aria-pressed={i === safeIndex}
@@ -354,22 +352,20 @@ function ReferencePane({ state, activeImageIndex, onSelectImage }: ReferencePane
       {/* Species info */}
       <div className="flex flex-col gap-2">
         <div>
-          <p className="text-base font-semibold text-white">{reference.common_name}</p>
+          <p className="font-display text-lg font-medium text-ink">{reference.common_name}</p>
           {reference.scientific_name && (
-            <p className="text-sm italic text-slate-400">{reference.scientific_name}</p>
+            <p className="font-display text-sm italic text-bark">{reference.scientific_name}</p>
           )}
         </div>
 
         {reference.summary && (
-          <p className="text-sm text-slate-300 leading-relaxed">{reference.summary}</p>
+          <p className="text-sm text-ink/85 leading-relaxed">{reference.summary}</p>
         )}
 
         {reference.behaviour && (
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">
-              Behaviour
-            </p>
-            <p className="text-sm text-slate-300 leading-relaxed">{reference.behaviour}</p>
+            <p className="eyebrow mb-1">Behaviour</p>
+            <p className="text-sm text-ink/85 leading-relaxed">{reference.behaviour}</p>
           </div>
         )}
 
@@ -378,7 +374,7 @@ function ReferencePane({ state, activeImageIndex, onSelectImage }: ReferencePane
             href={reference.wikipedia_url}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-sm text-emerald-400 hover:text-emerald-300 underline w-fit"
+            className="text-sm text-gold-deep hover:text-gold underline w-fit"
           >
             Read on Wikipedia →
           </a>

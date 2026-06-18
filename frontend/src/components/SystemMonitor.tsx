@@ -4,15 +4,15 @@ import { api, formatUptime, type SystemStatus } from "../api";
 const POLL_INTERVAL_MS = 5000;
 
 function gaugeColor(percent: number): string {
-  if (percent >= 80) return "bg-red-500";
-  if (percent >= 60) return "bg-yellow-400";
-  return "bg-emerald-500";
+  if (percent >= 80) return "bg-rust";
+  if (percent >= 60) return "bg-gold";
+  return "bg-sage";
 }
 
 function tempColor(celsius: number): string {
-  if (celsius >= 70) return "bg-red-500";
-  if (celsius >= 50) return "bg-yellow-400";
-  return "bg-emerald-500";
+  if (celsius >= 70) return "bg-rust";
+  if (celsius >= 50) return "bg-gold";
+  return "bg-sage";
 }
 
 interface GaugeBarProps {
@@ -28,12 +28,12 @@ function GaugeBar({ label, value, unit, max, colorClass }: GaugeBarProps) {
   return (
     <div>
       <div className="flex justify-between text-sm mb-1">
-        <span className="text-slate-400">{label}</span>
-        <span className="font-mono font-semibold text-white">
+        <span className="text-bark">{label}</span>
+        <span className="tnum font-semibold text-ink">
           {value === null ? "—" : `${value.toFixed(1)}${unit}`}
         </span>
       </div>
-      <div className="h-2 rounded-full bg-slate-700 overflow-hidden">
+      <div className="h-2 rounded-full bg-paper overflow-hidden">
         <div
           className={`h-full rounded-full transition-all duration-700 ${colorClass}`}
           style={{ width: `${pct}%` }}
@@ -71,11 +71,14 @@ export function SystemMonitor() {
   }, []);
 
   return (
-    <div className="bg-slate-800 rounded-2xl p-5 space-y-4">
-      <h2 className="text-lg font-semibold text-white">System</h2>
+    <div className="rounded-2xl border border-line bg-card p-5 shadow-plate space-y-4">
+      <div>
+        <p className="eyebrow">The station</p>
+        <p className="mt-1 text-sm text-bark">How the Pi behind the feeder is holding up</p>
+      </div>
 
       {error && (
-        <p className="text-sm text-red-400">{error}</p>
+        <p className="text-sm text-rust">{error}</p>
       )}
 
       {/*
@@ -113,9 +116,9 @@ export function SystemMonitor() {
           max={100}
           colorClass={tempColor(status?.cpu_temp_celsius ?? 0)}
         />
-        <div className="flex justify-between text-sm pt-1 border-t border-slate-700">
-          <span className="text-slate-400">Uptime</span>
-          <span className="font-mono font-semibold text-white">
+        <div className="flex justify-between text-sm pt-2 border-t border-line">
+          <span className="text-bark">Watching for</span>
+          <span className="tnum font-semibold text-ink">
             {status === null ? "—" : formatUptime(status.uptime_seconds)}
           </span>
         </div>

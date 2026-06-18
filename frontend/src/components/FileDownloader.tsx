@@ -142,7 +142,7 @@ export function FileDownloader({ allDetections, selectedIds, onSelectionChange, 
     <div className="flex flex-wrap items-center gap-3">
       {/* Select / deselect all */}
       <button
-        className="text-sm px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-white transition-colors"
+        className="rounded-lg border border-line bg-card px-3 py-1.5 text-sm font-medium text-bark transition-colors hover:text-ink disabled:opacity-50"
         onClick={handleSelectAll}
         disabled={allIds.length === 0}
       >
@@ -152,11 +152,11 @@ export function FileDownloader({ allDetections, selectedIds, onSelectionChange, 
       {/* Selection status + clear */}
       {selectedCount > 0 && (
         <>
-          <span className="text-sm text-slate-300">
+          <span className="text-sm font-medium text-ink">
             {selectedCount} selected
           </span>
           <button
-            className="text-sm text-slate-400 hover:text-white underline"
+            className="text-sm text-bark underline hover:text-ink"
             onClick={handleClearSelection}
           >
             Clear
@@ -167,18 +167,18 @@ export function FileDownloader({ allDetections, selectedIds, onSelectionChange, 
       {/* Download button */}
       {selectedCount > 0 && (
         <button
-          className="ml-auto flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-semibold text-sm transition-colors"
+          className="ml-auto flex items-center gap-2 rounded-lg bg-gold px-4 py-2 text-sm font-semibold text-card shadow-sm transition-colors hover:bg-gold-deep disabled:opacity-50"
           onClick={handleDownload}
           disabled={progress !== null && !progress.done}
         >
-          {progress && !progress.done ? "Downloading…" : `Download ZIP (${selectedCount})`}
+          {progress && !progress.done ? "Downloading…" : `Download ${selectedCount} as ZIP`}
         </button>
       )}
 
       {/* Delete button */}
       {selectedCount > 0 && (
         <button
-          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white font-semibold text-sm transition-colors"
+          className="flex items-center gap-2 rounded-lg bg-rust px-4 py-2 text-sm font-semibold text-card shadow-sm transition-colors hover:brightness-110 disabled:opacity-50"
           onClick={handleDeleteSelected}
           disabled={deleting}
         >
@@ -189,18 +189,18 @@ export function FileDownloader({ allDetections, selectedIds, onSelectionChange, 
       {/* Progress bar */}
       {progress && !progress.done && (
         <div className="w-full mt-1">
-          <div className="h-2 rounded-full bg-slate-700 overflow-hidden">
+          <div className="h-2 rounded-full bg-paper overflow-hidden">
             {getPercent(progress) !== null ? (
               <div
-                className="h-full rounded-full bg-emerald-500 transition-all duration-200"
+                className="h-full rounded-full bg-gold transition-all duration-200"
                 style={{ width: `${getPercent(progress)}%` }}
               />
             ) : (
               /* Indeterminate bar when Content-Length is unknown */
-              <div className="h-full w-1/3 rounded-full bg-emerald-500 animate-pulse" />
+              <div className="h-full w-1/3 rounded-full bg-gold animate-pulse" />
             )}
           </div>
-          <p className="text-xs text-slate-400 mt-0.5">
+          <p className="text-xs text-bark mt-0.5">
             {getPercent(progress) !== null
               ? `${getPercent(progress)}%`
               : `${(progress.loaded / 1024).toFixed(0)} KB downloaded…`}
@@ -209,11 +209,11 @@ export function FileDownloader({ allDetections, selectedIds, onSelectionChange, 
       )}
 
       {progress?.done && (
-        <p className="w-full text-xs text-emerald-400 mt-0.5">Download complete.</p>
+        <p className="w-full text-xs text-sage-deep mt-0.5">Download complete.</p>
       )}
 
       {error && (
-        <p className="w-full text-xs text-red-400 mt-0.5">{error}</p>
+        <p className="w-full text-xs text-rust mt-0.5">{error}</p>
       )}
     </div>
   );

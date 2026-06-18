@@ -152,22 +152,32 @@ export function History() {
     [removeDetections]
   );
 
+  const fieldLabel = "text-xs font-semibold text-sage-deep";
+  const fieldInput =
+    "bg-paper text-ink text-sm rounded-lg px-3 py-2 border border-line focus:outline-none focus:ring-2 focus:ring-gold focus:border-gold";
+
   return (
-    <div className="min-h-screen bg-slate-900 text-white">
+    <div className="mx-auto max-w-6xl">
       {/* Page header */}
-      <div className="px-6 pt-6 pb-4 space-y-4">
-        <h1 className="text-2xl font-bold tracking-tight">Detection History</h1>
+      <div className="px-6 pt-8 pb-4 space-y-5">
+        <header>
+          <p className="eyebrow mb-2">The log</p>
+          <h1 className="font-display text-3xl font-semibold tracking-tight text-ink">
+            Sightings log
+          </h1>
+          <p className="mt-1 text-sm text-bark">Every bird the feeder has noted down.</p>
+        </header>
 
         {/* ── Filter bar ─────────────────────────────────────────── */}
-        <div className="flex flex-wrap items-end gap-3 bg-slate-800 rounded-2xl p-4">
+        <div className="flex flex-wrap items-end gap-3 rounded-2xl border border-line bg-card p-4 shadow-plate">
           {/* Species dropdown */}
           <div className="flex flex-col gap-1 min-w-[160px]">
-            <label className="text-xs text-slate-400 font-medium" htmlFor="filter-species">
+            <label className={fieldLabel} htmlFor="filter-species">
               Species
             </label>
             <select
               id="filter-species"
-              className="bg-slate-700 text-white text-sm rounded-lg px-3 py-2 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              className={fieldInput}
               value={filterSpecies}
               onChange={(e) => setFilterSpecies(e.target.value)}
             >
@@ -182,13 +192,13 @@ export function History() {
 
           {/* Date from */}
           <div className="flex flex-col gap-1">
-            <label className="text-xs text-slate-400 font-medium" htmlFor="filter-from">
+            <label className={fieldLabel} htmlFor="filter-from">
               From
             </label>
             <input
               id="filter-from"
               type="date"
-              className="bg-slate-700 text-white text-sm rounded-lg px-3 py-2 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              className={fieldInput}
               value={filterFrom}
               onChange={(e) => setFilterFrom(e.target.value)}
             />
@@ -196,13 +206,13 @@ export function History() {
 
           {/* Date to */}
           <div className="flex flex-col gap-1">
-            <label className="text-xs text-slate-400 font-medium" htmlFor="filter-to">
+            <label className={fieldLabel} htmlFor="filter-to">
               To
             </label>
             <input
               id="filter-to"
               type="date"
-              className="bg-slate-700 text-white text-sm rounded-lg px-3 py-2 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              className={fieldInput}
               value={filterTo}
               onChange={(e) => setFilterTo(e.target.value)}
             />
@@ -210,8 +220,8 @@ export function History() {
 
           {/* Minimum confidence slider — refetches only when released. */}
           <div className="flex flex-col gap-1 min-w-[180px]">
-            <label className="text-xs text-slate-400 font-medium" htmlFor="filter-confidence">
-              Min confidence: {sliderMinConfidence}%
+            <label className={fieldLabel} htmlFor="filter-confidence">
+              Match above <span className="tnum text-gold-deep">{sliderMinConfidence}%</span>
             </label>
             <input
               id="filter-confidence"
@@ -219,7 +229,7 @@ export function History() {
               min={0}
               max={100}
               step={1}
-              className="accent-emerald-500 mt-2"
+              className="mt-2 accent-gold"
               value={sliderMinConfidence}
               onChange={(e) => setSliderMinConfidence(Number(e.target.value))}
               onMouseUp={() => setFilterMinConfidence(sliderMinConfidence)}
@@ -231,7 +241,7 @@ export function History() {
           {/* Clear filters */}
           {(filterSpecies || filterFrom || filterTo || filterMinConfidence > 0) && (
             <button
-              className="text-sm text-slate-400 hover:text-white underline self-end pb-2"
+              className="self-end pb-2 text-sm text-bark underline hover:text-ink"
               onClick={() => {
                 setFilterSpecies("");
                 setFilterFrom("");
@@ -246,25 +256,25 @@ export function History() {
         </div>
 
         {/* ── Tab switcher ─────────────────────────────────────────── */}
-        <div className="flex gap-1 bg-slate-800 rounded-xl p-1 w-fit">
+        <div className="flex w-fit gap-1 rounded-xl border border-line bg-card p-1">
           {(["timeline", "gallery"] as Tab[]).map((tab) => (
             <button
               key={tab}
-              className={`px-4 py-1.5 rounded-lg text-sm font-medium capitalize transition-colors ${
+              className={`rounded-lg px-4 py-1.5 text-sm font-medium capitalize transition-colors ${
                 activeTab === tab
-                  ? "bg-emerald-600 text-white"
-                  : "text-slate-400 hover:text-white"
+                  ? "bg-gold text-card shadow-sm"
+                  : "text-bark hover:text-ink"
               }`}
               onClick={() => setActiveTab(tab)}
             >
-              {tab}
+              {tab === "timeline" ? "List" : "Grid"}
             </button>
           ))}
         </div>
       </div>
 
       {/* ── Sub-view ──────────────────────────────────────────────────── */}
-      <div className="px-6 pb-10">
+      <div className="px-6 pb-12">
         {activeTab === "timeline" ? (
           <Timeline
             detections={detections}
