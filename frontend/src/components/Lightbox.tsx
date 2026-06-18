@@ -41,9 +41,11 @@ type ReferenceState =
  * reference is refetched whenever the displayed species changes.
  */
 export function Lightbox({ detection, onClose, onPrev, onNext, onDelete }: LightboxProps) {
-  const { id, species, confidence, timestamp } = detection;
+  const { id, species, confidence, detection_confidence, timestamp } = detection;
   const fullUrl = api.images.fullUrl(id);
   const confidencePct = (confidence * 100).toFixed(1);
+  const detectionPct =
+    detection_confidence != null ? (detection_confidence * 100).toFixed(1) : null;
 
   // A persisted detection box (normalized [0, 1]) lets us overlay the bounding
   // box on the otherwise-clean saved image. Legacy rows predate this and have
@@ -227,7 +229,14 @@ export function Lightbox({ detection, onClose, onPrev, onNext, onDelete }: Light
           {/* Caption bar */}
           <div className="flex flex-wrap items-center gap-3 rounded-xl border border-line bg-card/95 px-3 py-2 text-sm">
             <span className="font-display text-base font-medium text-ink">{species}</span>
-            <span className="tnum font-medium text-gold-deep">{confidencePct}% match</span>
+            <span className="tnum font-medium text-gold-deep" title="Species-classification confidence">
+              {confidencePct}% match
+            </span>
+            {detectionPct !== null && (
+              <span className="tnum text-bark" title="Object-detection confidence (YOLO)">
+                {detectionPct}% spotted
+              </span>
+            )}
             <span className="text-bark">{timeAgo(timestamp)}</span>
             {hasBox && (
               <button

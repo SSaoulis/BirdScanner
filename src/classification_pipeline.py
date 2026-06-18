@@ -166,6 +166,7 @@ def process_single_detection_with_stable_tracks(
                 timestamp=ts,
                 species=species,
                 confidence=confidence,
+                detection_confidence=float(detection.conf),
                 image_path=image_rel,
                 thumbnail_path=thumb_rel,
                 track_id=track.track_id if track is not None else None,

@@ -60,6 +60,7 @@ class DetectionWriter:
         confidence: float,
         image_path: str,
         thumbnail_path: str,
+        detection_confidence: Optional[float] = None,
         track_id: Optional[int] = None,
         stable_frames: Optional[int] = None,
         duration_sec: Optional[float] = None,
@@ -75,9 +76,10 @@ class DetectionWriter:
         Args:
             timestamp: Wall-clock time of the detection.
             species: Classified species name.
-            confidence: Classification confidence in [0, 1].
+            confidence: Species-classification confidence in [0, 1].
             image_path: Path to saved image, relative to IMAGE_DIR.
             thumbnail_path: Path to thumbnail, relative to IMAGE_DIR.
+            detection_confidence: Object-detection (YOLO) confidence in [0, 1] (optional).
             track_id: Stable-tracker track identifier (optional).
             stable_frames: Consecutive stable frames before classification (optional).
             duration_sec: Approximate track lifetime in seconds (optional).
@@ -90,6 +92,7 @@ class DetectionWriter:
             timestamp=timestamp,
             species=species,
             confidence=confidence,
+            detection_confidence=detection_confidence,
             image_path=image_path,
             thumbnail_path=thumbnail_path,
             track_id=track_id,

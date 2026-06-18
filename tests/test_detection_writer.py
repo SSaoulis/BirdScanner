@@ -56,6 +56,7 @@ def test_write_persists_a_row(writer, engine):
         timestamp=ts,
         species="Parus major",
         confidence=0.92,
+        detection_confidence=0.81,
         image_path="Parus major/2026-06-15 12-00-00.png",
         thumbnail_path="Parus major/2026-06-15 12-00-00_thumb.jpg",
         track_id=7,
@@ -68,6 +69,7 @@ def test_write_persists_a_row(writer, engine):
     r = records[0]
     assert r.species == "Parus major"
     assert r.confidence == pytest.approx(0.92)
+    assert r.detection_confidence == pytest.approx(0.81)
     assert r.image_path == "Parus major/2026-06-15 12-00-00.png"
     assert r.thumbnail_path == "Parus major/2026-06-15 12-00-00_thumb.jpg"
     assert r.track_id == 7
@@ -94,7 +96,7 @@ def test_write_multiple_rows(writer, engine):
 
 
 def test_optional_fields_default_to_none(writer, engine):
-    """track_id, stable_frames, duration_sec, and uploaded_at are all nullable."""
+    """detection_confidence, track_id, stable_frames, duration_sec, uploaded_at nullable."""
     writer.write(
         timestamp=datetime.now(),
         species="Turdus merula",
@@ -107,6 +109,7 @@ def test_optional_fields_default_to_none(writer, engine):
     records = _all_records(engine)
     assert len(records) == 1
     r = records[0]
+    assert r.detection_confidence is None
     assert r.track_id is None
     assert r.stable_frames is None
     assert r.duration_sec is None
@@ -211,6 +214,7 @@ def test_init_db_creates_table(engine):
         "timestamp",
         "species",
         "confidence",
+        "detection_confidence",
         "image_path",
         "thumbnail_path",
         "track_id",
@@ -225,8 +229,8 @@ def test_init_db_creates_table(engine):
     assert expected == col_names
 
 
-def test_init_db_backfills_box_columns_on_legacy_table():
-    """init_db adds the box columns to a table created before they existed."""
+def test_init_db_backfills_added_columns_on_legacy_table():
+    """init_db adds detection_confidence + box columns to a pre-existing table."""
     from sqlalchemy import inspect
     from sqlmodel import text
 
@@ -246,4 +250,4 @@ def test_init_db_backfills_box_columns_on_legacy_table():
     init_db(engine)
 
     col_names = {col["name"] for col in inspect(engine).get_columns("detections")}
-    assert {"box_x", "box_y", "box_w", "box_h"} <= col_names
+    assert {"detection_confidence", "box_x", "box_y", "box_w", "box_h"} <= col_names

@@ -13,7 +13,10 @@ class DetectionRecord(SQLModel, table=True):
         id: Auto-incrementing primary key.
         timestamp: Wall-clock time of the detection.
         species: Classified species name.
-        confidence: Classification confidence in [0, 1].
+        confidence: Species-classification confidence (ConvNeXt) in [0, 1].
+        detection_confidence: Object-detection confidence (YOLO11n on the IMX500)
+            for the bird bounding box, in [0, 1] (nullable for legacy rows written
+            before the object-detection score was persisted).
         image_path: Path to the full saved image, relative to IMAGE_DIR.
         thumbnail_path: Path to the 200x200 JPEG thumbnail, relative to IMAGE_DIR.
         track_id: Identifier from the stable-detection tracker (nullable for legacy writes).
@@ -33,6 +36,7 @@ class DetectionRecord(SQLModel, table=True):
     timestamp: datetime
     species: str
     confidence: float
+    detection_confidence: Optional[float] = Field(default=None, nullable=True)
     image_path: str
     thumbnail_path: str
     track_id: Optional[int] = Field(default=None, nullable=True)

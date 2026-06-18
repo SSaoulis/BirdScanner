@@ -4,7 +4,10 @@ export interface Detection {
   id: number;
   timestamp: string;
   species: string;
+  /** Species-classification confidence (ConvNeXt) in [0, 1]. */
   confidence: number;
+  /** Object-detection confidence (YOLO11n) in [0, 1]; null for legacy rows. */
+  detection_confidence: number | null;
   image_path: string;
   thumbnail_path: string;
   track_id: number | null;
