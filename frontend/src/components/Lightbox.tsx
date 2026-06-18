@@ -160,7 +160,7 @@ export function Lightbox({ detection, onClose, onPrev, onNext, onDelete }: Light
 
       {/* Image + reference row — stops click propagation so interacting inside doesn't close */}
       <div
-        className="relative flex items-start gap-10"
+        className="relative flex items-start"
         onClick={(e) => e.stopPropagation()}
       >
         {/* ── Captured detection image (with the Reference tab on its edge) ── */}
@@ -223,18 +223,35 @@ export function Lightbox({ detection, onClose, onPrev, onNext, onDelete }: Light
           </div>
         </div>
 
-        {/* ── Reference panel — locked to the image's exact rendered size ── */}
-        {showReference && imgSize && (
+        {/* ── Reference panel — locked to the image's exact rendered size ──
+            Stays mounted (once the image size is known) so it can unfold and
+            fold away smoothly: the outer wrapper animates its width, left
+            margin (the gap to the image) and opacity, clipping the fixed-size
+            inner card so its content never reflows mid-animation. The image is
+            centred in the row, so it glides aside as the panel grows. The
+            global prefers-reduced-motion guard zeroes these durations. */}
+        {imgSize && (
           <div
-            className="shrink-0 overflow-y-auto rounded-lg border border-line bg-card shadow-plate-lift p-4"
-            style={{ width: imgSize.w, height: imgSize.h }}
+            className="shrink-0 overflow-hidden transition-[width,margin-left,opacity] duration-300 ease-out motion-reduce:transition-none"
+            style={{
+              width: showReference ? imgSize.w : 0,
+              marginLeft: showReference ? "2.5rem" : 0,
+              opacity: showReference ? 1 : 0,
+              pointerEvents: showReference ? "auto" : "none",
+            }}
+            aria-hidden={!showReference}
           >
-            <h3 className="eyebrow mb-3">Field guide</h3>
-            <ReferencePane
-              state={refState}
-              activeImageIndex={activeImageIndex}
-              onSelectImage={setActiveImageIndex}
-            />
+            <div
+              className="overflow-y-auto rounded-lg border border-line bg-card shadow-plate-lift p-4"
+              style={{ width: imgSize.w, height: imgSize.h }}
+            >
+              <h3 className="eyebrow mb-3">Field guide</h3>
+              <ReferencePane
+                state={refState}
+                activeImageIndex={activeImageIndex}
+                onSelectImage={setActiveImageIndex}
+              />
+            </div>
           </div>
         )}
       </div>
