@@ -87,19 +87,19 @@ export function Timeline({
 
       <div className="flex flex-col gap-4">
         {loading && (
-          <p className="text-sm text-slate-500 animate-pulse">Loading…</p>
+          <p className="text-sm text-bark animate-pulse">Leafing through the log…</p>
         )}
 
         {error && (
-          <p className="text-sm text-red-400">{error}</p>
+          <p className="text-sm text-rust">{error}</p>
         )}
 
         {!loading && !error && detections.length === 0 && (
-          <p className="text-sm text-slate-500">No detections match your filters.</p>
+          <p className="text-sm text-bark">No sightings match these filters.</p>
         )}
 
         {/* Card grid — uniform wrapping row */}
-        <div className="flex flex-wrap gap-3">
+        <div className="flex flex-wrap gap-4">
           {detections.map((d, i) => (
             <DetectionCard
               key={d.id}
@@ -111,15 +111,15 @@ export function Timeline({
 
         {/* Load-more spinner */}
         {loadingMore && (
-          <p className="text-sm text-slate-500 animate-pulse text-center py-4">
+          <p className="text-sm text-bark animate-pulse text-center py-4">
             Loading more…
           </p>
         )}
 
         {/* Exhausted message */}
         {!loading && !loadingMore && exhausted && detections.length > 0 && (
-          <p className="text-sm text-slate-600 text-center py-4">
-            All {detections.length} detections loaded.
+          <p className="text-sm text-sage-deep text-center py-4">
+            That&rsquo;s all {detections.length} sightings.
           </p>
         )}
 

@@ -91,13 +91,13 @@ export function Dashboard() {
   /** Render one horizontal strip of detection cards (or its empty/loading state). */
   const renderStrip = (section: Section, list: Detection[], emptyLabel: string) => {
     if (loading) {
-      return <p className="text-sm text-slate-500 animate-pulse">Loading…</p>;
+      return <p className="text-sm text-bark animate-pulse">Checking the feeder…</p>;
     }
     if (list.length === 0) {
-      return <p className="text-sm text-slate-500">{emptyLabel}</p>;
+      return <p className="text-sm text-bark">{emptyLabel}</p>;
     }
     return (
-      <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-slate-700">
+      <div className="flex gap-4 overflow-x-auto pb-3">
         {list.map((d, i) => (
           <DetectionCard
             key={d.id}
@@ -110,10 +110,17 @@ export function Dashboard() {
   };
 
   const noConfidenceSuffix =
-    minConfidence > 0 ? ` at or above ${minConfidence}% confidence` : "";
+    minConfidence > 0 ? ` at ${minConfidence}% match or better` : "";
+
+  const todayDate = new Date();
+  const todayLabel = todayDate.toLocaleDateString(undefined, {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  });
 
   return (
-    <div className="min-h-screen bg-slate-900 text-white p-6 space-y-6">
+    <div className="mx-auto max-w-6xl px-6 py-8 space-y-8">
       {/* Comparison panel overlay */}
       {currentDetection && lightbox !== null && (
         <Lightbox
@@ -134,7 +141,11 @@ export function Dashboard() {
       )}
 
       <header>
-        <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
+        <p className="eyebrow mb-2">At the feeder</p>
+        <h1 className="font-display text-3xl font-semibold tracking-tight text-ink">
+          Today&rsquo;s visitors
+        </h1>
+        <p className="mt-1 text-sm text-bark">{todayLabel}</p>
       </header>
 
       <SystemMonitor />
@@ -142,10 +153,11 @@ export function Dashboard() {
       {/* Minimum confidence slider applies to both strips below. */}
       <div className="flex items-center justify-end gap-3">
         <label
-          className="text-xs text-slate-400 font-medium whitespace-nowrap"
+          className="text-xs font-semibold text-sage-deep whitespace-nowrap"
           htmlFor="dashboard-confidence"
         >
-          Min confidence: {sliderConfidence}%
+          Only show matches above{" "}
+          <span className="tnum text-gold-deep">{sliderConfidence}%</span>
         </label>
         <input
           id="dashboard-confidence"
@@ -153,7 +165,7 @@ export function Dashboard() {
           min={0}
           max={100}
           step={1}
-          className="accent-emerald-500 w-40"
+          className="w-40 accent-gold"
           value={sliderConfidence}
           onChange={(e) => setSliderConfidence(Number(e.target.value))}
           onMouseUp={() => setMinConfidence(sliderConfidence)}
@@ -162,16 +174,16 @@ export function Dashboard() {
         />
       </div>
 
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {error && <p className="text-sm text-rust">{error}</p>}
 
-      <section>
-        <h2 className="text-lg font-semibold mb-3">Predictions Today</h2>
-        {renderStrip("today", today, `No detections today${noConfidenceSuffix}.`)}
+      <section className="space-y-4">
+        <h2 className="eyebrow">Spotted today</h2>
+        {renderStrip("today", today, `No birds spotted today${noConfidenceSuffix}.`)}
       </section>
 
-      <section>
-        <h2 className="text-lg font-semibold mb-3">Recent Predictions</h2>
-        {renderStrip("recent", recent, `No earlier detections${noConfidenceSuffix}.`)}
+      <section className="space-y-4">
+        <h2 className="eyebrow">Earlier sightings</h2>
+        {renderStrip("recent", recent, `Nothing earlier to show${noConfidenceSuffix}.`)}
       </section>
     </div>
   );

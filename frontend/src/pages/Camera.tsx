@@ -54,16 +54,19 @@ export function Camera() {
 
   const tabClass = (active: boolean): string =>
     `px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
-      active ? "bg-emerald-600" : "bg-slate-700 hover:bg-slate-600"
+      active ? "bg-gold text-card shadow-sm" : "border border-line bg-card text-bark hover:text-ink"
     }`;
 
   return (
-    <div className="max-w-3xl mx-auto p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Camera</h1>
+    <div className="mx-auto max-w-3xl px-6 py-8 space-y-6">
+      <div className="flex items-end justify-between gap-4">
+        <header>
+          <p className="eyebrow mb-2">The lens</p>
+          <h1 className="font-display text-3xl font-semibold tracking-tight text-ink">Camera</h1>
+        </header>
         <div className="flex gap-2">
           <button onClick={() => setTab("test")} className={tabClass(tab === "test")}>
-            Test
+            Test shot
           </button>
           <button
             onClick={() => setTab("region")}
@@ -77,37 +80,37 @@ export function Camera() {
       {tab === "test" ? (
         <>
           <div className="flex items-center justify-between gap-3">
-            <p className="text-sm text-slate-400">
-              Capture a live frame straight from the camera to confirm it is
-              working.
+            <p className="text-sm text-bark">
+              Grab a single frame from the camera to check it&rsquo;s pointed at the
+              feeder and seeing clearly.
             </p>
             <button
               onClick={testCamera}
               disabled={loading}
-              className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-semibold transition-colors"
+              className="rounded-lg bg-gold px-4 py-2 text-sm font-semibold text-card shadow-sm transition-colors hover:bg-gold-deep disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {loading ? "Capturing…" : "Test Camera"}
+              {loading ? "Capturing…" : "Take a test shot"}
             </button>
           </div>
 
           {error && (
-            <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+            <div className="rounded-lg border border-rust/40 bg-rust/10 px-4 py-3 text-sm text-rust">
               {error}
             </div>
           )}
 
-          <div className="rounded-2xl bg-slate-800 p-4 flex items-center justify-center min-h-[20rem]">
+          <div className="flex min-h-[20rem] items-center justify-center rounded-2xl border border-line bg-card p-4 shadow-plate">
             {imageSrc ? (
               <img
                 src={imageSrc}
                 alt="Latest camera capture"
-                className="max-h-[70vh] w-auto rounded-lg"
+                className="max-h-[70vh] w-auto rounded-lg shadow-plate"
               />
             ) : (
-              <p className="text-sm text-slate-500">
+              <p className="text-sm text-bark">
                 {loading
                   ? "Capturing…"
-                  : 'No image yet — press "Test Camera" to capture one.'}
+                  : "No shot yet — press “Take a test shot” to see what the camera sees."}
               </p>
             )}
           </div>

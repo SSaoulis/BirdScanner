@@ -164,47 +164,47 @@ export function CropEditor() {
         <button
           onClick={() => void load()}
           disabled={busy}
-          className="px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-sm font-semibold transition-colors"
+          className="rounded-lg border border-line bg-card px-3 py-2 text-sm font-semibold text-bark transition-colors hover:text-ink disabled:opacity-50"
         >
           {loading ? "Loading…" : "Reload preview"}
         </button>
         <button
           onClick={() => box && void apply(box)}
           disabled={busy || !box}
-          className="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-sm font-semibold transition-colors"
+          className="rounded-lg bg-gold px-3 py-2 text-sm font-semibold text-card shadow-sm transition-colors hover:bg-gold-deep disabled:opacity-50"
         >
           {applying ? "Applying…" : "Apply region"}
         </button>
         <button
           onClick={() => void apply({ reset: true })}
           disabled={busy}
-          className="px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-sm font-semibold transition-colors"
+          className="rounded-lg border border-line bg-card px-3 py-2 text-sm font-semibold text-bark transition-colors hover:text-ink disabled:opacity-50"
         >
-          Reset to default
+          Reset to feeder
         </button>
       </div>
 
-      <p className="text-sm text-slate-400">
-        Drag the box to move it, or drag a corner to resize. Everything inside the
-        box is what the object detector sees. Applying briefly interrupts the live
-        feed while the camera reconfigures.
+      <p className="text-sm text-bark">
+        Drag the box to move it, or pull a corner to resize. Whatever sits inside the
+        box is the patch the detector watches for birds. Applying it briefly
+        interrupts the live feed while the camera resets.
       </p>
 
       {error && (
-        <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+        <div className="rounded-lg border border-rust/40 bg-rust/10 px-4 py-3 text-sm text-rust">
           {error}
         </div>
       )}
       {status && (
-        <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
+        <div className="rounded-lg border border-sage/50 bg-sage/15 px-4 py-3 text-sm text-sage-deep">
           {status}
         </div>
       )}
 
-      <div className="rounded-2xl bg-slate-800 p-4">
+      <div className="rounded-2xl border border-line bg-card p-4 shadow-plate">
         <div
           ref={containerRef}
-          className="relative mx-auto w-full max-w-2xl select-none overflow-hidden rounded-lg bg-black"
+          className="relative mx-auto w-full max-w-2xl select-none overflow-hidden rounded-lg bg-ink"
           style={{ aspectRatio: `${aspect}` }}
         >
           {previewUrl && (
@@ -227,7 +227,7 @@ export function CropEditor() {
                   startBox: box,
                 })
               }
-              className="absolute cursor-move border-2 border-emerald-400 bg-emerald-400/10"
+              className="absolute cursor-move border-2 border-gold bg-gold/15"
               style={{
                 left: `${box.nx * 100}%`,
                 top: `${box.ny * 100}%`,
@@ -247,7 +247,7 @@ export function CropEditor() {
                       startBox: box,
                     })
                   }
-                  className="absolute h-3 w-3 rounded-sm border border-slate-900 bg-emerald-400"
+                  className="absolute h-3 w-3 rounded-sm border border-card bg-gold"
                   style={{
                     left: corner.includes("w") ? "-6px" : undefined,
                     right: corner.includes("e") ? "-6px" : undefined,
@@ -262,7 +262,7 @@ export function CropEditor() {
 
           {!previewUrl && (
             <div className="absolute inset-0 flex items-center justify-center">
-              <p className="text-sm text-slate-500">
+              <p className="text-sm text-bark">
                 {loading ? "Loading preview…" : "No preview available."}
               </p>
             </div>
