@@ -19,6 +19,9 @@ class DetectionRecord(SQLModel, table=True):
             before the object-detection score was persisted).
         image_path: Path to the full saved image, relative to IMAGE_DIR.
         thumbnail_path: Path to the 200x200 JPEG thumbnail, relative to IMAGE_DIR.
+        video_path: Path to the saved short mp4 clip, relative to IMAGE_DIR
+            (nullable for legacy rows and rows written before the clip finishes
+            encoding — the file appears a few seconds after the row).
         track_id: Identifier from the stable-detection tracker (nullable for legacy writes).
         stable_frames: Number of consecutive frames the track was stable before classification.
         duration_sec: Approximate track lifetime in seconds (nullable if unavailable).
@@ -39,6 +42,7 @@ class DetectionRecord(SQLModel, table=True):
     detection_confidence: Optional[float] = Field(default=None, nullable=True)
     image_path: str
     thumbnail_path: str
+    video_path: Optional[str] = Field(default=None, nullable=True)
     track_id: Optional[int] = Field(default=None, nullable=True)
     stable_frames: Optional[int] = Field(default=None, nullable=True)
     duration_sec: Optional[float] = Field(default=None, nullable=True)

@@ -43,6 +43,17 @@ type ReferenceState =
 export function Lightbox({ detection, onClose, onPrev, onNext, onDelete }: LightboxProps) {
   const { id, species, confidence, detection_confidence, timestamp } = detection;
   const fullUrl = api.images.fullUrl(id);
+  const thumbUrl = api.images.thumbnailUrl(id);
+  const videoUrl = api.images.videoUrl(id);
+  // A clip exists once video_path is set; legacy/disabled/still-encoding rows are
+  // null, in which case the Photo/Video toggle is hidden (image-only).
+  const hasVideo = detection.video_path !== null;
+  // Which media the main pane shows. Reset to the still whenever the detection
+  // changes so navigating to a clip-less sighting never lands on a blank player.
+  const [mode, setMode] = useState<"photo" | "video">("photo");
+  useEffect(() => {
+    setMode("photo");
+  }, [id]);
   const confidencePct = (confidence * 100).toFixed(1);
   const detectionPct =
     detection_confidence != null ? (detection_confidence * 100).toFixed(1) : null;
@@ -179,17 +190,30 @@ export function Lightbox({ detection, onClose, onPrev, onNext, onDelete }: Light
         {/* ── Captured detection image (with the Reference tab on its edge) ── */}
         <div className="flex flex-col gap-3">
           <div className="relative">
-            <img
-              ref={imgRef}
-              src={fullUrl}
-              alt={`Captured ${species}`}
-              className="block max-h-[80vh] max-w-[44vw] rounded-lg bg-ink shadow-plate-lift"
-            />
+            {mode === "video" && hasVideo ? (
+              <video
+                src={videoUrl}
+                poster={thumbUrl}
+                controls
+                autoPlay
+                loop
+                muted
+                className="block max-h-[80vh] max-w-[44vw] rounded-lg bg-ink shadow-plate-lift"
+              />
+            ) : (
+              <img
+                ref={imgRef}
+                src={fullUrl}
+                alt={`Captured ${species}`}
+                className="block max-h-[80vh] max-w-[44vw] rounded-lg bg-ink shadow-plate-lift"
+              />
+            )}
 
             {/* Detection box overlay — positioned in normalized [0,1] space over
                 the rendered image, so it scales with whatever size the image is
-                capped to. Hidden when toggled off or for legacy boxless rows. */}
-            {hasBox && showBox && (
+                capped to. Only meaningful on the still, so it is hidden in video
+                mode, when toggled off, or for legacy boxless rows. */}
+            {mode === "photo" && hasBox && showBox && (
               <div
                 className="pointer-events-none absolute rounded-sm border-2 border-gold shadow-[0_0_0_1px_rgba(0,0,0,0.45)]"
                 style={{
@@ -238,7 +262,29 @@ export function Lightbox({ detection, onClose, onPrev, onNext, onDelete }: Light
               </span>
             )}
             <span className="text-bark">{timeAgo(timestamp)}</span>
-            {hasBox && (
+            {hasVideo && (
+              <div
+                className="flex overflow-hidden rounded-md border border-line"
+                role="group"
+                aria-label="Choose media"
+              >
+                {(["photo", "video"] as const).map((m) => (
+                  <button
+                    key={m}
+                    className={`px-3 py-1.5 text-xs font-medium capitalize transition-colors ${
+                      mode === m
+                        ? "bg-gold text-card"
+                        : "bg-paper text-ink hover:bg-card"
+                    }`}
+                    onClick={(e) => { e.stopPropagation(); setMode(m); }}
+                    aria-pressed={mode === m}
+                  >
+                    {m}
+                  </button>
+                ))}
+              </div>
+            )}
+            {mode === "photo" && hasBox && (
               <button
                 className={`ml-auto rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
                   showBox
@@ -252,10 +298,10 @@ export function Lightbox({ detection, onClose, onPrev, onNext, onDelete }: Light
               </button>
             )}
             <a
-              href={fullUrl}
+              href={mode === "video" && hasVideo ? videoUrl : fullUrl}
               download
               className={`rounded-md border border-line bg-paper px-3 py-1.5 text-xs font-medium text-ink transition-colors hover:bg-card${
-                hasBox ? "" : " ml-auto"
+                mode === "photo" && hasBox ? "" : " ml-auto"
               }`}
               onClick={(e) => e.stopPropagation()}
             >

@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Callable, Optional
 import cv2
 import numpy as np
 
+from birdscanner.ml.best_frame import BestFrameSelector
 from birdscanner.ml.classification import Classifier, ONNXClassifier, build_preprocessing
 from birdscanner.ml.detection_utils import (
     draw_boxes,
@@ -89,7 +90,9 @@ def run_bird_classification(classifier: Classifier, image: np.ndarray) -> tuple:
     return classifier.classify(image)
 
 
-def process_single_detection_with_stable_tracks(
+def process_single_detection_with_stable_tracks(  # pylint: disable=too-many-arguments
+    # All but ``item`` are keyword-only, so the count never hurts call-site
+    # readability (mirrors DetectionWriter.write).
     item: tuple,
     *,
     results_lock: threading.Lock,
@@ -97,6 +100,8 @@ def process_single_detection_with_stable_tracks(
     tracker: StableDetectionTracker,
     classify_fn: Optional[Callable[[Classifier, np.ndarray], tuple]] = None,
     detection_writer: Optional["DetectionWriter"] = None,
+    best_frame_selector: Optional[BestFrameSelector] = None,
+    record_fn: Optional[Callable[[str], bool]] = None,
 ) -> None:
     """Process detection using the new multi-frame stable-track gating logic.
 
@@ -110,6 +115,12 @@ def process_single_detection_with_stable_tracks(
         tracker: StableDetectionTracker to gate classification by track stability.
         classify_fn: Optional override for the classification callable (used in tests).
         detection_writer: Optional DetectionWriter for persisting records to SQLite.
+        best_frame_selector: Optional selector holding the best frame seen per
+            track; when present, the still/thumbnail/classification use that best
+            frame instead of the (arbitrary) frame that triggered this call.
+        record_fn: Optional callable that starts recording a video clip to the
+            given path, returning ``True`` if recording actually started. The
+            persisted ``video_path`` is only set when it returns ``True``.
     """
 
     if classify_fn is None:
@@ -123,12 +134,26 @@ def process_single_detection_with_stable_tracks(
     confidence = None
     track = None
 
+    # Default still source is the frame that triggered this call; the best-frame
+    # selector may replace it with a clearer frame observed earlier in the track.
+    still_frame = image
+    still_box = detection.box
+
     # Gate classification until stable over N frames.
     if (
         classifier_class.lower() == "bird"
         and should_run_bird_classification_for_detection(detection_id, tracker=tracker)
     ):
-        roi, _ = preprocess_roi(image, detection.box)
+        track = tracker.track_for_detection_id(detection_id)
+
+        # Prefer the best (highest-confidence) frame observed across this track.
+        if best_frame_selector is not None and track is not None:
+            best = best_frame_selector.take(track.track_id)
+            if best is not None:
+                still_frame = best.frame
+                still_box = best.box
+
+        roi, _ = preprocess_roi(still_frame, still_box)
         if roi.size == 0:
             # A degenerate (zero-area) detection box yields an empty ROI that the
             # classifier cannot process (PIL raises on an empty array). Skip it
@@ -137,19 +162,13 @@ def process_single_detection_with_stable_tracks(
             logger.warning(
                 "Skipping classification for detection %s: empty ROI from box %s",
                 detection_id,
-                detection.box,
+                still_box,
             )
         else:
             species, confidence = classify_fn(classifier, roi)
 
-            track = tracker.track_for_detection_id(detection_id)
             if track is not None:
                 tracker.mark_classified(track.track_id, species=species)
-
-    # The ROI is needed for the saved thumbnail. The bounding box is no longer
-    # burned into the saved full image — the raw frame is kept clean and the box
-    # is persisted as normalized coordinates so the UI can overlay it on demand.
-    roi, _ = preprocess_roi(image, detection.box)
 
     # Save only after a classification actually happened.
     if (
@@ -165,13 +184,25 @@ def process_single_detection_with_stable_tracks(
         stem = str(ts).replace(":", "-")
         image_rel = f"{species}/{stem}.png"
         thumb_rel = f"{species}/{stem}_thumb.jpg"
+        video_rel = f"{species}/{stem}.mp4"
 
-        output_image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+        # Save the *clean* best frame (no box drawn) — the box is persisted as
+        # normalized coordinates so the UI can overlay it on demand.
+        output_image = cv2.cvtColor(still_frame, cv2.COLOR_RGB2BGR)
         cv2.imwrite(str(species_dir / f"{stem}.png"), output_image)
 
-        save_thumbnail(roi, str(species_dir / f"{stem}_thumb.jpg"))
+        thumb_roi, _ = preprocess_roi(still_frame, still_box)
+        save_thumbnail(thumb_roi, str(species_dir / f"{stem}_thumb.jpg"))
 
-        box = normalized_box(detection.box, image.shape)
+        # Start a video clip; only persist the path if recording actually began
+        # (single-flight: a clip already in progress declines new triggers). The
+        # mp4 finishes encoding a few seconds later, so the file may not exist yet
+        # when the DB row is written.
+        saved_video_rel = None
+        if record_fn is not None and record_fn(str(species_dir / f"{stem}.mp4")):
+            saved_video_rel = video_rel
+
+        box = normalized_box(still_box, still_frame.shape)
         if detection_writer is not None:
             detection_writer.write(
                 timestamp=ts,
@@ -180,6 +211,7 @@ def process_single_detection_with_stable_tracks(
                 detection_confidence=float(detection.conf),
                 image_path=image_rel,
                 thumbnail_path=thumb_rel,
+                video_path=saved_video_rel,
                 track_id=track.track_id if track is not None else None,
                 stable_frames=track.stable_frames if track is not None else None,
                 box_x=box[0],
@@ -305,6 +337,11 @@ def process_detections(
     with MappedArray(request, stream) as m:
         full_img = m.array.copy()
 
+        # Feed every clean frame into the video ring buffer (cheap; no encoding
+        # while idle) so a triggered clip has pre-roll footage.
+        if manager.video_frame_fn is not None:
+            manager.video_frame_fn(full_img)
+
         for detection_id, detection in enumerate(last_results):
             classifier_class = label_for_category(labels, int(detection.category))
             if classifier_class is None:
@@ -324,6 +361,16 @@ def process_detections(
             m.array[:] = image_with_boxes
 
             if classifier_class.lower() == "bird":
+                # Offer this frame as a best-frame candidate for the track it
+                # belongs to (the tracker's per-detection map was refreshed this
+                # frame, before this callback ran).
+                if manager.best_frame_selector is not None:
+                    track = manager.tracker.track_for_detection_id(detection_id)
+                    if track is not None:
+                        manager.best_frame_selector.observe(
+                            track.track_id, full_img, detection.box, float(detection.conf)
+                        )
+
                 manager.process(
                     (full_img, detection_id, detection, labels, classifier_class)
                 )
@@ -332,7 +379,9 @@ def process_detections(
 class ClassificationManager:
     """Manages bird classification processing with optional multithreading."""
 
-    def __init__(
+    def __init__(  # pylint: disable=too-many-arguments
+        # All configuration is keyword-only, so the count never hurts call-site
+        # readability (mirrors DetectionWriter.write).
         self,
         classifier: Classifier,
         *,
@@ -341,6 +390,9 @@ class ClassificationManager:
         use_stable_track_gating: bool = False,
         tracker: Optional[StableDetectionTracker] = None,
         detection_writer: Optional["DetectionWriter"] = None,
+        best_frame_selector: Optional[BestFrameSelector] = None,
+        record_fn: Optional[Callable[[str], bool]] = None,
+        video_frame_fn: Optional[Callable[[np.ndarray], None]] = None,
     ) -> None:
         """Initialize the ClassificationManager.
 
@@ -356,12 +408,21 @@ class ClassificationManager:
             tracker: Optional tracker instance (defaults to module-global stable_detection_tracker).
             detection_writer: Optional DetectionWriter for persisting records after each
                 high-confidence classification.
+            best_frame_selector: Optional per-track best-frame selector; when present,
+                the still/thumbnail/classification use the best frame seen for the track.
+            record_fn: Optional callable that starts a video clip at the given path,
+                returning ``True`` if recording began (see ``VideoRecorder.trigger``).
+            video_frame_fn: Optional callable fed every clean frame so the recorder
+                keeps a pre-roll buffer (see ``VideoRecorder.add_frame``).
         """
         self.classifier = classifier
         self.use_multithreading = use_multithreading
         self.use_stable_track_gating = use_stable_track_gating
         self.tracker = tracker or stable_detection_tracker
         self.detection_writer = detection_writer
+        self.best_frame_selector = best_frame_selector
+        self.record_fn = record_fn
+        self.video_frame_fn = video_frame_fn
         self._results_lock: threading.Lock | None = None
         self._queue: "Queue[tuple] | None" = None
         self._thread: threading.Thread | None = None
@@ -425,6 +486,8 @@ class ClassificationManager:
                     classifier=self.classifier,
                     tracker=self.tracker,
                     detection_writer=self.detection_writer,
+                    best_frame_selector=self.best_frame_selector,
+                    record_fn=self.record_fn,
                 )
             else:
                 process_single_detection(

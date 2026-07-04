@@ -37,7 +37,7 @@ max-line-length=120
 
 [DESIGN]
 max-args=8
-max-attributes=15
+max-attributes=18
 
 [TYPECHECK]
 # cv2's members are populated dynamically at runtime, so pylint can't see them.

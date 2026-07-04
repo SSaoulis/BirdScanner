@@ -318,6 +318,46 @@ class TestImages:
         resp = client.get("/api/images/99999/full")
         assert resp.status_code == 404
 
+    def test_video_returns_mp4(self, client, session_factory, image_dir):
+        with session_factory() as session:
+            record = _make_record(
+                session, image_dir, species="Finch", track_id=42
+            )
+            video_rel = "Finch/img_42.mp4"
+            (image_dir / video_rel).write_bytes(b"FAKEMP4")
+            record.video_path = video_rel
+            session.add(record)
+            session.commit()
+            record_id = record.id
+
+        resp = client.get(f"/api/images/{record_id}/video")
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "video/mp4"
+        assert resp.content == b"FAKEMP4"
+
+    def test_video_404_when_no_clip(self, client):
+        # Seeded records have no video_path.
+        det_id = self._first_id(client)
+        resp = client.get(f"/api/images/{det_id}/video")
+        assert resp.status_code == 404
+
+    def test_video_404_when_file_missing(self, client, session_factory, image_dir):
+        with session_factory() as session:
+            record = _make_record(
+                session, image_dir, species="Wren", track_id=43
+            )
+            record.video_path = "Wren/gone.mp4"  # path set but no file on disk
+            session.add(record)
+            session.commit()
+            record_id = record.id
+
+        resp = client.get(f"/api/images/{record_id}/video")
+        assert resp.status_code == 404
+
+    def test_video_not_found_missing_detection(self, client):
+        resp = client.get("/api/images/99999/video")
+        assert resp.status_code == 404
+
 
 class TestDownload:
     def test_download_returns_valid_zip(self, client):

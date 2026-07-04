@@ -24,11 +24,11 @@ def delete_detection(
     image_dir: Path,
     detection_id: int,
 ) -> bool:
-    """Delete a detection's database row and its image + thumbnail files.
+    """Delete a detection's database row and its image + thumbnail + video files.
 
-    The image and thumbnail files are removed on a best-effort basis: a missing
-    or unremovable file is logged but does not prevent the database row from
-    being deleted, so a half-cleaned detection can always be fully removed.
+    The image, thumbnail, and video files are removed on a best-effort basis: a
+    missing or unremovable file is logged but does not prevent the database row
+    from being deleted, so a half-cleaned detection can always be fully removed.
 
     Args:
         session_factory: Zero-argument callable returning a ``Session`` context
@@ -46,8 +46,9 @@ def delete_detection(
         if record is None:
             return False
 
-        for relative in (record.image_path, record.thumbnail_path):
-            _unlink_best_effort(image_dir / relative)
+        for relative in (record.image_path, record.thumbnail_path, record.video_path):
+            if relative:
+                _unlink_best_effort(image_dir / relative)
 
         session.delete(record)
         session.commit()
