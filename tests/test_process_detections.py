@@ -1,4 +1,4 @@
-from src.tracking import (
+from birdscanner.ml.tracking import (
     StableDetectionTracker,
     StableTrack,
     should_classify_track,

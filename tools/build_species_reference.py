@@ -16,7 +16,7 @@ Data sources
   (taxon name, property ``P225``).
 
 Source of truth for the species list is
-``src/assets/convnext_v2_tiny.onnx_class_to_idx.json`` (a ``{name: index}`` map).
+``assets/models/convnext_v2_tiny.onnx_class_to_idx.json`` (a ``{name: index}`` map).
 The label ``"Unknown"`` is a non-bird sentinel and is skipped.
 
 Outputs (all under ``assets/species_reference/``)
@@ -59,7 +59,7 @@ from typing import Any, Optional
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(_THIS_DIR)
 CLASS_TO_IDX_PATH = os.path.join(
-    REPO_ROOT, "src", "assets", "convnext_v2_tiny.onnx_class_to_idx.json"
+    REPO_ROOT, "assets", "models", "convnext_v2_tiny.onnx_class_to_idx.json"
 )
 OUTPUT_DIR = os.path.join(REPO_ROOT, "assets", "species_reference")
 MANIFEST_PATH = os.path.join(OUTPUT_DIR, "manifest.json")

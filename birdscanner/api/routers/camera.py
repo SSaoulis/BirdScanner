@@ -1,7 +1,7 @@
 """Camera snapshot + detection-crop proxy endpoints.
 
 The detector container owns the IMX500 camera exclusively and exposes on-demand
-capture and crop-control endpoints (see ``src/camera_server.py``).  The API
+capture and crop-control endpoints (see ``birdscanner/detector/camera_server.py``).  The API
 itself has no camera access (it mounts the data volume read-only), so this
 router proxies browser requests through to the detector and relays the result
 back:

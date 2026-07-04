@@ -5,8 +5,8 @@ defaults to ``detections.db`` relative to the current working directory.
 
 Typical usage::
 
-    from db.database import make_engine, init_db, make_session_factory
-    from db.writer import DetectionWriter
+    from birdscanner.db.database import make_engine, init_db, make_session_factory
+    from birdscanner.db.writer import DetectionWriter
 
     engine = make_engine()
     init_db(engine)
@@ -21,7 +21,7 @@ from sqlmodel import Session, SQLModel, create_engine
 
 # Imported for its side effect: importing the model registers it on SQLModel's
 # metadata so ``init_db`` can create the table.
-from db.models import DetectionRecord  # noqa: F401  # pylint: disable=unused-import
+from birdscanner.db.models import DetectionRecord  # noqa: F401  # pylint: disable=unused-import
 
 _DEFAULT_DB_PATH = "detections.db"
 

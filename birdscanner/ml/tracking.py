@@ -8,7 +8,7 @@ frames. Each track is classified at most once (see ``mark_classified``).
 from dataclasses import dataclass
 from typing import Callable, Optional
 
-from detection_utils import iou
+from birdscanner.ml.detection_utils import iou
 
 
 @dataclass

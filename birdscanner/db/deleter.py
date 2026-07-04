@@ -3,7 +3,7 @@
 The detector process owns the database and image directory read-write (the API
 mounts both read-only), so all deletions are performed here, inside the detector,
 and the API proxies delete requests through to it (see
-``src/camera_server.py`` and ``backend/routers/detections.py``).
+``birdscanner/detector/camera_server.py`` and ``birdscanner/api/routers/detections.py``).
 
 Unlike :class:`db.writer.DetectionWriter`, deletion is performed synchronously:
 it runs on the detector's HTTP server thread, not the camera callback, so there
@@ -13,8 +13,8 @@ is no need to offload it to a background queue.
 import logging
 from pathlib import Path
 
-from db.database import SessionFactory
-from db.models import DetectionRecord
+from birdscanner.db.database import SessionFactory
+from birdscanner.db.models import DetectionRecord
 
 logger = logging.getLogger("tracking")
 

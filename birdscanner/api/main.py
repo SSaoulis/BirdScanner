@@ -19,7 +19,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import Response
 from starlette.types import Scope
 
-from backend.routers import (
+from birdscanner.api.routers import (
     camera,
     detections,
     images,

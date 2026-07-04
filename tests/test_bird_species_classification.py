@@ -1,20 +1,17 @@
 import re
-import sys
 from pathlib import Path
 
 import numpy as np
 import pytest
 from PIL import Image
 
-from src.classification import Classifier, ONNXClassifier, build_preprocessing
-
-# add src to path
-sys.path.append(str(Path(__file__).parent.parent / "src"))  # noqa: E
+from birdscanner.ml.classification import Classifier, ONNXClassifier, build_preprocessing
 
 # Paths
-MODEL_PATH = Path(__file__).parent.parent / "examples/models/convnext_v2_tiny.onnx"
+MODEL_PATH = Path(__file__).parent.parent / "assets/models/convnext_v2_tiny.onnx"
 CLASS_TO_IDX_PATH = (
-    Path(__file__).parent.parent / "src/assets/convnext_v2_tiny.onnx_class_to_idx.json"
+    Path(__file__).parent.parent
+    / "assets/models/convnext_v2_tiny.onnx_class_to_idx.json"
 )
 IMAGES_DIR = Path(__file__).parent / "bird_species"
 

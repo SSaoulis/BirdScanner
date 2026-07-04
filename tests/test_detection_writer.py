@@ -11,9 +11,9 @@ import pytest
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, create_engine
 
-from db.database import init_db, make_session_factory
-from db.models import DetectionRecord
-from db.writer import DetectionWriter
+from birdscanner.db.database import init_db, make_session_factory
+from birdscanner.db.models import DetectionRecord
+from birdscanner.db.writer import DetectionWriter
 
 
 @pytest.fixture()

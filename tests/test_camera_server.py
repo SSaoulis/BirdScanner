@@ -11,7 +11,7 @@ import urllib.request
 import numpy as np
 import pytest
 
-from src.camera_server import (
+from birdscanner.detector.camera_server import (
     DEFAULT_CAMERA_SERVER_PORT,
     camera_server_port,
     capture_jpeg,

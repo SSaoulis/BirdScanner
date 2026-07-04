@@ -5,11 +5,11 @@ read-write, so the read-only API container cannot do these things itself.  This
 module runs a tiny stdlib HTTP server on a background daemon thread inside the
 detector and the API proxies browser requests through to it:
 
-* ``GET /capture`` — capture a fresh JPEG frame (see ``backend/routers/camera.py``).
+* ``GET /capture`` — capture a fresh JPEG frame (see ``birdscanner/api/routers/camera.py``).
 * ``GET /capture/full`` — full-sensor JPEG for the crop editor.
 * ``GET /crop`` / ``POST /crop`` — read / update the detection crop region.
 * ``DELETE /detections/{id}`` — delete a detection row + its image files (see
-  ``backend/routers/detections.py``).
+  ``birdscanner/api/routers/detections.py``).
 
 The port is read from the ``CAMERA_SERVER_PORT`` environment variable and
 defaults to :data:`DEFAULT_CAMERA_SERVER_PORT`.

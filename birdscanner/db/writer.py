@@ -10,8 +10,8 @@ from datetime import datetime
 from queue import Empty, Full, Queue
 from typing import Optional
 
-from db.database import SessionFactory
-from db.models import DetectionRecord
+from birdscanner.db.database import SessionFactory
+from birdscanner.db.models import DetectionRecord
 
 logger = logging.getLogger(__name__)
 

@@ -1,5 +1,9 @@
-src/local/*
-!src/local/README.md
+# Classifier model weights live on the data volume / Pi, not in git (the *.onnx rule
+# below also covers them). The curated class-index map IS source, so re-include it
+# despite the repo-wide *.json rule.
+assets/models/*.onnx
+assets/models/*.pt
+!assets/models/convnext_v2_tiny.onnx_class_to_idx.json
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

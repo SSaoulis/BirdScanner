@@ -1,7 +1,6 @@
 """Main entry point for bird detection and classification application."""
 
 import logging
-import os
 import sys
 import threading
 import time
@@ -11,21 +10,21 @@ from picamera2 import Picamera2  # type: ignore
 from picamera2.devices import IMX500  # type: ignore
 from picamera2.devices.imx500 import NetworkIntrinsics  # type: ignore
 
-from object_detection import (
+from birdscanner.ml.object_detection import (
     parse_detections,
     get_labels,
 )
-from classification_pipeline import (
+from birdscanner.ml.classification_pipeline import (
     process_detections,
     setup_classifier,
     ClassificationManager,
     update_detection_classifications_cache,
 )
-from tracking import StableDetectionTracker
-import classification_pipeline
-from camera_server import camera_server_port, start_camera_server
-from config import config as app_config
-from crop import (
+from birdscanner.ml.tracking import StableDetectionTracker
+from birdscanner.ml import classification_pipeline
+from birdscanner.detector.camera_server import camera_server_port, start_camera_server
+from birdscanner.detector.config import config as app_config
+from birdscanner.detector.crop import (
     SENSOR_W,
     SENSOR_H,
     crop_config_path,
@@ -33,26 +32,15 @@ from crop import (
     load_crop_region,
     main_stream_size_for_crop,
 )
-from crop_controller import CropController
-
-# The `db` package lives at the repository root, one level above this file's
-# directory (src/). The flat sibling imports above resolve via sys.path[0]
-# (= src/), but `db` does not, so add the repo root to the path explicitly.
-# This lets `cd src && python main.py` work locally and mirrors the Docker
-# image's PYTHONPATH=/app without requiring the env var to be set.
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from db.database import (  # noqa: E402  pylint: disable=wrong-import-position
-    make_engine,
-    init_db,
-    make_session_factory,
+from birdscanner.detector.crop_controller import CropController
+from birdscanner.detector.paths import (
+    class_to_idx_path,
+    classifier_model_path,
+    coco_labels_path,
 )
-from db.writer import (  # noqa: E402  pylint: disable=wrong-import-position
-    DetectionWriter,
-)
-from db.deleter import (  # noqa: E402  pylint: disable=wrong-import-position
-    delete_detection,
-)
+from birdscanner.db.database import make_engine, init_db, make_session_factory
+from birdscanner.db.writer import DetectionWriter
+from birdscanner.db.deleter import delete_detection
 
 
 def wait_for_camera(model_path: str, retry_interval: float = 30.0) -> IMX500:
@@ -121,7 +109,7 @@ def main():
 
     # Load default labels if not provided
     if intrinsics.labels is None:
-        with open("assets/coco_labels.txt", "r", encoding="utf-8") as f:
+        with open(coco_labels_path(), "r", encoding="utf-8") as f:
             intrinsics.labels = f.read().splitlines()
 
     intrinsics.update_with_defaults()
@@ -132,8 +120,8 @@ def main():
 
     # Initialize classifier
     classifier = setup_classifier(
-        "local/convnext_v2_tiny_int8.onnx",
-        "assets/convnext_v2_tiny.onnx_class_to_idx.json",
+        str(classifier_model_path()),
+        str(class_to_idx_path()),
     )
 
     # Configure new stable-track gating.
@@ -150,7 +138,7 @@ def main():
         )
         use_stable_tracks = True
 
-        from track_logging import TrackingLogger
+        from birdscanner.detector.track_logging import TrackingLogger
 
         logger = TrackingLogger()
 
