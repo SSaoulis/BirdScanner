@@ -14,8 +14,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine
 
-from db.database import make_session_factory
-from db.models import DetectionRecord
+from birdscanner.db.database import make_session_factory
+from birdscanner.db.models import DetectionRecord
 
 
 # ---------------------------------------------------------------------------
@@ -115,8 +115,8 @@ def seeded_session(session_factory, image_dir):
 @pytest.fixture()
 def client(session_factory, image_dir, seeded_session):
     """TestClient with DB and image dependencies overridden."""
-    from backend.main import app
-    from backend.dependencies import get_session, get_image_dir
+    from birdscanner.api.main import app
+    from birdscanner.api.dependencies import get_session, get_image_dir
 
     def _override_session():
         with session_factory() as session:
@@ -205,8 +205,8 @@ class TestListDetections:
                     session, image_dir, track_id=track_id, ts=same_ts
                 )
 
-        from backend.main import app
-        from backend.dependencies import get_session, get_image_dir
+        from birdscanner.api.main import app
+        from birdscanner.api.dependencies import get_session, get_image_dir
 
         def _override_session():
             with session_factory() as session:
@@ -250,7 +250,7 @@ class _FakeDeleteResponse:
 
 class TestDeleteDetection:
     def test_proxies_delete_to_detector(self, client, monkeypatch):
-        from backend.routers import detections
+        from birdscanner.api.routers import detections
 
         captured = {}
 
@@ -264,7 +264,7 @@ class TestDeleteDetection:
         assert captured["url"].endswith("/detections/123")
 
     def test_relays_404_from_detector(self, client, monkeypatch):
-        from backend.routers import detections
+        from birdscanner.api.routers import detections
 
         monkeypatch.setattr(
             detections.httpx,
@@ -277,7 +277,7 @@ class TestDeleteDetection:
     def test_returns_503_when_detector_unreachable(self, client, monkeypatch):
         import httpx
 
-        from backend.routers import detections
+        from birdscanner.api.routers import detections
 
         def _fake_delete(url, timeout):
             raise httpx.ConnectError("connection refused")
@@ -394,8 +394,8 @@ class TestNetworkHistory:
 
 class TestNetworkSpeedTest:
     def test_returns_measured_rates(self, client, monkeypatch):
-        from backend.routers import network
-        from backend.routers.network import SpeedTestResult
+        from birdscanner.api.routers import network
+        from birdscanner.api.routers.network import SpeedTestResult
 
         def _fake_run() -> SpeedTestResult:
             return SpeedTestResult(
@@ -416,7 +416,7 @@ class TestNetworkSpeedTest:
     def test_unreachable_endpoint_returns_503(self, client, monkeypatch):
         import httpx
 
-        from backend.routers import network
+        from birdscanner.api.routers import network
 
         def _boom() -> None:
             raise httpx.ConnectError("no route to host")
@@ -481,7 +481,7 @@ class _FakeHttpxResponse:
 
 class TestCamera:
     def test_snapshot_proxies_detector_jpeg(self, client, monkeypatch):
-        from backend.routers import camera
+        from birdscanner.api.routers import camera
 
         captured = {}
 
@@ -499,7 +499,7 @@ class TestCamera:
     def test_snapshot_returns_503_when_detector_unreachable(self, client, monkeypatch):
         import httpx
 
-        from backend.routers import camera
+        from birdscanner.api.routers import camera
 
         def _fake_get(url, timeout):
             raise httpx.ConnectError("connection refused")
@@ -509,7 +509,7 @@ class TestCamera:
         assert resp.status_code == 503
 
     def test_full_snapshot_proxies_detector_jpeg(self, client, monkeypatch):
-        from backend.routers import camera
+        from birdscanner.api.routers import camera
 
         captured = {}
 
@@ -524,7 +524,7 @@ class TestCamera:
         assert captured["url"].endswith("/capture/full")
 
     def test_get_crop_proxies_detector_json(self, client, monkeypatch):
-        from backend.routers import camera
+        from birdscanner.api.routers import camera
 
         state = {"x": 1, "y": 2, "w": 900, "h": 900, "sensor_w": 4056}
 
@@ -537,7 +537,7 @@ class TestCamera:
         assert resp.json() == state
 
     def test_set_crop_proxies_post_body(self, client, monkeypatch):
-        from backend.routers import camera
+        from birdscanner.api.routers import camera
 
         captured = {}
         state = {"x": 1, "y": 2, "w": 900, "h": 900}
@@ -559,7 +559,7 @@ class TestCamera:
         assert captured["json"] == {"nx": 0.1, "ny": 0.2, "nw": 0.3, "nh": 0.4}
 
     def test_set_crop_relays_detector_400(self, client, monkeypatch):
-        from backend.routers import camera
+        from birdscanner.api.routers import camera
 
         def _fake_post(url, json, timeout):
             return _FakeHttpxResponse(b"bad body", status_code=400)
@@ -587,7 +587,7 @@ class TestSPAStaticFiles:
         """App with SPAStaticFiles mounted over a temporary dist directory."""
         from fastapi import FastAPI
 
-        from backend.main import SPAStaticFiles
+        from birdscanner.api.main import SPAStaticFiles
 
         (tmp_path / "index.html").write_text("<!doctype html><div id=root>")
         (tmp_path / "asset.js").write_text("console.log('asset');")

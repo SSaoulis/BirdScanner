@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.detection_utils import label_for_category, normalized_box
+from birdscanner.ml.detection_utils import label_for_category, normalized_box
 
 
 def test_label_for_category_returns_label_for_valid_index():

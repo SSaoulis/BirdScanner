@@ -5,9 +5,7 @@
 # Tests legitimately use patterns pylint flags by default: pytest fixtures
 # shadow their function arguments (redefined-outer-name / unused-argument),
 # test functions don't need docstrings, and tests reach into internals
-# (protected-access).  Import resolution is the same two-world problem mypy
-# documents — tests import the detector modules as ``src.*`` while ``src/``
-# imports its siblings by flat name — so import-error is silenced here too.
+# (protected-access).
 
 [MAIN]
 ignored-modules=libcamera,
@@ -36,7 +34,7 @@ disable=missing-module-docstring,
         global-statement,
         duplicate-code,
         consider-using-with,
-        import-error
+        use-implicit-booleaness-not-comparison
 
 [FORMAT]
 max-line-length=120

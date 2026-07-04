@@ -13,7 +13,7 @@ import numpy as np
 from PIL import Image
 
 if TYPE_CHECKING:
-    from object_detection import Detection
+    from birdscanner.ml.object_detection import Detection
 
 
 def label_for_category(labels: list, category: int) -> Optional[str]:

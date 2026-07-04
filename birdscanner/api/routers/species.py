@@ -6,8 +6,8 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlmodel import Session, col, func, select
 
-from db.models import DetectionRecord
-from backend.dependencies import get_session
+from birdscanner.db.models import DetectionRecord
+from birdscanner.api.dependencies import get_session
 
 router = APIRouter(prefix="/api/species", tags=["species"])
 

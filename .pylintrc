@@ -1,18 +1,17 @@
 # Pylint configuration for the BirdScanner source tree.
 #
-# Run as two passes (mirrors the mypy.ini two-pass setup):
-#   pylint src backend db utils tools   # source (this file)
-#   pylint tests --rcfile=tests/.pylintrc
+# Run as:
+#   pylint birdscanner tools               # source (this file)
+#   pylint tests --rcfile=tests/.pylintrc  # tests (relaxed pytest idioms)
+#
+# The tests use a separate rcfile only to relax pytest idioms — not for import
+# resolution, which is now uniform (everything is the `birdscanner` package).
 #
 # The Pi-only native bindings (libcamera, picamera2) and the untyped C-extension
 # / third-party libs (onnxruntime, onnx, cv2) cannot be analysed off-device, so
 # their import/no-member noise is silenced here exactly as mypy.ini silences it.
 
 [MAIN]
-# examples/ is the original unrefactored script kept for reference (see CLAUDE.md);
-# it is intentionally not maintained to lint-clean standards.
-ignore=examples
-
 # Native / Pi-only / untyped modules that cannot be imported on a dev machine.
 ignored-modules=libcamera,
                 picamera2,

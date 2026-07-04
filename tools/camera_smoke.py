@@ -71,7 +71,7 @@ def take_photo(output_dir: str = ".", filename: Optional[str] = None) -> str:
         main={
             "size": (640, 640),
             # picamera2's "888" names are byte-reversed: "BGR888" yields an
-            # [R, G, B] array. Match src/main.py so colours stay correct.
+            # [R, G, B] array. Match birdscanner/detector/main.py so colours stay correct.
             "format": "BGR888",
         },
         controls={

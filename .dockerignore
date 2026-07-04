@@ -10,17 +10,11 @@ frontend/node_modules/
 frontend/.vite/
 camera_view/
 camera_view.tar
-utils/
-examples/
+tools/
 .claude/
-# Models not used by the running detector. The detector only needs
-# src/local/convnext_v2_tiny_int8.onnx; everything else here is training/
-# conversion scratch that must not be copied into the image (155MB -> seconds).
-# NOTE: bare `local/` is anchored at the context root and does NOT match
-# `src/local/`, so the unused models must be listed by their full path.
-src/local/convnext_v2_tiny.onnx
-src/local/yolov8s.onnx
-src/local/imx500_network_yolo11n_pp.rpk
-src/local/converted5/
+.agents/
+# The detector/api Dockerfiles COPY only the specific files they need out of
+# assets/models/ (the int8 ONNX classifier + its class map), so any training/
+# conversion scratch living alongside them is never added to an image.
 *.egg-info/
 dist/

@@ -1,17 +1,20 @@
-# create a simple test that uses class ONNXClassifier from src/classification.py
+# create a simple test that uses class ONNXClassifier from birdscanner/ml/classification.py
 
 from pathlib import Path
 
 import numpy as np
 import pytest
 
-from src.classification import Classifier, ONNXClassifier, build_preprocessing
+from birdscanner.ml.classification import Classifier, ONNXClassifier, build_preprocessing
 
 
 # REAL MODEL PATH
-MODEL_PATH = Path(__file__).parent.parent / "examples/models/convnext_v2_tiny_int8.onnx"
+MODEL_PATH = (
+    Path(__file__).parent.parent / "assets/models/convnext_v2_tiny_int8.onnx"
+)
 CLASS_TO_IDX_PATH = (
-    Path(__file__).parent.parent / "src/assets/convnext_v2_tiny.onnx_class_to_idx.json"
+    Path(__file__).parent.parent
+    / "assets/models/convnext_v2_tiny.onnx_class_to_idx.json"
 )
 
 

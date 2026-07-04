@@ -12,9 +12,9 @@ from urllib.parse import quote
 import pytest
 from fastapi.testclient import TestClient
 
-from backend.main import app
-from backend.dependencies import get_reference_dir
-from backend.routers import reference
+from birdscanner.api.main import app
+from birdscanner.api.dependencies import get_reference_dir
+from birdscanner.api.routers import reference
 
 _SPECIES_NAME = "Eurasian Blue Tit"
 _FAKE_JPEG = b"\xff\xd8\xffFAKEJPEGDATA"

@@ -13,12 +13,14 @@ WORKDIR /app
 COPY requirements.api.txt ./
 RUN pip install --no-cache-dir -r requirements.api.txt
 
-COPY db/ ./db/
-COPY backend/ ./backend/
+# The API imports only birdscanner.api + birdscanner.db, but copying the whole
+# package is simplest; the detector/ml modules are tiny pure-Python and are never
+# imported by the API process (their heavy Pi-only deps aren't installed here).
+COPY birdscanner/ ./birdscanner/
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
 ENV PYTHONPATH=/app
 VOLUME ["/data"]
 
 EXPOSE 8080
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["uvicorn", "birdscanner.api.main:app", "--host", "0.0.0.0", "--port", "8080"]

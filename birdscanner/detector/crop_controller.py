@@ -24,7 +24,7 @@ from typing import Any, Callable, Dict, Tuple
 
 import numpy as np
 
-from crop import (
+from birdscanner.detector.crop import (
     CropRegion,
     default_crop_region,
     main_stream_size_for_crop,

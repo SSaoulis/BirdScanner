@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from backend.dependencies import get_reference_dir
+from birdscanner.api.dependencies import get_reference_dir
 
 router = APIRouter(prefix="/api/species", tags=["reference"])
 

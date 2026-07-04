@@ -9,8 +9,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlmodel import Session
 
-from db.models import DetectionRecord
-from backend.dependencies import get_session, get_image_dir
+from birdscanner.db.models import DetectionRecord
+from birdscanner.api.dependencies import get_session, get_image_dir
 
 router = APIRouter(prefix="/api/images", tags=["images"])
 

@@ -15,8 +15,8 @@ from typing import TYPE_CHECKING, Callable, Optional
 import cv2
 import numpy as np
 
-from classification import Classifier, ONNXClassifier, build_preprocessing
-from detection_utils import (
+from birdscanner.ml.classification import Classifier, ONNXClassifier, build_preprocessing
+from birdscanner.ml.detection_utils import (
     draw_boxes,
     iou,
     label_for_category,
@@ -24,7 +24,7 @@ from detection_utils import (
     preprocess_roi,
     save_thumbnail,
 )
-from tracking import (
+from birdscanner.ml.tracking import (
     StableDetectionTracker,
     should_run_bird_classification_for_detection,
     stable_detection_tracker,
@@ -33,7 +33,7 @@ from tracking import (
 if TYPE_CHECKING:
     from queue import Queue
 
-    from db.writer import DetectionWriter
+    from birdscanner.db.writer import DetectionWriter
 
 # Root directory for saved images; overridable via IMAGE_DIR environment variable.
 IMAGE_DIR = os.environ.get("IMAGE_DIR", "/home/stefan/Pictures/bird_detections")

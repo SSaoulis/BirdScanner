@@ -228,10 +228,10 @@ def main_stream_size_for_crop(
     if crop_w <= 0 or crop_h <= 0:
         return (_align(long_side), _align(long_side))
     if crop_w >= crop_h:
-        w = long_side
+        w = float(long_side)
         h = long_side * crop_h / crop_w
     else:
-        h = long_side
+        h = float(long_side)
         w = long_side * crop_w / crop_h
     return (_align(int(round(w))), _align(int(round(h))))
 

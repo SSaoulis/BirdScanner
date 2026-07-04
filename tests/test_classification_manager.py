@@ -16,8 +16,10 @@ import types
 # real install untouched on the Pi/CI.
 sys.modules.setdefault("onnxruntime", types.ModuleType("onnxruntime"))
 
-import src.classification_pipeline as cp  # noqa: E402
-from src.classification_pipeline import ClassificationManager  # noqa: E402
+import birdscanner.ml.classification_pipeline as cp  # noqa: E402  # pylint: disable=wrong-import-position
+from birdscanner.ml.classification_pipeline import (  # noqa: E402  # pylint: disable=wrong-import-position
+    ClassificationManager,
+)
 
 
 def _make_item() -> tuple:

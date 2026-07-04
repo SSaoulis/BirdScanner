@@ -9,8 +9,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from sqlmodel import Session, select
 
-from db.models import DetectionRecord
-from backend.dependencies import get_session
+from birdscanner.db.models import DetectionRecord
+from birdscanner.api.dependencies import get_session
 
 router = APIRouter(prefix="/api/detections", tags=["detections"])
 
@@ -72,7 +72,7 @@ def list_detections(
     query = (
         query.order_by(
             DetectionRecord.timestamp.desc(),  # type: ignore[attr-defined]  # pylint: disable=no-member
-            DetectionRecord.id.desc(),  # type: ignore[attr-defined]  # pylint: disable=no-member
+            DetectionRecord.id.desc(),  # type: ignore[union-attr]  # pylint: disable=no-member
         )
         .offset(offset)
         .limit(limit)
@@ -108,7 +108,7 @@ def delete_detection(detection_id: int) -> Response:
     """Delete a detection by proxying to the detector's control server.
 
     The API has no write access to the database or image files; the detector
-    owns them (see ``src/camera_server.py``).  This endpoint forwards the
+    owns them (see ``birdscanner/detector/camera_server.py``).  This endpoint forwards the
     delete to the detector and relays the outcome.
 
     Args:

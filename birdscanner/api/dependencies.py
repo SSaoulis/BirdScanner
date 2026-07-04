@@ -6,12 +6,12 @@ from typing import Generator
 
 from sqlmodel import Session
 
-from db.database import make_engine, make_session_factory
+from birdscanner.db.database import make_engine, make_session_factory
 
 _DEFAULT_IMAGE_DIR = "/home/stefan/Pictures/bird_detections"
 
 # Repo-relative default for the offline-built species reference data bank.
-# Resolved the same robust way ``backend/main.py`` resolves the frontend dist
+# Resolved the same robust way ``birdscanner/api/main.py`` resolves the frontend dist
 # directory so it works regardless of the process's current working directory.
 _DEFAULT_REFERENCE_DIR = Path(__file__).parent.parent / "assets" / "species_reference"
 

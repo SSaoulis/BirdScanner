@@ -11,9 +11,9 @@ import pytest
 from sqlalchemy.pool import StaticPool
 from sqlmodel import SQLModel, create_engine
 
-from db.database import make_session_factory
-from db.deleter import delete_detection
-from db.models import DetectionRecord
+from birdscanner.db.database import make_session_factory
+from birdscanner.db.deleter import delete_detection
+from birdscanner.db.models import DetectionRecord
 
 
 @pytest.fixture()
@@ -47,6 +47,7 @@ def _seed(session_factory, image_dir: Path) -> int:
         session.add(record)
         session.commit()
         session.refresh(record)
+        assert record.id is not None
         return record.id
 
 
