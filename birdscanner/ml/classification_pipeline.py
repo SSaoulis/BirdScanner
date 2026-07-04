@@ -129,11 +129,22 @@ def process_single_detection_with_stable_tracks(
         and should_run_bird_classification_for_detection(detection_id, tracker=tracker)
     ):
         roi, _ = preprocess_roi(image, detection.box)
-        species, confidence = classify_fn(classifier, roi)
+        if roi.size == 0:
+            # A degenerate (zero-area) detection box yields an empty ROI that the
+            # classifier cannot process (PIL raises on an empty array). Skip it
+            # without marking the track classified, so a later, non-degenerate
+            # frame for the same track can still be classified.
+            logger.warning(
+                "Skipping classification for detection %s: empty ROI from box %s",
+                detection_id,
+                detection.box,
+            )
+        else:
+            species, confidence = classify_fn(classifier, roi)
 
-        track = tracker.track_for_detection_id(detection_id)
-        if track is not None:
-            tracker.mark_classified(track.track_id, species=species)
+            track = tracker.track_for_detection_id(detection_id)
+            if track is not None:
+                tracker.mark_classified(track.track_id, species=species)
 
     # The ROI is needed for the saved thumbnail. The bounding box is no longer
     # burned into the saved full image — the raw frame is kept clean and the box
@@ -383,6 +394,30 @@ class ClassificationManager:
             item: Detection item tuple to process.
         """
         if not self.use_multithreading:
+            self._dispatch(item)
+            return
+
+        from queue import Full
+
+        try:
+            self._queue.put_nowait(item)  # type: ignore
+        except Full:
+            return
+
+    def _dispatch(self, item: tuple) -> None:
+        """Run the configured per-detection processing for one item.
+
+        Exceptions raised while processing a single detection (e.g. a degenerate
+        ROI the classifier rejects, or an I/O error while saving) are logged and
+        swallowed so one bad detection never takes down the pipeline. In async
+        mode an unhandled exception would kill the worker thread permanently and
+        silently stop all further classification; in sync mode it would crash
+        the camera callback.
+
+        Args:
+            item: Detection item tuple to process.
+        """
+        try:
             if self.use_stable_track_gating:
                 process_single_detection_with_stable_tracks(
                     item,
@@ -397,14 +432,10 @@ class ClassificationManager:
                     results_lock=self._results_lock,  # type: ignore[arg-type]
                     classifier=self.classifier,
                 )
-            return
-
-        from queue import Full
-
-        try:
-            self._queue.put_nowait(item)  # type: ignore
-        except Full:
-            return
+        except Exception:  # pylint: disable=broad-exception-caught
+            logger.exception(
+                "Classification failed for a detection; skipping it"
+            )
 
     def _worker_loop(self) -> None:
         """Worker thread main loop for processing queued detections.
@@ -418,22 +449,12 @@ class ClassificationManager:
                 self._queue.task_done()  # type: ignore
                 break
 
-            if self.use_stable_track_gating:
-                process_single_detection_with_stable_tracks(
-                    item,
-                    results_lock=self._results_lock,  # type: ignore[arg-type]
-                    classifier=self.classifier,
-                    tracker=self.tracker,
-                    detection_writer=self.detection_writer,
-                )
-            else:
-                process_single_detection(
-                    item,
-                    results_lock=self._results_lock,  # type: ignore[arg-type]
-                    classifier=self.classifier,
-                )
-
-            self._queue.task_done()  # type: ignore
+            try:
+                self._dispatch(item)
+            finally:
+                # Always mark the item done — even if _dispatch's own logging
+                # somehow raised — so the queue never wedges and stop() can join.
+                self._queue.task_done()  # type: ignore
 
     def stop(self) -> None:
         """Stop the worker thread gracefully.
