@@ -29,7 +29,15 @@ from birdscanner.api.routers import (
     system,
 )
 
-_FRONTEND_DIST = Path(__file__).parent.parent / "frontend" / "dist"
+# The frontend build lives at the repo root (``<repo>/frontend/dist``), a sibling
+# of the ``birdscanner`` package. This file is at ``<repo>/birdscanner/api/main.py``,
+# so we walk up three levels (api -> birdscanner -> repo). ``parents[2]`` is used
+# rather than ``.parent.parent`` — the latter stopped at ``<repo>/birdscanner`` after
+# the codebase was unified into the ``birdscanner`` package (main.py moved a level
+# deeper), so the mount silently never happened and ``/`` returned 404
+# (``{"detail":"Not Found"}``). In Docker the api runs from ``/app`` with the build
+# copied to ``/app/frontend/dist`` (see Dockerfile.api), which this also resolves.
+_FRONTEND_DIST = Path(__file__).parents[2] / "frontend" / "dist"
 
 
 class SPAStaticFiles(StaticFiles):

@@ -652,3 +652,20 @@ class TestSPAStaticFiles:
         resp = spa_client.get("/asset.js")
         assert resp.status_code == 200
         assert "console.log" in resp.text
+
+    def test_frontend_dist_resolves_to_repo_root(self):
+        """``_FRONTEND_DIST`` must point at ``<repo>/frontend/dist``.
+
+        The frontend build is a sibling of the ``birdscanner`` package, not nested
+        inside it. When the codebase was unified into the ``birdscanner`` package,
+        ``main.py`` moved a directory deeper but the path still walked only two
+        parents, so it resolved to ``<repo>/birdscanner/frontend/dist`` (which never
+        exists). The mount was silently skipped and ``/`` returned 404
+        (``{"detail":"Not Found"}``). This pins the resolution so it cannot regress.
+        """
+        import birdscanner
+        from birdscanner.api.main import _FRONTEND_DIST
+
+        package_dir = Path(birdscanner.__file__).resolve().parent  # <repo>/birdscanner
+        expected = package_dir.parent / "frontend" / "dist"  # <repo>/frontend/dist
+        assert _FRONTEND_DIST == expected
