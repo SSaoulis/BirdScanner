@@ -35,6 +35,11 @@ class Config:
             per-frame logic.
         debug: Enable DEBUG-level logging for track lifecycle events.
         preview: Show the camera preview window.
+        save_video: Save a short mp4 clip around each saved detection (in addition
+            to the still image); disabling reverts to image-only saving.
+        video_pre_roll_seconds: Seconds of buffered footage to prepend to a clip.
+        video_post_roll_seconds: Seconds of footage to keep recording after the
+            detection triggers a clip.
     """
 
     # These defaults mirror the known-good runtime invocation:
@@ -58,6 +63,9 @@ class Config:
     object_duration_threshold: float = 0.1
     debug: bool = True
     preview: bool = False
+    save_video: bool = True
+    video_pre_roll_seconds: float = 3.0
+    video_post_roll_seconds: float = 4.0
 
 
 config = Config()

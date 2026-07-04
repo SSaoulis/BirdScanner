@@ -16,6 +16,7 @@ router = APIRouter(prefix="/api/images", tags=["images"])
 
 _THUMB_MEDIA_TYPE = "image/jpeg"
 _JPEG_MEDIA_TYPE = "image/jpeg"
+_VIDEO_MEDIA_TYPE = "video/mp4"
 
 
 def _resolve_image(
@@ -86,6 +87,41 @@ def get_full_image(
     """
     path = _resolve_image(detection_id, session, image_dir, use_thumbnail=False)
     return StreamingResponse(open(path, "rb"), media_type=_JPEG_MEDIA_TYPE)
+
+
+@router.get("/{detection_id}/video")
+def get_video(
+    detection_id: int,
+    session: Session = Depends(get_session),
+    image_dir: Path = Depends(get_image_dir),
+) -> StreamingResponse:
+    """Serve the saved mp4 clip for a detection.
+
+    Returns 404 when the detection has no clip (legacy row, video disabled, or a
+    single-flight-declined trigger) or when the file is not on disk yet — a clip
+    finishes encoding a few seconds after its detection row is written, so the
+    frontend should fall back to the still until it becomes available.
+
+    Args:
+        detection_id: Primary key of the detection.
+        session: Injected database session.
+        image_dir: Injected image root directory.
+
+    Returns:
+        MP4 video response.
+
+    Raises:
+        HTTPException: 404 if the detection, its ``video_path``, or the file is missing.
+    """
+    record = session.get(DetectionRecord, detection_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Detection not found")
+    if not record.video_path:
+        raise HTTPException(status_code=404, detail="Detection has no video")
+    path = image_dir / record.video_path
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Video file not found on disk")
+    return StreamingResponse(open(path, "rb"), media_type=_VIDEO_MEDIA_TYPE)
 
 
 def _stream_zip(paths: List[Path]):

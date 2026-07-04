@@ -68,6 +68,7 @@ def make_engine(db_path: str | None = None, *, read_only: bool = False):
 # a NULL default, which legacy rows carry harmlessly.
 _DETECTIONS_ADDED_COLUMNS: dict[str, str] = {
     "detection_confidence": "FLOAT",
+    "video_path": "TEXT",
     "box_x": "FLOAT",
     "box_y": "FLOAT",
     "box_w": "FLOAT",

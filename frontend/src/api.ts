@@ -10,6 +10,8 @@ export interface Detection {
   detection_confidence: number | null;
   image_path: string;
   thumbnail_path: string;
+  /** Path to the saved mp4 clip; null for legacy rows, disabled video, or while the clip is still encoding. */
+  video_path: string | null;
   track_id: number | null;
   stable_frames: number | null;
   duration_sec: number | null;
@@ -167,6 +169,7 @@ export const api = {
   images: {
     thumbnailUrl: (id: number): string => `/api/images/${id}/thumbnail`,
     fullUrl: (id: number): string => `/api/images/${id}/full`,
+    videoUrl: (id: number): string => `/api/images/${id}/video`,
     downloadUrl: (ids: number[]): string => `/api/images/download?ids=${ids.join(",")}`,
   },
 

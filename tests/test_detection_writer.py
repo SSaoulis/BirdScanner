@@ -110,6 +110,7 @@ def test_optional_fields_default_to_none(writer, engine):
     assert len(records) == 1
     r = records[0]
     assert r.detection_confidence is None
+    assert r.video_path is None
     assert r.track_id is None
     assert r.stable_frames is None
     assert r.duration_sec is None
@@ -142,6 +143,23 @@ def test_write_persists_normalized_box(writer, engine):
     assert r.box_y == pytest.approx(0.2)
     assert r.box_w == pytest.approx(0.3)
     assert r.box_h == pytest.approx(0.4)
+
+
+def test_write_persists_video_path(writer, engine):
+    """The video clip path is persisted when supplied."""
+    writer.write(
+        timestamp=datetime.now(),
+        species="Cyanistes caeruleus",
+        confidence=0.9,
+        image_path="Cyanistes caeruleus/img.png",
+        thumbnail_path="Cyanistes caeruleus/img_thumb.jpg",
+        video_path="Cyanistes caeruleus/img.mp4",
+    )
+    writer.stop()
+
+    records = _all_records(engine)
+    assert len(records) == 1
+    assert records[0].video_path == "Cyanistes caeruleus/img.mp4"
 
 
 def test_id_autoincrement(writer, engine):
@@ -217,6 +235,7 @@ def test_init_db_creates_table(engine):
         "detection_confidence",
         "image_path",
         "thumbnail_path",
+        "video_path",
         "track_id",
         "stable_frames",
         "duration_sec",
@@ -250,4 +269,11 @@ def test_init_db_backfills_added_columns_on_legacy_table():
     init_db(engine)
 
     col_names = {col["name"] for col in inspect(engine).get_columns("detections")}
-    assert {"detection_confidence", "box_x", "box_y", "box_w", "box_h"} <= col_names
+    assert {
+        "detection_confidence",
+        "video_path",
+        "box_x",
+        "box_y",
+        "box_w",
+        "box_h",
+    } <= col_names

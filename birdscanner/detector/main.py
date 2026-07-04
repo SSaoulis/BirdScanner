@@ -20,9 +20,11 @@ from birdscanner.ml.classification_pipeline import (
     ClassificationManager,
     update_detection_classifications_cache,
 )
-from birdscanner.ml.tracking import StableDetectionTracker
+from birdscanner.ml.tracking import StableDetectionTracker, StableTrack
+from birdscanner.ml.best_frame import BestFrameSelector
 from birdscanner.ml import classification_pipeline
 from birdscanner.detector.camera_server import camera_server_port, start_camera_server
+from birdscanner.detector.video_recorder import VideoRecorder
 from birdscanner.detector.config import config as app_config
 from birdscanner.detector.crop import (
     SENSOR_W,
@@ -142,17 +144,44 @@ def main():
 
         logger = TrackingLogger()
 
+        # Retains the best frame per track for the saved still/thumbnail; freed
+        # when a track ends (see the on_track_deleted callback below). A
+        # non-optional local is captured by the closure so it never dereferences
+        # a possibly-None value.
+        selector = BestFrameSelector()
+        best_frame_selector: BestFrameSelector | None = selector
+
+        def on_track_deleted(track: StableTrack) -> None:
+            """Log the deletion and release the track's retained best frame."""
+            logger.log_deleted_track(track)
+            selector.discard(track.track_id)
+
         tracker = StableDetectionTracker(
             iou_threshold=0.6,
             min_stable_frames=min_stable_frames,
             # Reasonable default; can be promoted to a config field later.
             max_missing_frames=max(1, int(1.0 * fps)),
             on_track_became_stable=logger.log_stable_track,
-            on_track_deleted=logger.log_deleted_track,
+            on_track_deleted=on_track_deleted,
+        )
+
+        # Records a short mp4 clip around each saved detection from an in-RAM
+        # pre-roll buffer (Pi 5 has no hardware encoder, so this stays off-thread
+        # and only encodes on a detection).
+        video_recorder: VideoRecorder | None = (
+            VideoRecorder(
+                fps=fps,
+                pre_roll_seconds=app_config.video_pre_roll_seconds,
+                post_roll_seconds=app_config.video_post_roll_seconds,
+            )
+            if app_config.save_video
+            else None
         )
     else:
         use_stable_tracks = False
         tracker = None
+        best_frame_selector = None
+        video_recorder = None
 
     # Set up the SQLite persistence layer.  The detector owns all DB writes;
     # the API mounts the same database read-only.  The schema was already
@@ -168,6 +197,11 @@ def main():
         use_stable_track_gating=use_stable_tracks,
         tracker=tracker,
         detection_writer=detection_writer,
+        best_frame_selector=best_frame_selector,
+        record_fn=video_recorder.trigger if video_recorder is not None else None,
+        video_frame_fn=(
+            video_recorder.add_frame if video_recorder is not None else None
+        ),
     )
     manager.set_results_lock(results_lock)
 

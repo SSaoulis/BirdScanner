@@ -60,6 +60,7 @@ class DetectionWriter:
         confidence: float,
         image_path: str,
         thumbnail_path: str,
+        video_path: Optional[str] = None,
         detection_confidence: Optional[float] = None,
         track_id: Optional[int] = None,
         stable_frames: Optional[int] = None,
@@ -79,6 +80,7 @@ class DetectionWriter:
             confidence: Species-classification confidence in [0, 1].
             image_path: Path to saved image, relative to IMAGE_DIR.
             thumbnail_path: Path to thumbnail, relative to IMAGE_DIR.
+            video_path: Path to the saved mp4 clip, relative to IMAGE_DIR (optional).
             detection_confidence: Object-detection (YOLO) confidence in [0, 1] (optional).
             track_id: Stable-tracker track identifier (optional).
             stable_frames: Consecutive stable frames before classification (optional).
@@ -95,6 +97,7 @@ class DetectionWriter:
             detection_confidence=detection_confidence,
             image_path=image_path,
             thumbnail_path=thumbnail_path,
+            video_path=video_path,
             track_id=track_id,
             stable_frames=stable_frames,
             duration_sec=duration_sec,
