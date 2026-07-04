@@ -6,4 +6,6 @@
 # version known to run against numpy 1.24.2 on this Pi.
 numpy==1.24.2
 onnxruntime==1.23.2
-sqlmodel>=0.0.38
+# Pinned exactly (not `>=`) so pip does not backtrack through sqlmodel/pydantic
+# releases on the Pi's slow link.
+sqlmodel==0.0.38

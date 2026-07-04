@@ -25,7 +25,9 @@ WORKDIR /app
 # Install the remaining Python deps into the SYSTEM python3 (--break-system-packages)
 # so they share the same interpreter that owns the apt-installed picamera2/libcamera.
 COPY requirements.detector.txt .
-RUN pip install --no-cache-dir --break-system-packages -r requirements.detector.txt
+# --timeout/--retries: the Pi's link is slow enough that a single pythonhosted
+# read can time out; retry instead of failing the whole build.
+RUN pip install --no-cache-dir --break-system-packages --timeout 120 --retries 10 -r requirements.detector.txt
 
 # Copy the ONNX classifier model FIRST and on its own. It rarely changes, so
 # Docker caches it and code edits below never re-copy the ~30MB model. The
