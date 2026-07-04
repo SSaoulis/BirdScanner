@@ -1,5 +1,10 @@
-fastapi>=0.101.0
-uvicorn>=0.23.0
-sqlmodel>=0.0.38
+# Pinned to exact versions so pip's resolver picks one candidate per package and
+# does NOT backtrack. Loose `>=` pins made pip walk backwards through ~40 fastapi
+# releases probing for a compatible starlette/anyio, which on the Pi's slow link
+# multiplied downloads until pythonhosted timed out mid-build. These are the
+# versions the test suite runs against.
+fastapi==0.137.1
+uvicorn==0.49.0
+sqlmodel==0.0.38
 psutil==7.2.0
-httpx>=0.24.0
+httpx==0.28.1

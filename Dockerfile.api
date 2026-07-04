@@ -11,7 +11,9 @@ FROM python:3.11-slim
 WORKDIR /app
 
 COPY requirements.api.txt ./
-RUN pip install --no-cache-dir -r requirements.api.txt
+# --timeout/--retries: the Pi's link is slow enough that a single pythonhosted
+# read can time out; retry instead of failing the whole build.
+RUN pip install --no-cache-dir --timeout 120 --retries 10 -r requirements.api.txt
 
 # The API imports only birdscanner.api + birdscanner.db, but copying the whole
 # package is simplest; the detector/ml modules are tiny pure-Python and are never
