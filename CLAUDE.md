@@ -79,7 +79,8 @@ mypy birdscanner tools tests
 
 `mypy.ini` silences missing-import noise for the Pi-only native bindings (`libcamera`,
 `picamera2`) and the untyped third-party libs (`onnxruntime`, `psutil`, `paramiko`, `PIL`
-— Pillow ships no `py.typed` marker), so mypy reports only genuine type errors in our own
+— Pillow ships no `py.typed` marker, plus `onnx` and `matplotlib` which are used only by
+the dev-only scripts under `tools/`), so mypy reports only genuine type errors in our own
 code.
 
 ### Linting (pylint)

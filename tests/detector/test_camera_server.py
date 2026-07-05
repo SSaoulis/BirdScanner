@@ -77,7 +77,7 @@ def running_server(request):
     """Start the snapshot server on an ephemeral port; yield (base_url, camera)."""
     camera = request.param
     server = start_camera_server(camera, port=0)
-    _, port = server.server_address
+    port = server.server_address[1]
     try:
         yield f"http://127.0.0.1:{port}", camera
     finally:
@@ -142,7 +142,7 @@ def deleting_server(request):
     server = start_camera_server(
         _FakeCamera(_solid_frame()), port=0, delete_detection=_delete_callback
     )
-    _, port = server.server_address
+    port = server.server_address[1]
     try:
         yield f"http://127.0.0.1:{port}", calls
     finally:
@@ -222,7 +222,7 @@ class _FakeCropController:
     """Crop-controller stand-in recording the calls the server makes."""
 
     def __init__(self) -> None:
-        self.last_set = None
+        self.last_set: tuple | None = None
         self.reset_called = False
         self._state = {
             "x": 100,
@@ -256,7 +256,7 @@ def crop_server():
     server = start_camera_server(
         _FakeCamera(_solid_frame()), port=0, crop_controller=controller
     )
-    _, port = server.server_address
+    port = server.server_address[1]
     try:
         yield f"http://127.0.0.1:{port}", controller
     finally:
