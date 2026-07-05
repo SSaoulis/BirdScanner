@@ -105,23 +105,29 @@ def build_name_mapping(
     classifier_labels: list[str],
     overrides: dict[str, str] | None = None,
 ) -> tuple[dict[str, str], list[str]]:
-    """Map geomodel common names onto classifier class labels.
+    """Map each classifier class label to a geomodel common name.
 
-    Every classifier class is matched to a geomodel row by comparing their
+    The result is keyed by the **classifier label** because the geomodel's per-species
+    prior is projected *onto* the classifier's classes: for each classifier class a
+    caller borrows the occurrence prior of its mapped geomodel species. This direction
+    is **many-to-one** friendly — several classifier classes can share one geomodel
+    species (e.g. after an eBird lump, both ``"Common redpoll"`` and ``"Arctic redpoll"``
+    map to ``"Redpoll"``), which a geomodel-keyed dict could not represent.
+
+    Each classifier class is matched to a geomodel row by comparing their
     ``normalize_common_name`` keys; ``overrides`` supplies hand-curated
-    ``geomodel_common_name -> classifier_label`` pairs for the genuine synonyms that
-    normalisation cannot bridge (added on top of, and taking precedence over, the
-    auto-matches). The result is keyed by the geomodel's common name because that is what
-    the geomodel emits and what a caller translates *from*.
+    ``classifier_label -> geomodel_common_name`` pairs for the genuine synonyms and
+    geospatial proxies that normalisation cannot bridge (added on top of, and taking
+    precedence over, the auto-matches).
 
     Parameters
     - geomodel_labels: rows from :func:`load_labels` (the ~12k-species geomodel).
     - classifier_labels: the classifier's class labels (keys of its ``class_to_idx``).
-    - overrides: optional ``geomodel_common_name -> classifier_label`` curated pairs.
+    - overrides: optional ``classifier_label -> geomodel_common_name`` curated pairs.
 
     Returns
-    - ``(mapping, unmatched)`` where ``mapping`` is ``geomodel_common_name ->
-      classifier_label`` for every classifier class that has a counterpart, and
+    - ``(mapping, unmatched)`` where ``mapping`` is ``classifier_label ->
+      geomodel_common_name`` for every classifier class that has a counterpart, and
       ``unmatched`` is the sorted classifier labels still without one.
     """
     geo_by_key: dict[str, GeomodelLabel] = {}
@@ -136,16 +142,12 @@ def build_name_mapping(
         if geo_row is None:
             unmatched.append(label)
         else:
-            mapping[geo_row["common"]] = label
+            mapping[label] = geo_row["common"]
 
-    matched_classifier_labels = set(mapping.values())
-    for geo_common, classifier_label in (overrides or {}).items():
-        mapping[geo_common] = classifier_label
-        matched_classifier_labels.add(classifier_label)
+    # Curated pairs are already classifier_label -> geomodel_common_name.
+    mapping.update(overrides or {})
 
-    unmatched = sorted(
-        label for label in unmatched if label not in matched_classifier_labels
-    )
+    unmatched = sorted(label for label in unmatched if label not in mapping)
     return mapping, unmatched
 
 

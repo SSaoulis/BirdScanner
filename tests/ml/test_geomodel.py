@@ -24,14 +24,14 @@ def _geo(common):
 
 
 def test_build_name_mapping_auto_matches_and_reports_unmatched():
-    """Normalisation-equal names map (keyed by geomodel name); the rest are unmatched."""
+    """Normalisation-equal names map (keyed by classifier label); the rest are unmatched."""
     geomodel = [_geo("Grey Heron"), _geo("Eurasian Blackbird")]
     classifier = ["Grey heron", "Common blackbird"]
 
     mapping, unmatched = build_name_mapping(geomodel, classifier)
 
-    # Keyed by the geomodel's own common name -> classifier label.
-    assert mapping == {"Grey Heron": "Grey heron"}
+    # Keyed by the classifier label -> the geomodel's own common name.
+    assert mapping == {"Grey heron": "Grey Heron"}
     # 'Common blackbird' is a genuine synonym normalisation can't bridge.
     assert unmatched == ["Common blackbird"]
 
@@ -40,14 +40,28 @@ def test_build_name_mapping_applies_and_preserves_overrides():
     """Curated overrides add the synonym and drop it from the unmatched list."""
     geomodel = [_geo("Grey Heron"), _geo("Eurasian Blackbird")]
     classifier = ["Grey heron", "Common blackbird"]
-    overrides = {"Eurasian Blackbird": "Common blackbird"}
+    overrides = {"Common blackbird": "Eurasian Blackbird"}
 
     mapping, unmatched = build_name_mapping(geomodel, classifier, overrides)
 
     assert mapping == {
-        "Grey Heron": "Grey heron",
-        "Eurasian Blackbird": "Common blackbird",
+        "Grey heron": "Grey Heron",
+        "Common blackbird": "Eurasian Blackbird",
     }
+    assert unmatched == []
+
+
+def test_build_name_mapping_allows_many_classifier_classes_per_geomodel_species():
+    """Several classifier classes may map to one geomodel species (e.g. an eBird lump)."""
+    geomodel = [_geo("Redpoll")]
+    classifier = ["Common redpoll", "Arctic redpoll"]
+    overrides = {"Common redpoll": "Redpoll", "Arctic redpoll": "Redpoll"}
+
+    mapping, unmatched = build_name_mapping(geomodel, classifier, overrides)
+
+    # Both classifier classes coexist pointing at the same geomodel species —
+    # impossible if the map were keyed by geomodel name.
+    assert mapping == {"Common redpoll": "Redpoll", "Arctic redpoll": "Redpoll"}
     assert unmatched == []
 
 
@@ -58,5 +72,5 @@ def test_build_name_mapping_first_geomodel_row_wins_on_collision():
 
     mapping, unmatched = build_name_mapping(geomodel, classifier)
 
-    assert mapping == {"Grey Heron": "Grey heron"}
+    assert mapping == {"Grey heron": "Grey Heron"}
     assert unmatched == []

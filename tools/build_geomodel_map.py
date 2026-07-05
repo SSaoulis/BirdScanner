@@ -2,19 +2,19 @@
 """Offline build-time tool: map geomodel species labels onto classifier classes.
 
 This script is **not** part of the BirdScanner runtime. It builds the crosswalk
-between the geomodel's ~12k species labels (eBird/Clements naming) and the
-classifier's ~700 class labels (IOC-style naming) so a geomodel prediction can be
-projected onto the classifier's index space.
+between the classifier's ~700 class labels (IOC-style naming) and the geomodel's
+~12k species labels (eBird/Clements naming) so the geomodel's per-species
+occurrence prior can be projected onto the classifier's classes.
 
 Matching is done by :func:`birdscanner.ml.geomodel.build_name_mapping`, which
 compares normalised common names (case/accent/punctuation folded, British
 ``grey`` unified to ``gray``). That resolves the ~92% of classes that differ only
 in spelling. The remaining classes are genuine cross-checklist synonyms
-(e.g. classifier ``"Common blackbird"`` == geomodel ``"Eurasian Blackbird"``) that
-string matching cannot bridge; this tool prints them as a table for a human to
-curate. Curated pairs are added straight into the output JSON and are **preserved**
-across re-runs (any entry whose classifier label is not an auto-match is treated as
-a curated override).
+(e.g. classifier ``"Common blackbird"`` == geomodel ``"Eurasian Blackbird"``) or
+lumped/split taxa needing a geospatial proxy — string matching cannot bridge those,
+so this tool prints them as a table for a human to curate. Curated pairs are added
+straight into the output JSON and are **preserved** across re-runs (any entry that
+differs from what auto-matching would produce is treated as a curated override).
 
 Inputs
 ------
@@ -25,7 +25,9 @@ Inputs
 Output
 ------
 - ``assets/labels/geomodel_classifier_map.json`` — a flat, sorted
-  ``{geomodel_common_name: classifier_label}`` object (auto-matches + curated pairs).
+  ``{classifier_label: geomodel_common_name}`` object (auto-matches + curated pairs).
+  It is classifier-keyed so several classifier classes may share one geomodel species
+  (a many-to-one lump like the redpolls); the values are geomodel common names.
 
 Usage
 -----
@@ -48,11 +50,7 @@ if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
 # pylint: disable=wrong-import-position
-from birdscanner.ml.geomodel import (  # noqa: E402
-    build_name_mapping,
-    load_labels,
-    normalize_common_name,
-)
+from birdscanner.ml.geomodel import build_name_mapping, load_labels  # noqa: E402
 
 GEOMODEL_LABELS_PATH = os.path.join(
     REPO_ROOT, "assets", "labels", "BirdNET+_Geomodel_V3.0.3_Global_12K_Labels.txt"
@@ -80,36 +78,36 @@ def load_classifier_labels(path: str) -> list[str]:
 
 
 def load_existing_overrides(
-    path: str, geomodel_labels: list[dict[str, str]]
+    path: str,
+    geomodel_labels: list[dict[str, str]],
+    classifier_labels: list[str],
 ) -> dict[str, str]:
     """Recover hand-curated pairs from a previously written map, to preserve them.
 
-    An entry from the existing map is treated as a curated override when its
-    classifier label is **not** one that normalisation would auto-match on its own, so
-    re-running the build never clobbers hand-added synonyms.
+    An existing ``classifier_label -> geomodel_common_name`` entry is treated as a
+    curated override whenever it differs from what auto-matching alone would produce
+    (either the class doesn't auto-match, or it was corrected to a different geomodel
+    species), so re-running the build never clobbers hand-added synonyms/proxies.
 
     Parameters
     - path: the output map path from a previous run (may not exist).
     - geomodel_labels: the geomodel rows, used to recompute the auto-match set.
+    - classifier_labels: the classifier class labels, used to recompute auto-matches.
 
     Returns
-    - ``{geomodel_common_name: classifier_label}`` for the curated entries only.
+    - ``{classifier_label: geomodel_common_name}`` for the curated entries only.
     """
     if not os.path.exists(path):
         return {}
     with open(path, encoding="utf-8") as f:
         existing: dict[str, str] = json.load(f)
 
-    auto_geo_keys = {normalize_common_name(row["common"]) for row in geomodel_labels}
-    overrides: dict[str, str] = {}
-    for geo_common, classifier_label in existing.items():
-        # Auto-matches map a geomodel name to a classifier label with the same
-        # normalised key; anything else was hand-curated and must be kept.
-        if normalize_common_name(geo_common) != normalize_common_name(classifier_label):
-            overrides[geo_common] = classifier_label
-        elif normalize_common_name(geo_common) not in auto_geo_keys:
-            overrides[geo_common] = classifier_label
-    return overrides
+    auto, _ = build_name_mapping(geomodel_labels, classifier_labels)
+    return {
+        label: geo_common
+        for label, geo_common in existing.items()
+        if auto.get(label) != geo_common
+    }
 
 
 def print_unmatched_table(unmatched: list[str]) -> None:
@@ -128,7 +126,7 @@ def print_unmatched_table(unmatched: list[str]) -> None:
     for label in unmatched:
         print(f"  {label.ljust(width)}    ")
     print(
-        '\nAdd each as a "<geomodel_common_name>": "<classifier_label>" entry to\n'
+        '\nAdd each as a "<classifier_label>": "<geomodel_common_name>" entry to\n'
         f"  {os.path.relpath(OUTPUT_PATH, REPO_ROOT)}\n"
         "then re-run this tool (curated entries are preserved)."
     )
@@ -146,7 +144,7 @@ def main() -> None:
 
     geomodel_labels = load_labels(GEOMODEL_LABELS_PATH)
     classifier_labels = load_classifier_labels(CLASS_TO_IDX_PATH)
-    overrides = load_existing_overrides(OUTPUT_PATH, geomodel_labels)
+    overrides = load_existing_overrides(OUTPUT_PATH, geomodel_labels, classifier_labels)
 
     mapping, unmatched = build_name_mapping(
         geomodel_labels, classifier_labels, overrides
