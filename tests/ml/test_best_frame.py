@@ -1,21 +1,18 @@
-"""Unit tests for BestFrameSelector."""
+"""Unit tests for BestFrameSelector.
 
-import numpy as np
+Frames come from the shared ``frame_factory`` fixture; a scalar fill value doubles
+as an identity tag so tests can assert which frame was retained.
+"""
 
 from birdscanner.ml.best_frame import BestFrameSelector
 
 
-def _frame(value: int) -> np.ndarray:
-    """A tiny solid-colour frame tagged by ``value`` for identity checks."""
-    return np.full((4, 4, 3), value, dtype=np.uint8)
-
-
-def test_keeps_highest_score():
+def test_keeps_highest_score(frame_factory):
     """The frame with the highest score is retained, regardless of order."""
     sel = BestFrameSelector()
-    sel.observe(1, _frame(1), (0, 0, 4, 4), 0.5)
-    sel.observe(1, _frame(2), (0, 0, 4, 4), 0.9)
-    sel.observe(1, _frame(3), (0, 0, 4, 4), 0.7)
+    sel.observe(1, frame_factory(1, (4, 4)), (0, 0, 4, 4), 0.5)
+    sel.observe(1, frame_factory(2, (4, 4)), (0, 0, 4, 4), 0.9)
+    sel.observe(1, frame_factory(3, (4, 4)), (0, 0, 4, 4), 0.7)
 
     best = sel.take(1)
     assert best is not None
@@ -23,10 +20,10 @@ def test_keeps_highest_score():
     assert int(best.frame[0, 0, 0]) == 2
 
 
-def test_take_removes_entry():
+def test_take_removes_entry(frame_factory):
     """take() pops the candidate; a second take() returns None."""
     sel = BestFrameSelector()
-    sel.observe(1, _frame(1), (0, 0, 4, 4), 0.5)
+    sel.observe(1, frame_factory(1, (4, 4)), (0, 0, 4, 4), 0.5)
     assert sel.take(1) is not None
     assert sel.take(1) is None
 
@@ -36,10 +33,10 @@ def test_take_unknown_returns_none():
     assert BestFrameSelector().take(99) is None
 
 
-def test_discard_frees_entry():
+def test_discard_frees_entry(frame_factory):
     """discard() drops the retained frame for a track."""
     sel = BestFrameSelector()
-    sel.observe(2, _frame(1), (0, 0, 4, 4), 0.5)
+    sel.observe(2, frame_factory(1, (4, 4)), (0, 0, 4, 4), 0.5)
     sel.discard(2)
     assert sel.take(2) is None
 
@@ -49,11 +46,11 @@ def test_discard_unknown_is_safe():
     BestFrameSelector().discard(123)
 
 
-def test_tracks_are_independent():
+def test_tracks_are_independent(frame_factory):
     """Each track keeps its own best frame."""
     sel = BestFrameSelector()
-    sel.observe(1, _frame(1), (0, 0, 4, 4), 0.3)
-    sel.observe(2, _frame(2), (0, 0, 4, 4), 0.8)
+    sel.observe(1, frame_factory(1, (4, 4)), (0, 0, 4, 4), 0.3)
+    sel.observe(2, frame_factory(2, (4, 4)), (0, 0, 4, 4), 0.8)
 
     best1 = sel.take(1)
     best2 = sel.take(2)
@@ -61,21 +58,21 @@ def test_tracks_are_independent():
     assert best2 is not None and best2.score == 0.8
 
 
-def test_equal_score_keeps_earlier_frame():
+def test_equal_score_keeps_earlier_frame(frame_factory):
     """A tie (not strictly greater) does not replace the incumbent."""
     sel = BestFrameSelector()
-    sel.observe(1, _frame(1), (0, 0, 4, 4), 0.5)
-    sel.observe(1, _frame(2), (0, 0, 4, 4), 0.5)
+    sel.observe(1, frame_factory(1, (4, 4)), (0, 0, 4, 4), 0.5)
+    sel.observe(1, frame_factory(2, (4, 4)), (0, 0, 4, 4), 0.5)
 
     best = sel.take(1)
     assert best is not None
     assert int(best.frame[0, 0, 0]) == 1
 
 
-def test_stores_the_box():
+def test_stores_the_box(frame_factory):
     """The box associated with the best frame is retained alongside it."""
     sel = BestFrameSelector()
-    sel.observe(1, _frame(1), (10, 20, 30, 40), 0.9)
+    sel.observe(1, frame_factory(1, (4, 4)), (10, 20, 30, 40), 0.9)
     best = sel.take(1)
     assert best is not None
     assert best.box == (10, 20, 30, 40)
