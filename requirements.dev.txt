@@ -8,3 +8,11 @@ black==26.5.1
 
 # Type checking
 mypy>=2.0.0
+
+# Runtime libs that on the Pi come from apt (python3-opencv) but on a local
+# dev machine have no apt equivalent, so they must be pip-installed to run the
+# test suite / the ml pipeline off-Pi. Kept out of requirements.detector.txt so
+# the ARM Docker build never pip-installs opencv (see the note there).
+# 4.7.0.72 is a real published wheel (the old bare "4.7.0" pin resolved to
+# nothing) and is compatible with the numpy 1.24.x pinned in the detector reqs.
+opencv-python-headless==4.7.0.72
