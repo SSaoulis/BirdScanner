@@ -1,13 +1,9 @@
-"""Tests for the tracking-event logging helpers."""
+"""Tests for the tracking logger configuration and event helpers."""
 
 import logging
 from types import SimpleNamespace
 
-from birdscanner.detector.track_logging import (
-    TrackingLogger,
-    on_track_became_stable,
-    on_track_deleted,
-)
+from birdscanner.detector.track_logging import TrackingLogger, configure_logging
 
 
 def _track():
@@ -37,11 +33,18 @@ def test_tracking_logger_logs_deleted_track(caplog):
     assert any("Track deleted" in m and "missing_frames=2" in m for m in messages)
 
 
-def test_module_level_helpers_emit_debug(caplog):
-    """The module-level helpers log at DEBUG without raising."""
-    caplog.set_level(logging.DEBUG)
-    on_track_became_stable(_track())
-    on_track_deleted(_track())
-    messages = [r.getMessage() for r in caplog.records]
-    assert any("Track became stable" in m for m in messages)
-    assert any("Track deleted" in m for m in messages)
+def test_configure_logging_sets_level_and_handler():
+    """configure_logging sets the level and attaches a stdout stream handler."""
+    logger = logging.getLogger("tracking")
+    existing = list(logger.handlers)
+    try:
+        configure_logging(debug=True)
+        assert logger.level == logging.DEBUG
+        assert any(isinstance(h, logging.StreamHandler) for h in logger.handlers)
+
+        configure_logging(debug=False)
+        assert logger.level == logging.INFO
+    finally:
+        # Restore the logger to its pre-test state so we don't leak handlers.
+        logger.handlers = existing
+        logger.setLevel(logging.NOTSET)
