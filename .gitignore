@@ -5,6 +5,9 @@ assets/models/*.onnx
 assets/models/*.pt
 !assets/models/convnext_v2_tiny.onnx_class_to_idx.json
 
+.agents/
+.claude/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
