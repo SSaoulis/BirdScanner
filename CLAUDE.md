@@ -6,6 +6,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 BirdScanner is a real-time bird detection and classification system designed for a Raspberry Pi with the Sony IMX500 AI Camera. The IMX500 runs object detection (YOLO11n) on-chip; detections are then passed to a ConvNeXt V2 Tiny ONNX model for bird species classification. The system must run on the Pi — `picamera2` and `libcamera` are not available on other platforms.
 
+## How to develop
+
+The development cycle is based on a worktree approach. Therefore there are a fixed set of rules to apply to develop: 
+
+- Start by creating a worktree from main.
+- ALWAYS pull latest changes from main onto the worktree before any files are read/analysed.
+- Once a change is made, ALWAYS update the CLAUDE.md, and make a PR.
+
+
+
 ## Commands
 
 ### Run the app (on Raspberry Pi only)
