@@ -322,7 +322,7 @@ from `detector/` or `api/`.
 - `capture_full_preview_array()` — briefly widens `ScalerCrop` to the full sensor under the lock, pulls a settled frame (`_capture_settled` waits for the control to take effect), then restores the previous crop; the momentary widening is a deliberate, brief glitch in the live feed while configuring
 - `get_state()` — returns the crop as sensor pixels + normalized box + sensor dimensions (for the UI)
 
-**`birdscanner/detector/track_logging.py`** — the `tracking` logger module: `configure_logging(debug)` sets up the stdout stream handler at DEBUG/INFO (called once from `main`), and `TrackingLogger` logs stable-track and track-deletion events (used by `gating.build_gating`)
+**`birdscanner/detector/track_logging.py`** — the `tracking` logger module: `configure_logging(debug)` sets up the stdout stream handler at DEBUG/INFO (called once from `main`), and `TrackingLogger` logs stable-track and track-deletion events (used by `gating.build_gating`). These event lines are deliberately terse — just `track_id`/`stable_frames` (+ `missing_frames` on delete); the box is **not** logged (noise) and the species is **not** logged here (it is `None` at these points anyway). The species is instead logged once per saved detection by `classification_pipeline._persist_detection` as a `Bird classified: track_id=… species=… confidence=…%` line followed by a `Saved to <path>` line, so a species only appears in the log when a stable track is actually classified as a bird and persisted
 
 ### Model files (not in repo, must exist on the Pi)
 
