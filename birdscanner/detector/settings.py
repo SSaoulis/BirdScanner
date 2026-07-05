@@ -23,7 +23,7 @@ import json
 import logging
 import os
 from dataclasses import asdict, dataclass, replace
-from typing import Any
+from typing import Any, Optional
 
 from birdscanner.detector.config import config as app_config
 from birdscanner.ml.classification_pipeline import (
@@ -58,6 +58,11 @@ class Settings:
             (restart).
         multithread: Run classification on a background thread (restart).
         debug: Enable DEBUG-level tracking logs (applied live).
+        latitude: Deployment latitude in degrees for the geomodel prior, or
+            ``None`` when no location is set (the prior is then not built).
+            Rebuilding the prior happens at startup, so this requires a restart.
+        longitude: Deployment longitude in degrees for the geomodel prior, or
+            ``None`` when no location is set (requires restart).
     """
 
     detection_threshold: float
@@ -70,6 +75,8 @@ class Settings:
     video_post_roll_seconds: float
     multithread: bool
     debug: bool
+    latitude: Optional[float]
+    longitude: Optional[float]
 
 
 # Fields that a running detector reads live, so a change takes effect at once.
@@ -95,6 +102,11 @@ _POSITIVE_FLOAT_FIELDS = frozenset(
     {"stability_seconds", "video_pre_roll_seconds", "video_post_roll_seconds"}
 )
 _BOOL_FIELDS = frozenset({"video_save", "multithread", "debug"})
+# Optional coordinate fields: None (unset) is allowed, else within (lo, hi) degrees.
+_RANGED_OPTIONAL_FLOAT_FIELDS: dict[str, tuple[float, float]] = {
+    "latitude": (-90.0, 90.0),
+    "longitude": (-180.0, 180.0),
+}
 
 
 def default_settings() -> Settings:
@@ -117,6 +129,8 @@ def default_settings() -> Settings:
         video_post_roll_seconds=app_config.video.post_roll_seconds,
         multithread=app_config.multithread,
         debug=app_config.debug,
+        latitude=app_config.latitude,
+        longitude=app_config.longitude,
     )
 
 
@@ -149,6 +163,25 @@ def _as_bool(name: str, value: Any) -> bool:
     return value
 
 
+def _as_optional_ranged_float(
+    name: str, value: Any, lo: float, hi: float
+) -> Optional[float]:
+    """Coerce ``value`` to a float in ``[lo, hi]``, allowing ``None`` (unset).
+
+    ``None`` means the coordinate is not set (the geomodel prior is then not built).
+    Any other value must parse as a number within the inclusive range.
+    """
+    if value is None:
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{name} must be a number or null") from exc
+    if not lo <= number <= hi:
+        raise ValueError(f"{name} must be between {lo:g} and {hi:g}")
+    return number
+
+
 def _as_species_list(value: Any) -> list[str]:
     """Coerce ``value`` to a de-duplicated list of non-empty species strings."""
     if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
@@ -169,6 +202,9 @@ def _coerce_field(name: str, value: Any) -> Any:
         return _as_positive_float(name, value)
     if name in _BOOL_FIELDS:
         return _as_bool(name, value)
+    if name in _RANGED_OPTIONAL_FLOAT_FIELDS:
+        lo, hi = _RANGED_OPTIONAL_FLOAT_FIELDS[name]
+        return _as_optional_ranged_float(name, value, lo, hi)
     if name == "ignore_species":
         return _as_species_list(value)
     if name == "image_dir":

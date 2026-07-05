@@ -37,6 +37,7 @@ from birdscanner.detector.camera_server import (
 )
 from birdscanner.detector.config import config as app_config
 from birdscanner.detector.gating import Gating, build_gating, build_manager
+from birdscanner.detector.geo_priors import refresh_geo_priors
 from birdscanner.detector.settings import load_settings, settings_config_path
 from birdscanner.detector.settings_controller import (
     SettingsController,
@@ -183,6 +184,12 @@ def main() -> None:
     # Create the database schema up front (the detector owns all DB writes).
     engine = make_engine()
     init_db(engine)
+
+    # Rebuild the geomodel location prior if the configured location changed
+    # (a no-op when unchanged, or when no location is set). Never blocks startup.
+    refresh_geo_priors(
+        make_session_factory(engine), app_config.latitude, app_config.longitude
+    )
 
     # IMX500 must be initialised before Picamera2.
     imx500 = wait_for_camera(app_config.model)

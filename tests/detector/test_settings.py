@@ -81,6 +81,33 @@ def test_ignore_species_rejects_non_string_list() -> None:
         merge_settings(default_settings(), {"ignore_species": [1, 2]})
 
 
+def test_default_location_is_unset() -> None:
+    settings = default_settings()
+    assert settings.latitude is None
+    assert settings.longitude is None
+
+
+def test_merge_accepts_in_range_coordinates() -> None:
+    merged = merge_settings(default_settings(), {"latitude": 51.5, "longitude": -0.12})
+    assert merged.latitude == 51.5
+    assert merged.longitude == -0.12
+
+
+def test_merge_allows_clearing_a_coordinate_with_null() -> None:
+    base = merge_settings(default_settings(), {"latitude": 51.5, "longitude": -0.12})
+    cleared = merge_settings(base, {"latitude": None})
+    assert cleared.latitude is None
+    assert cleared.longitude == -0.12
+
+
+@pytest.mark.parametrize(
+    "field_name,value", [("latitude", 91.0), ("longitude", -181.0), ("latitude", "abc")]
+)
+def test_merge_rejects_out_of_range_coordinates(field_name, value) -> None:
+    with pytest.raises(ValueError):
+        merge_settings(default_settings(), {field_name: value})
+
+
 def test_save_then_load_round_trips(tmp_path) -> None:
     path = str(tmp_path / "settings.json")
     original = merge_settings(

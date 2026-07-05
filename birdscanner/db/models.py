@@ -57,3 +57,50 @@ class DetectionRecord(SQLModel, table=True):
     box_y: Optional[float] = Field(default=None, nullable=True)
     box_w: Optional[float] = Field(default=None, nullable=True)
     box_h: Optional[float] = Field(default=None, nullable=True)
+
+
+class GeoPrior(SQLModel, table=True):
+    """One cell of the geomodel spatio-temporal species prior.
+
+    The BirdNET geomodel yields, for the configured location, a per-species
+    probability of occurrence for each of the 48 "weeks" of the year. Only the
+    species the classifier can predict are kept (projected via the geomodel<->
+    classifier crosswalk), so the table holds ``n_classifier_species * 48`` rows.
+    It is rebuilt on startup whenever the configured location changes
+    (see :mod:`birdscanner.db.geo_prior_store`).
+
+    Columns:
+        id: Auto-incrementing primary key.
+        species: Classifier class label the prior applies to.
+        week: Week of the year, 1..48 (the geomodel's temporal resolution).
+        probability: Occurrence prior in [0, 1] (the geomodel's sigmoid output).
+    """
+
+    __tablename__ = "geo_priors"  # type: ignore[assignment]
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    species: str = Field(index=True)
+    week: int = Field(index=True)
+    probability: float
+
+
+class GeoPriorMeta(SQLModel, table=True):
+    """Single-row record of the location the geo priors were last computed for.
+
+    Startup compares the configured latitude/longitude against this row to decide
+    whether the :class:`GeoPrior` table is stale and must be rebuilt. A single row
+    (``id == 1``) is kept — it is upserted alongside every prior rebuild.
+
+    Columns:
+        id: Primary key; always ``1`` (only one row is ever stored).
+        latitude: Latitude the priors were computed for, in degrees.
+        longitude: Longitude the priors were computed for, in degrees.
+        generated_at: Wall-clock time the priors were last (re)built.
+    """
+
+    __tablename__ = "geo_prior_meta"  # type: ignore[assignment]
+
+    id: Optional[int] = Field(default=1, primary_key=True)
+    latitude: float
+    longitude: float
+    generated_at: datetime
