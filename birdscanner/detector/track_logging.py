@@ -30,20 +30,16 @@ class TrackingLogger:
     def log_stable_track(self, track):
         """Log that ``track`` has become stable."""
         self.logger.info(
-            "Track became stable: track_id=%s species=%s box=%s stable_frames=%s",
+            "Track became stable: track_id=%s stable_frames=%s",
             track.track_id,
-            track.species,
-            track.box,
             track.stable_frames,
         )
 
     def log_deleted_track(self, track):
         """Log that ``track`` has been deleted from the tracker."""
         self.logger.info(
-            "Track deleted: track_id=%s species=%s box=%s stable_frames=%s missing_frames=%s",
+            "Track deleted: track_id=%s stable_frames=%s missing_frames=%s",
             track.track_id,
-            track.species,
-            track.box,
             track.stable_frames,
             track.frames_since_seen,
         )

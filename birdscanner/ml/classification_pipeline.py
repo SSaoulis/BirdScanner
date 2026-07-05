@@ -279,8 +279,19 @@ def _persist_detection(
     species_dir = Path(IMAGE_DIR) / result.species
     species_dir.mkdir(parents=True, exist_ok=True)
 
+    still_path = species_dir / f"{stem}.png"
     _save_still_and_thumbnail(species_dir, stem, still)
     video_rel = _start_clip(context, species_dir, stem, result.species)
+
+    # Species is logged here (not on the stable/deleted track lines) so it only
+    # appears once a stable track is actually classified as a bird and saved.
+    logger.info(
+        "Bird classified: track_id=%s species=%s confidence=%.0f%%",
+        track.track_id if track is not None else None,
+        result.species,
+        result.confidence * 100,
+    )
+    logger.info("Saved to %s", still_path)
 
     if context.detection_writer is None:
         return
