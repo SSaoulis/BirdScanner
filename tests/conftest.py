@@ -9,35 +9,17 @@ because both the ``db`` and the ``api`` test packages need them, and sibling
 ``conftest.py`` files are not visible across packages.
 """
 
-import sys
-import types
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Optional, Sequence, Tuple, Union
 
 import numpy as np
 import pytest
+from sqlalchemy.pool import StaticPool
+from sqlmodel import create_engine
 
-# ``birdscanner.ml.classification`` imports ``onnxruntime`` at module load, which
-# is a Pi/CI-only native dependency. Most tests never touch the real runtime (the
-# model-gated tests skip when the ONNX file is absent), so a stub module lets the
-# whole ``ml`` package import anywhere. ``setdefault`` leaves a real install
-# untouched on the Pi/CI. This must run before the first ``ml`` import, and a
-# root ``conftest.py`` is imported before any test module, so this is the right
-# home for it.
-sys.modules.setdefault("onnxruntime", types.ModuleType("onnxruntime"))
-
-# Imports that depend on the stub above must come after it (the ``ml`` package
-# transitively imports onnxruntime at load), so the wrong-import-position warning
-# is expected here.
-# pylint: disable=wrong-import-position
-from sqlalchemy.pool import StaticPool  # noqa: E402
-from sqlmodel import create_engine  # noqa: E402
-
-from birdscanner.db.database import init_db, make_session_factory  # noqa: E402
-from birdscanner.db.models import DetectionRecord  # noqa: E402
-
-# pylint: enable=wrong-import-position
+from birdscanner.db.database import init_db, make_session_factory
+from birdscanner.db.models import DetectionRecord
 
 FrameValue = Union[int, Sequence[int]]
 
