@@ -44,6 +44,58 @@ def test_update_tracks_for_frame_increments_stability():
     assert per_det[0].stable_frames == 3
 
 
+def test_update_tracks_for_frame_fires_on_track_deleted():
+    """A track unseen beyond ``max_missing_frames`` is dropped and the callback fires."""
+    deleted: list[StableTrack] = []
+    tracks, _ = update_tracks_for_frame(
+        [(10, 10, 20, 20)], [], iou_threshold=0.6, max_missing_frames=1
+    )
+    # First empty frame: frames_since_seen 0 -> 1, still within the limit (kept).
+    tracks, _ = update_tracks_for_frame(
+        [],
+        tracks,
+        iou_threshold=0.6,
+        max_missing_frames=1,
+        on_track_deleted=deleted.append,
+    )
+    assert deleted == []
+    # Second empty frame: 1 -> 2 exceeds the limit, so the track is deleted.
+    tracks, _ = update_tracks_for_frame(
+        [],
+        tracks,
+        iou_threshold=0.6,
+        max_missing_frames=1,
+        on_track_deleted=deleted.append,
+    )
+    assert tracks == []
+    assert len(deleted) == 1
+
+
+def test_update_frame_fires_on_track_became_stable_once():
+    """``on_track_became_stable`` fires exactly once, when the track crosses the threshold."""
+    became_stable: list[StableTrack] = []
+    tracker = StableDetectionTracker(
+        iou_threshold=0.6,
+        min_stable_frames=2,
+        on_track_became_stable=became_stable.append,
+    )
+    det = DummyDet((10, 10, 20, 20))
+
+    tracker.update_frame([det])  # stable_frames == 1, below threshold
+    assert became_stable == []
+    tracker.update_frame([det])  # stable_frames == 2, crosses the threshold
+    assert len(became_stable) == 1
+    tracker.update_frame([det])  # stays stable; must not fire again
+    assert len(became_stable) == 1
+
+
+def test_should_run_bird_classification_returns_false_for_unknown_detection():
+    """An unknown detection id (no track in the last frame) is not classifiable."""
+    tracker = StableDetectionTracker(iou_threshold=0.6, min_stable_frames=2)
+    tracker.update_frame([DummyDet((10, 10, 20, 20))])
+    assert should_run_bird_classification_for_detection(999, tracker=tracker) is False
+
+
 def test_should_classify_track_only_after_min_frames_and_once():
     t = StableTrack(track_id=0, box=(0, 0, 10, 10), stable_frames=2, classified=False)
     assert should_classify_track(t, min_stable_frames=3) is False

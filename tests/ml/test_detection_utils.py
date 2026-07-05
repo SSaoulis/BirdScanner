@@ -141,6 +141,16 @@ def test_draw_boxes_out_of_range_category_uses_placeholder(fake_detection):
     assert out.shape == (60, 60, 3)
 
 
+def test_draw_boxes_with_classification_appends_species_and_confidence(fake_detection):
+    """A ``(species, confidence)`` classification exercises both label-append branches."""
+    image = np.zeros((60, 60, 3), dtype=np.uint8)
+    detection = fake_detection(box=(5, 5, 20, 20), conf=0.9, category=0)
+    # classification is not None with both a confidence and a species set.
+    out = draw_boxes(image, (5, 5, 20, 20), detection, ["bird"], ("Robin", 0.87))
+    assert out.shape == (60, 60, 3)
+    assert out.any()
+
+
 # ---------------------------------------------------------------------------
 # save_thumbnail
 # ---------------------------------------------------------------------------

@@ -4,8 +4,10 @@ The in-memory ``engine`` / ``session_factory`` fixtures come from the top-level
 ``conftest.py``. Schema-creation and migration behaviour lives in ``test_database.py``.
 """
 
+import logging
 import time
 from datetime import datetime
+from queue import Full
 from typing import List
 
 import pytest
@@ -13,6 +15,17 @@ from sqlmodel import Session, select
 
 from birdscanner.db.models import DetectionRecord
 from birdscanner.db.writer import DetectionWriter
+
+
+def _sample_record() -> DetectionRecord:
+    """Build a minimal, valid detection record for error-path tests."""
+    return DetectionRecord(
+        timestamp=datetime.now(),
+        species="Parus major",
+        confidence=0.9,
+        image_path="Parus major/img.png",
+        thumbnail_path="Parus major/img_thumb.jpg",
+    )
 
 
 @pytest.fixture()
@@ -191,6 +204,51 @@ def test_write_is_non_blocking(session_factory, engine):
     # write() should return essentially instantly (well under 100 ms).
     assert elapsed < 0.1
     assert len(_all_records(engine)) == 1
+
+
+def test_write_drops_record_when_queue_full(writer, caplog):
+    """A full queue is swallowed: write() logs a warning and never raises."""
+
+    def _raise_full(_record):
+        raise Full
+
+    # Force the bounded-queue full branch deterministically (no drain race).
+    writer._queue.put_nowait = _raise_full
+
+    with caplog.at_level(logging.WARNING, logger="birdscanner.db.writer"):
+        writer.write(_sample_record())  # must not raise
+
+    assert any("queue full" in message.lower() for message in caplog.messages)
+
+
+def test_commit_failure_is_logged_and_swallowed(caplog):
+    """A failing session factory is caught in _commit so the drain thread survives."""
+
+    def failing_factory():
+        raise RuntimeError("database is gone")
+
+    writer = DetectionWriter(failing_factory)
+    with caplog.at_level(logging.ERROR, logger="birdscanner.db.writer"):
+        writer.write(_sample_record())
+        writer.stop()  # joins the thread, so the commit has been attempted
+
+    assert not writer._thread.is_alive()
+    assert any(
+        "Failed to write detection record" in message for message in caplog.messages
+    )
+
+
+def test_drain_loop_exits_on_stop_event_when_idle(session_factory):
+    """Setting the stop event with an empty queue lets the drain loop break on timeout.
+
+    Covers the ``Empty``-timeout branch that ``stop()`` (which enqueues a sentinel)
+    never exercises: the loop must notice the stop event on its next 1 s poll.
+    """
+    writer = DetectionWriter(session_factory)
+    writer._stop_event.set()  # no sentinel enqueued — only the timeout path can exit
+
+    writer._thread.join(timeout=3.0)
+    assert not writer._thread.is_alive()
 
 
 def test_stop_flushes_pending_writes(session_factory, engine):

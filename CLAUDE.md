@@ -50,7 +50,9 @@ absolute `birdscanner.*` path. `pyproject.toml` sets `[tool.pytest.ini_options] 
 
 **Test layout** — `tests/` mirrors the `birdscanner/` package: `tests/ml/`,
 `tests/db/`, `tests/api/` (with `tests/api/routers/` per router + `tests/api/test_main.py`
-for the app factory / SPA mount), `tests/detector/`, and `tests/tools/`. Each directory
+for the app factory / SPA mount + `tests/api/test_dependencies.py` for the
+`get_session`/`get_image_dir`/`get_reference_dir` providers, which the router suites
+otherwise bypass via `dependency_overrides`), `tests/detector/`, and `tests/tools/`. Each directory
 is a package (`__init__.py`), so duplicate basenames across layers are safe. Shared
 fixtures live in the nearest `conftest.py`:
 - **`tests/conftest.py`** (global) — the `frame_factory` solid-RGB frame builder and the

@@ -86,6 +86,12 @@ def test_main_stream_size_is_even_aligned() -> None:
     assert w % 2 == 0 and h % 2 == 0
 
 
+@pytest.mark.parametrize("crop_w,crop_h", [(0, 900), (900, 0), (0, 0), (-5, 100)])
+def test_main_stream_size_degenerate_crop_falls_back_to_square(crop_w, crop_h) -> None:
+    """A non-positive crop dimension yields the square long-side fallback (no divide-by-zero)."""
+    assert main_stream_size_for_crop(crop_w, crop_h) == (640, 640)
+
+
 def test_save_then_load_round_trips(tmp_path) -> None:
     path = str(tmp_path / "crop.json")
     region = CropRegion(100, 200, 800, 600)

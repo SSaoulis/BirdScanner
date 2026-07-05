@@ -4,6 +4,8 @@ Uses the shared in-memory ``session_factory`` + ``image_dir`` + ``detection_fact
 fixtures (top-level conftest), so no real detector or filesystem layout is needed.
 """
 
+import logging
+
 from birdscanner.db.deleter import delete_detection
 from birdscanner.db.models import DetectionRecord
 
@@ -38,3 +40,22 @@ def test_delete_succeeds_when_image_files_already_gone(
     assert delete_detection(session_factory, image_dir, record.id) is True
     with session_factory() as session:
         assert session.get(DetectionRecord, record.id) is None
+
+
+def test_delete_succeeds_when_file_unlink_raises(
+    session_factory, image_dir, detection_factory, monkeypatch, caplog
+):
+    """An OSError while unlinking a file is logged but does not block the row delete."""
+    record = detection_factory(species="Robin", track_id=1)
+
+    def _raise_oserror(self, missing_ok=False):
+        raise OSError("permission denied")
+
+    monkeypatch.setattr("birdscanner.db.deleter.Path.unlink", _raise_oserror)
+
+    with caplog.at_level(logging.WARNING, logger="birdscanner.db.deleter"):
+        assert delete_detection(session_factory, image_dir, record.id) is True
+
+    with session_factory() as session:
+        assert session.get(DetectionRecord, record.id) is None
+    assert any("could not delete" in message.lower() for message in caplog.messages)
