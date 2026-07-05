@@ -1,50 +1,30 @@
-"""Unit tests for DetectionWriter and the detections DB schema.
+"""Unit tests for ``DetectionWriter`` (fire-and-forget background DB writes).
 
-These tests use a temporary in-memory SQLite database so no filesystem or
-camera hardware is required.
+The in-memory ``engine`` / ``session_factory`` fixtures come from the top-level
+``conftest.py``. Schema-creation and migration behaviour lives in ``test_database.py``.
 """
 
 import time
 from datetime import datetime
+from typing import List
 
 import pytest
-from sqlalchemy.pool import StaticPool
-from sqlmodel import Session, create_engine
+from sqlmodel import Session, select
 
-from birdscanner.db.database import init_db, make_session_factory
 from birdscanner.db.models import DetectionRecord
 from birdscanner.db.writer import DetectionWriter
 
 
 @pytest.fixture()
-def engine():
-    """In-memory SQLite engine with the schema initialised.
-
-    StaticPool is required so that all threads (including the DetectionWriter
-    background thread) share the same underlying SQLite connection, which is
-    the only way an in-memory database persists across connections.
-    """
-    eng = create_engine(
-        "sqlite://",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    init_db(eng)
-    return eng
-
-
-@pytest.fixture()
-def writer(engine):
+def writer(session_factory):
     """DetectionWriter backed by the in-memory engine; stopped after each test."""
-    w = DetectionWriter(make_session_factory(engine))
+    w = DetectionWriter(session_factory)
     yield w
     w.stop()
 
 
-def _all_records(engine) -> list[DetectionRecord]:
+def _all_records(engine) -> List[DetectionRecord]:
     """Helper: read all rows from the detections table."""
-    from sqlmodel import select
-
     with Session(engine) as session:
         return list(session.exec(select(DetectionRecord)).all())
 
@@ -180,11 +160,9 @@ def test_id_autoincrement(writer, engine):
     assert all(i is not None for i in ids)
 
 
-def test_write_is_non_blocking(engine):
+def test_write_is_non_blocking(session_factory, engine):
     """write() must return before the DB commit completes (fire-and-forget)."""
-    writer = DetectionWriter(
-        make_session_factory(engine)
-    )  # engine already has StaticPool
+    writer = DetectionWriter(session_factory)
     t0 = time.monotonic()
     writer.write(
         timestamp=datetime.now(),
@@ -201,9 +179,9 @@ def test_write_is_non_blocking(engine):
     assert len(_all_records(engine)) == 1
 
 
-def test_stop_flushes_pending_writes(engine):
+def test_stop_flushes_pending_writes(session_factory, engine):
     """stop() waits for all enqueued records to be committed before returning."""
-    writer = DetectionWriter(make_session_factory(engine))
+    writer = DetectionWriter(session_factory)
     count = 10
     for i in range(count):
         writer.write(
@@ -216,64 +194,3 @@ def test_stop_flushes_pending_writes(engine):
     writer.stop()
 
     assert len(_all_records(engine)) == count
-
-
-def test_init_db_creates_table(engine):
-    """init_db should create the detections table with the expected columns."""
-    with Session(engine) as session:
-        # SQLite introspection via PRAGMA
-        result = session.exec(  # type: ignore[attr-defined]
-            __import__("sqlmodel").text("PRAGMA table_info(detections)")
-        ).all()
-
-    col_names = {row[1] for row in result}
-    expected = {
-        "id",
-        "timestamp",
-        "species",
-        "confidence",
-        "detection_confidence",
-        "image_path",
-        "thumbnail_path",
-        "video_path",
-        "track_id",
-        "stable_frames",
-        "duration_sec",
-        "uploaded_at",
-        "box_x",
-        "box_y",
-        "box_w",
-        "box_h",
-    }
-    assert expected == col_names
-
-
-def test_init_db_backfills_added_columns_on_legacy_table():
-    """init_db adds detection_confidence + box columns to a pre-existing table."""
-    from sqlalchemy import inspect
-    from sqlmodel import text
-
-    engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-    )
-    # Create a legacy detections table without the box_* columns.
-    with engine.begin() as conn:
-        conn.execute(
-            text(
-                "CREATE TABLE detections ("
-                "id INTEGER PRIMARY KEY, timestamp DATETIME, species TEXT, "
-                "confidence FLOAT, image_path TEXT, thumbnail_path TEXT)"
-            )
-        )
-
-    init_db(engine)
-
-    col_names = {col["name"] for col in inspect(engine).get_columns("detections")}
-    assert {
-        "detection_confidence",
-        "video_path",
-        "box_x",
-        "box_y",
-        "box_w",
-        "box_h",
-    } <= col_names

@@ -9,8 +9,11 @@ import os
 import sys
 
 # The builder lives under ``tools/`` (not an installed package), so put the repo
-# root on sys.path and import it by module path.
-_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# root on sys.path and import it by module path. This test file lives at
+# tests/tools/, so the repo root is three directories up.
+_REPO_ROOT = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+)
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 

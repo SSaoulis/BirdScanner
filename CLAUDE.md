@@ -39,14 +39,34 @@ command-line flags. Edit the values on the module-level `config` instance:
 pytest tests/
 
 # Single test
-pytest tests/test_process_detections.py::test_update_tracks_for_frame_increments_stability
+pytest tests/ml/test_tracking.py::test_update_tracks_for_frame_increments_stability
 
 # With coverage
 pytest --cov=birdscanner tests/
 ```
 
 The whole codebase is one package (`birdscanner`), so everything imports it via the
-absolute `birdscanner.*` path. `pyproject.toml` sets `[tool.pytest.ini_options] pythonpath = ["."]`, so a plain `pytest tests/` from the repo root resolves the package with no editable install or module-mode invocation. Tests that require ONNX model files (e.g. `tests/test_classification.py`) skip automatically when the model is absent.
+absolute `birdscanner.*` path. `pyproject.toml` sets `[tool.pytest.ini_options] pythonpath = ["."]`, so a plain `pytest tests/` from the repo root resolves the package with no editable install or module-mode invocation. Tests that require ONNX model files (e.g. `tests/ml/test_classification.py`) skip automatically when the model is absent.
+
+**Test layout** — `tests/` mirrors the `birdscanner/` package: `tests/ml/`,
+`tests/db/`, `tests/api/` (with `tests/api/routers/` per router + `tests/api/test_main.py`
+for the app factory / SPA mount), `tests/detector/`, and `tests/tools/`. Each directory
+is a package (`__init__.py`), so duplicate basenames across layers are safe. Shared
+fixtures live in the nearest `conftest.py`:
+- **`tests/conftest.py`** (global) — the `onnxruntime` stub (so `ml` imports anywhere the
+  native runtime is absent; the model-gated tests still skip), the `frame_factory` solid-RGB
+  frame builder, and the in-memory DB fixtures (`engine`/`session_factory`/`image_dir` +
+  `detection_factory`, which inserts a row and its on-disk image/thumbnail/video stubs).
+  These are global rather than under `tests/db/` because both the `db` and `api` suites
+  need them and sibling `conftest.py` files aren't visible across packages.
+- **`tests/api/conftest.py`** — `make_client`/`client` (`TestClient` with the DB + image
+  deps overridden), `seeded_detections`, and the `FakeHttpxResponse` stand-in for the
+  detector-proxy routes.
+- **`tests/ml/conftest.py`** — injectable pipeline fakes (`FakeDetection`, `RecordingWriter`,
+  `RecordingRecorder`, and a `stable_tracker` builder) for the classification-pipeline tests.
+Camera/crop fakes stay local to their single test file (`test_camera_server.py`,
+`test_crop_controller.py`) since they are not shared and are constructed at parametrize
+time (before fixtures exist).
 
 ### Type checking (mypy)
 
@@ -58,8 +78,9 @@ mypy birdscanner tools tests
 ```
 
 `mypy.ini` silences missing-import noise for the Pi-only native bindings (`libcamera`,
-`picamera2`) and the untyped third-party libs (`onnxruntime`, `psutil`, `paramiko`), so
-mypy reports only genuine type errors in our own code.
+`picamera2`) and the untyped third-party libs (`onnxruntime`, `psutil`, `paramiko`, `PIL`
+— Pillow ships no `py.typed` marker), so mypy reports only genuine type errors in our own
+code.
 
 ### Linting (pylint)
 
@@ -157,7 +178,7 @@ from `detector/` or `api/`.
 
 **`birdscanner/ml/tracking.py`** — multi-frame stability tracking:
 - `StableDetectionTracker` — IoU-based tracker; a detection must match across `min_stable_frames` consecutive frames before `should_run_bird_classification_for_detection` returns `True`; each track is classified at most once (`mark_classified`)
-- `StableTrack`, `match_detection_to_track`, `update_tracks_for_frame`, `should_classify_track` — the underlying pure-function tracking primitives (directly unit-tested in `tests/test_process_detections.py`)
+- `StableTrack`, `match_detection_to_track`, `update_tracks_for_frame`, `should_classify_track` — the underlying pure-function tracking primitives (directly unit-tested in `tests/ml/test_tracking.py`)
 - `stable_detection_tracker` — module-global default tracker instance
 
 **`birdscanner/ml/classification_pipeline.py`** — classification orchestration + persistence:
@@ -282,8 +303,8 @@ The `main` ISP stream is configured with `"format": "BGR888"` — **not** `"RGB8
 - The codebase is one package, `birdscanner`, with absolute imports; the layering `detector → ml → db` / `api → db` is one-way (`ml/` never imports `detector/` or `api/`).
 - Runtime code lives under `birdscanner/`; dev-only scripts (never imported by the services, excluded from the Docker images) live under `tools/`.
 - High-confidence classified bird images are written to `$IMAGE_DIR/{species}/` (env var, defaults to `/home/stefan/Pictures/bird_detections`). A 200×200 JPEG thumbnail is saved alongside each image with a `_thumb.jpg` suffix.
-- `birdscanner/db/` tests use SQLAlchemy `StaticPool` to share an in-memory SQLite connection across threads.
-- `birdscanner/api/` tests (``tests/test_backend.py``) override FastAPI dependencies via ``app.dependency_overrides`` so no real DB or filesystem is needed.
+- `birdscanner/db/` tests use SQLAlchemy `StaticPool` to share an in-memory SQLite connection across threads (via the shared `engine` fixture in `tests/conftest.py`).
+- `birdscanner/api/` tests (under ``tests/api/``) override FastAPI dependencies via ``app.dependency_overrides`` (the ``make_client``/``client`` fixtures in ``tests/api/conftest.py``) so no real DB or filesystem is needed.
 
 ## Deployment
 
