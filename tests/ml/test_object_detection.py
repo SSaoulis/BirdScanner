@@ -63,7 +63,7 @@ def test_parse_detections_filters_by_threshold_and_converts():
 
 def test_parse_detections_none_outputs_returns_last_detections():
     """When the frame yields no inference output, the previous detections return."""
-    od.last_detections = ["sentinel"]
+    od.last_detections = ["sentinel"]  # type: ignore[list-item]  # sentinel stands in for a Detection
     imx = _FakeIMX500(None)
     result = parse_detections({}, imx, _Intrinsics(), threshold=0.5, picam2=object())
     assert result == ["sentinel"]

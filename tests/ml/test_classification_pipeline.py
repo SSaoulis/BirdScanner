@@ -11,12 +11,14 @@ with the injected fakes from ``tests/ml/conftest.py`` — no camera, model, or D
 import sys
 import threading
 import types
+from typing import cast
 
 import numpy as np
 import pytest
 
 import birdscanner.ml.classification_pipeline as cp
 from birdscanner.ml.best_frame import BestFrameSelector
+from birdscanner.ml.classification import Classifier
 from birdscanner.ml.classification_pipeline import ClassificationManager
 from birdscanner.ml.tracking import should_run_bird_classification_for_detection
 
@@ -47,7 +49,7 @@ def test_async_worker_survives_a_raising_detection(monkeypatch):
     monkeypatch.setattr(cp, "process_single_detection_with_stable_tracks", fake_dispatch)
 
     manager = ClassificationManager(
-        classifier=object(),
+        classifier=cast(Classifier, object()),
         use_multithreading=True,
         use_stable_track_gating=True,
     )
@@ -71,7 +73,7 @@ def test_sync_dispatch_swallows_exceptions(monkeypatch):
     monkeypatch.setattr(cp, "process_single_detection_with_stable_tracks", fake_dispatch)
 
     manager = ClassificationManager(
-        classifier=object(),
+        classifier=cast(Classifier, object()),
         use_multithreading=False,
         use_stable_track_gating=True,
     )
@@ -98,7 +100,7 @@ def test_stable_track_classifies_saves_and_writes(
     cp.process_single_detection_with_stable_tracks(
         (frame, 0, det, ["bird"], "bird"),
         results_lock=threading.Lock(),
-        classifier=object(),
+        classifier=cast(Classifier, object()),
         tracker=tracker,
         classify_fn=lambda _classifier, _roi: ("Robin", 0.95),
         detection_writer=recording_writer,
@@ -127,12 +129,16 @@ def test_stable_track_skips_degenerate_zero_area_box(
     frame = frame_factory(120, (32, 32))
     classify_calls: list[int] = []
 
+    def _classify(_c, _r):
+        classify_calls.append(1)
+        return ("Robin", 0.95)
+
     cp.process_single_detection_with_stable_tracks(
         (frame, 0, det, ["bird"], "bird"),
         results_lock=threading.Lock(),
-        classifier=object(),
+        classifier=cast(Classifier, object()),
         tracker=tracker,
-        classify_fn=lambda _c, _r: classify_calls.append(1) or ("Robin", 0.95),
+        classify_fn=_classify,
         detection_writer=recording_writer,
     )
 
@@ -164,7 +170,7 @@ def test_stable_track_video_path_only_when_recording_started(
     cp.process_single_detection_with_stable_tracks(
         (frame_factory(120, (32, 32)), 0, det, ["bird"], "bird"),
         results_lock=threading.Lock(),
-        classifier=object(),
+        classifier=cast(Classifier, object()),
         tracker=tracker,
         classify_fn=lambda _c, _r: ("Robin", 0.95),
         detection_writer=recording_writer,
@@ -190,7 +196,7 @@ def test_stable_track_uses_best_frame(
     cp.process_single_detection_with_stable_tracks(
         (frame_factory(120, (32, 32)), 0, det, ["bird"], "bird"),
         results_lock=threading.Lock(),
-        classifier=object(),
+        classifier=cast(Classifier, object()),
         tracker=tracker,
         classify_fn=lambda _c, _r: ("Robin", 0.95),
         detection_writer=recording_writer,
@@ -225,7 +231,9 @@ def test_run_bird_classification_delegates_to_classifier():
         def classify(self, _image):
             return ("Robin", 0.9)
 
-    result = cp.run_bird_classification(_Classifier(), np.zeros((4, 4, 3), np.uint8))
+    result = cp.run_bird_classification(
+        cast(Classifier, _Classifier()), np.zeros((4, 4, 3), np.uint8)
+    )
     assert result == ("Robin", 0.9)
 
 
@@ -268,7 +276,7 @@ def test_process_detections_feeds_video_observes_and_queues(
     )
 
     manager = ClassificationManager(
-        classifier=object(),
+        classifier=cast(Classifier, object()),
         use_multithreading=False,
         use_stable_track_gating=True,
         tracker=tracker,
@@ -290,4 +298,6 @@ def test_process_detections_feeds_video_observes_and_queues(
 def test_process_detections_none_results_is_noop(fake_detection):
     """A ``None`` results list returns immediately (no frame access needed)."""
     # No picamera2 stub required: the function returns before importing it.
-    cp.process_detections(object(), "main", None, object(), ["bird"])
+    cp.process_detections(
+        object(), "main", None, cast(ClassificationManager, object()), ["bird"]
+    )
