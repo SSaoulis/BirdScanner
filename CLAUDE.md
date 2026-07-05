@@ -74,7 +74,7 @@ time (before fixtures exist).
 absolute imports, mypy runs in a **single pass**:
 
 ```bash
-mypy birdscanner tools tests
+mypy birdscanner tools tests --check-untyped-defs
 ```
 
 `mypy.ini` silences missing-import noise for the Pi-only native bindings (`libcamera`,
@@ -82,7 +82,15 @@ mypy birdscanner tools tests
 — Pillow ships no `py.typed` marker), so mypy reports only genuine type errors in our own
 code.
 
-### Linting (pylint)
+### Linting (pylint, black)
+
+Black and pylint need to be run for linting and formatting. 
+
+Always run black first:
+
+```bash
+black birdscanner tools tests
+```
 
 Pylint rates the codebase **10.00/10** (exit 0). It runs in two invocations only because
 the tests use a separate rcfile to relax pytest idioms — not for import resolution, which
