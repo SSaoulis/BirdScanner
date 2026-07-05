@@ -2,6 +2,7 @@
 # below also covers them). The curated class-index map IS source, so re-include it
 # despite the repo-wide *.json rule.
 assets/models/*.onnx
+assets/models/*.rpk
 assets/models/*.pt
 !assets/models/convnext_v2_tiny.onnx_class_to_idx.json
 
