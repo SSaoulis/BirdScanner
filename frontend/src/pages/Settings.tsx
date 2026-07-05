@@ -240,6 +240,27 @@ export function Settings() {
         />
       </Section>
 
+      <Section title="Location" eyebrow="Where the camera is">
+        <CoordinateField
+          label="Latitude"
+          min={-90}
+          max={90}
+          help="Deployment latitude in degrees (−90 to 90). Used with longitude to build the geomodel's location prior. Leave blank to disable the prior."
+          value={form.latitude}
+          onChange={(v) => setField("latitude", v)}
+          restart={restartFields.has("latitude")}
+        />
+        <CoordinateField
+          label="Longitude"
+          min={-180}
+          max={180}
+          help="Deployment longitude in degrees (−180 to 180). Leave blank to disable the geomodel's location prior."
+          value={form.longitude}
+          onChange={(v) => setField("longitude", v)}
+          restart={restartFields.has("longitude")}
+        />
+      </Section>
+
       {/* Action bar */}
       <div className="sticky bottom-0 -mx-6 border-t border-line bg-paper/90 px-6 py-4 backdrop-blur">
         <div className="flex items-center justify-between gap-4">
@@ -403,6 +424,52 @@ function NumberField({
           className="tnum w-28 rounded-lg border border-line bg-paper px-3 py-1.5 text-sm text-ink focus-visible:outline-none"
         />
         {suffix && <span className="text-sm text-bark">{suffix}</span>}
+      </div>
+    </Field>
+  );
+}
+
+/**
+ * An optional coordinate input (latitude/longitude).
+ *
+ * Renders a number input bounded to `[min, max]` degrees. An empty input maps
+ * to `null` (the coordinate is unset, so the geomodel prior is not built), and a
+ * `null` value renders as a blank field with a "Not set" placeholder.
+ */
+function CoordinateField({
+  label,
+  help,
+  value,
+  onChange,
+  restart,
+  min,
+  max,
+}: {
+  label: string;
+  help: string;
+  value: number | null;
+  onChange: (v: number | null) => void;
+  restart?: boolean;
+  min: number;
+  max: number;
+}) {
+  return (
+    <Field label={label} help={help} restart={restart}>
+      <div className="flex items-center gap-2">
+        <input
+          type="number"
+          value={value ?? ""}
+          step="any"
+          min={min}
+          max={max}
+          placeholder="Not set"
+          onChange={(e) => {
+            const text = e.target.value.trim();
+            onChange(text === "" ? null : Number(text));
+          }}
+          className="tnum w-40 rounded-lg border border-line bg-paper px-3 py-1.5 text-sm text-ink focus-visible:outline-none"
+        />
+        <span className="text-sm text-bark">°</span>
       </div>
     </Field>
   );
