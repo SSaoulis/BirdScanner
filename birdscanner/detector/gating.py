@@ -6,8 +6,7 @@ classification pipeline under ``ml/``.  It builds the machinery that decides
 
 * :func:`build_gating` — construct the stability tracker, the per-track
   best-frame selector, and (when video is enabled) the clip recorder, returning
-  them in a :class:`Gating` bundle.  With ``object_duration_threshold <= 0`` it
-  returns the legacy per-frame configuration where every component is ``None``.
+  them in a :class:`Gating` bundle.
 * :func:`build_manager` — assemble the :class:`ClassificationManager` and its
   :class:`PipelineContext` from a built :class:`Gating` bundle.
 
@@ -17,14 +16,12 @@ plain injected callables.
 """
 
 import logging
-import threading
 from dataclasses import dataclass
 from typing import Any, Optional
 
 from birdscanner.ml.tracking import (
     StableDetectionTracker,
     StableTrack,
-    stable_detection_tracker,
 )
 from birdscanner.ml.best_frame import BestFrameSelector
 from birdscanner.ml.classification_pipeline import (
@@ -45,18 +42,13 @@ class Gating:
     """Result of building the stable-track gating machinery.
 
     Attributes:
-        use_stable_tracks: Whether stable-track gating is active.
-        tracker: The stability tracker; the module-global default in legacy
-            per-frame mode (where it is unused).
-        best_frame_selector: Per-track best-frame store, or ``None`` when gating
-            is off.
-        video_recorder: The clip recorder, or ``None`` when gating is off or
-            video is disabled.
+        tracker: The stability tracker.
+        best_frame_selector: Per-track best-frame store.
+        video_recorder: The clip recorder, or ``None`` when video is disabled.
     """
 
-    use_stable_tracks: bool
     tracker: StableDetectionTracker
-    best_frame_selector: Optional[BestFrameSelector]
+    best_frame_selector: BestFrameSelector
     video_recorder: Optional[VideoRecorder]
 
 
@@ -68,10 +60,9 @@ def min_stable_frames(fps: int) -> int:
 def build_gating(intrinsics: Any) -> Gating:
     """Build the stable-track gating machinery from the config and intrinsics.
 
-    When ``object_duration_threshold <= 0`` gating is disabled (legacy per-frame
-    mode) and every returned component is ``None``. Otherwise this constructs the
-    tracker (wired to log lifecycle events and free per-track best frames), the
-    best-frame selector, and — when video is enabled — the clip recorder.
+    Constructs the tracker (wired to log lifecycle events and free per-track best
+    frames), the best-frame selector, and — when video is enabled — the clip
+    recorder.
 
     Args:
         intrinsics: The prepared network intrinsics (for the inference rate).
@@ -79,9 +70,6 @@ def build_gating(intrinsics: Any) -> Gating:
     Returns:
         The populated :class:`Gating` bundle.
     """
-    if not app_config.object_duration_threshold > 0:
-        return Gating(False, stable_detection_tracker, None, None)
-
     fps = (
         app_config.intrinsics.fps
         or int(getattr(intrinsics, "inference_rate", 0) or 0)
@@ -112,7 +100,7 @@ def build_gating(intrinsics: Any) -> Gating:
         if app_config.video.save
         else None
     )
-    return Gating(True, tracker, selector, recorder)
+    return Gating(tracker, selector, recorder)
 
 
 def build_manager(
@@ -140,7 +128,5 @@ def build_manager(
     manager = ClassificationManager(
         context,
         use_multithreading=app_config.multithread,
-        use_stable_track_gating=gating.use_stable_tracks,
     )
-    manager.set_results_lock(threading.Lock())
     return manager

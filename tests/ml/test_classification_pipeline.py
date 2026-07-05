@@ -56,9 +56,7 @@ def test_async_worker_survives_a_raising_detection(monkeypatch):
     manager = ClassificationManager(
         PipelineContext(classifier=cast(Classifier, object())),
         use_multithreading=True,
-        use_stable_track_gating=True,
     )
-    manager.set_results_lock(threading.Lock())
 
     try:
         manager.process(_make_item())  # raises inside the worker
@@ -82,9 +80,7 @@ def test_sync_dispatch_swallows_exceptions(monkeypatch):
     manager = ClassificationManager(
         PipelineContext(classifier=cast(Classifier, object())),
         use_multithreading=False,
-        use_stable_track_gating=True,
     )
-    manager.set_results_lock(threading.Lock())
 
     # Must not raise.
     manager.process(_make_item())
@@ -117,7 +113,6 @@ def test_stable_track_classifies_saves_and_writes(
             classify_fn=lambda _classifier, _roi: ("Robin", 0.95),
             detection_writer=recording_writer,
         ),
-        threading.Lock(),
     )
 
     assert len(recording_writer.writes) == 1
@@ -131,7 +126,6 @@ def test_stable_track_classifies_saves_and_writes(
     species_dir = tmp_path / "Robin"
     assert len(list(species_dir.glob("*.png"))) == 1
     assert len(list(species_dir.glob("*_thumb.jpg"))) == 1
-    assert cp.classification_results[0] == ("Robin", 0.95)
 
 
 def test_stable_track_skips_degenerate_zero_area_box(
@@ -161,12 +155,10 @@ def test_stable_track_skips_degenerate_zero_area_box(
             classify_fn=_classify,
             detection_writer=recording_writer,
         ),
-        threading.Lock(),
     )
 
     assert classify_calls == []  # classifier never invoked on an empty ROI
     assert recording_writer.writes == []
-    assert cp.classification_results[0] == (None, None)
     # Track was left unclassified so a later, valid frame can still classify it.
     assert should_run_bird_classification_for_detection(0, tracker=tracker) is True
 
@@ -202,7 +194,6 @@ def test_stable_track_video_path_only_when_recording_started(
             detection_writer=recording_writer,
             record_fn=recorder,
         ),
-        threading.Lock(),
     )
 
     assert len(recorder.paths) == 1  # record_fn always attempted
@@ -237,7 +228,6 @@ def test_stable_track_uses_best_frame(
             detection_writer=recording_writer,
             best_frame_selector=selector,
         ),
-        threading.Lock(),
     )
 
     # The selector was drained (its frame was taken for classification).
@@ -246,19 +236,6 @@ def test_stable_track_uses_best_frame(
     write = recording_writer.writes[0]
     assert write.box_x == pytest.approx(1 / 32)
     assert write.box_w == pytest.approx(10 / 32)
-
-
-# ---------------------------------------------------------------------------
-# update_detection_classifications_cache
-# ---------------------------------------------------------------------------
-
-
-def test_update_cache_keeps_only_classified(fake_detection):
-    """Only detections with a species + confidence enter the temporal cache."""
-    detections = [fake_detection((0, 0, 10, 10)), fake_detection((20, 20, 10, 10))]
-    results = {0: ("Robin", 0.9), 1: (None, None)}
-    cp.update_detection_classifications_cache(detections, results)
-    assert cp.last_detection_classifications == [((0, 0, 10, 10), "Robin", 0.9)]
 
 
 def test_run_bird_classification_delegates_to_classifier():
@@ -320,9 +297,7 @@ def test_process_detections_feeds_video_observes_and_queues(
             video_frame_fn=fed.append,
         ),
         use_multithreading=False,
-        use_stable_track_gating=True,
     )
-    manager.set_results_lock(threading.Lock())
 
     frame = frame_factory(100, (32, 32))
     request = types.SimpleNamespace(array=frame)

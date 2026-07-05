@@ -73,8 +73,8 @@ class Config:
         multithread: Run classification on a background thread so the camera
             callback never blocks.
         object_duration_threshold: Seconds a track must be stable (IoU>0.6 across
-            frames) before bird classification fires; ``0`` reverts to the legacy
-            per-frame logic.
+            frames) before bird classification fires; values ``<= 0`` floor the
+            requirement to a single stable frame.
         debug: Enable DEBUG-level logging for track lifecycle events.
         preview: Show the camera preview window.
         intrinsics: Network-intrinsics overrides (see :class:`IntrinsicsConfig`).
