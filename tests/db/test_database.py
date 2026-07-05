@@ -42,7 +42,7 @@ _EXPECTED_COLUMNS = {
 def test_init_db_creates_table_with_expected_columns(engine):
     """init_db creates the detections table with the full current column set."""
     with Session(engine) as session:
-        result = session.exec(  # type: ignore[attr-defined]
+        result = session.exec(  # type: ignore[call-overload]
             text("PRAGMA table_info(detections)")
         ).all()
     col_names = {row[1] for row in result}

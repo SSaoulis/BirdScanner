@@ -173,11 +173,12 @@ def test_build_manifest_incremental_skips_complete_entries(monkeypatch, tmp_path
     first = builder.build_manifest(["Arctic tern"], {}, {}, throttle=0)
 
     calls = []
-    monkeypatch.setattr(
-        builder,
-        "fetch_wikipedia_summary",
-        lambda title: calls.append(title) or None,
-    )
+
+    def _record_no_summary(title):
+        calls.append(title)
+        return None
+
+    monkeypatch.setattr(builder, "fetch_wikipedia_summary", _record_no_summary)
 
     second = builder.build_manifest(["Arctic tern"], {}, first, throttle=0)
 
@@ -216,9 +217,12 @@ def test_build_manifest_force_refetches_everything(monkeypatch, tmp_path):
 
     calls = []
     orig = builder.fetch_wikipedia_summary
-    monkeypatch.setattr(
-        builder, "fetch_wikipedia_summary", lambda t: calls.append(t) or orig(t)
-    )
+
+    def _record_and_delegate(t):
+        calls.append(t)
+        return orig(t)
+
+    monkeypatch.setattr(builder, "fetch_wikipedia_summary", _record_and_delegate)
     builder.build_manifest(["Arctic tern"], {}, first, force=True, throttle=0)
 
     assert calls == ["Arctic tern"]

@@ -31,7 +31,7 @@ def _boxes_for_frame(*boxes: tuple) -> list[DummyDet]:
 
 
 def test_update_tracks_for_frame_increments_stability():
-    tracks = []
+    tracks: list[StableTrack] = []
     boxes = [(10, 10, 20, 20)]
 
     tracks, per_det = update_tracks_for_frame(boxes, tracks, iou_threshold=0.6)
