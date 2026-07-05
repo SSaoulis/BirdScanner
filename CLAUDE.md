@@ -228,7 +228,8 @@ only the top-1 species today. The pieces:
 - `birdscanner/db/geo_store.py` owns the separate DB (`GeoPriorStore`).
 - `birdscanner/detector/geo.py` (`bootstrap_geo_priors`) runs at startup: it compares the
   cached `(lat, lon, species_signature)` to the configured location and **only regenerates
-  when they differ** (a normal boot is a cache hit), logging progress every 5 weeks.
+  when they differ** (a normal boot is a cache hit), logging once when it starts and once
+  when the cache is ready.
 
 ### Package layout
 
@@ -359,7 +360,7 @@ from `detector/` or `api/`.
 - `build_manager(classifier, gating, detection_writer)` assembles the `PipelineContext` and `ClassificationManager` from the `Gating` bundle; the recorder's `add_frame`/`trigger` are injected as `video_frame_fn`/`record_fn` (keeping picamera2 out of `ml/`). It installs the manager's results lock. Imports only `ml/`, `config`, `track_logging`, `video_recorder`, and `db/writer` — no picamera2, so it is importable without a camera
 
 **`birdscanner/detector/geo.py`** — startup geolocation-prior coordination (mirrors `gating.py`; unit-tested in `tests/detector/test_geo.py`):
-- `bootstrap_geo_priors(settings, model)` runs once at startup (called from `main` after `setup_classifier`): it opens the `GeoPriorStore`, compares the cached `(latitude, longitude, species_signature)` to the configured location + the model's current species signature, and **regenerates all 52 weekly vectors only when they differ** (a normal boot is a cache hit — no work). Generation logs progress **every 5 weeks** (`_log_progress`). Returns a `GeoPriorProvider` (a thin current-week lookup over the store) that the pipeline will consume once the Bayesian update is wired. Bridges the pure model (`ml/geolocation`) + pure coordination (`ml/geo_priors`) to the store, keeping `detector → ml → db` one-way
+- `bootstrap_geo_priors(settings, model)` runs once at startup (called from `main` after `setup_classifier`): it opens the `GeoPriorStore`, compares the cached `(latitude, longitude, species_signature)` to the configured location + the model's current species signature, and **regenerates all 52 weekly vectors only when they differ** (a normal boot is a cache hit — no work). Regeneration is logged once when it starts and once when the cache is ready (no per-week progress — generation will become a single batched pass). Returns a `GeoPriorProvider` (a thin current-week lookup over the store) that the pipeline will consume once the Bayesian update is wired. Bridges the pure model (`ml/geolocation`) + pure coordination (`ml/geo_priors`) to the store, keeping `detector → ml → db` one-way
 
 **`birdscanner/detector/video_recorder.py`** — on-demand short-clip recorder (unit-tested in `tests/test_video_recorder.py`):
 - `VideoRecorder` keeps a bounded `deque` of recent raw `main`-stream frames (the pre-roll) fed by `add_frame` every frame — **cheap, no encoding while idle**, which matters because the **Pi 5 has no hardware video encoder** so all encoding is software (CPU). `trigger(dest_path)` snapshots the pre-roll, keeps collecting `post_roll_seconds` of live frames, then encodes the whole sequence to an mp4 (`cv2.VideoWriter`, `mp4v`, RGB→BGR like the still writes) on a **background thread** so the camera callback never blocks. **Single-flight**: a trigger while a clip is recording is declined (returns `False`), bounding CPU/RAM. Durations come from `config` (`video_pre_roll_seconds`/`video_post_roll_seconds`); fps from the camera inference rate. Trade-off: the RAM buffer costs ~1.2 MB/frame × pre-roll frames — downscale/limit if it bites

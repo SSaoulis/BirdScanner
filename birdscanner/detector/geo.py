@@ -22,9 +22,6 @@ from birdscanner.ml.geolocation import GeolocationModel
 
 logger = logging.getLogger("tracking")
 
-# Log a progress line every this many weeks while regenerating.
-_PROGRESS_EVERY = 5
-
 
 class GeoPriorProvider:
     """Current-week lookup over the cached geolocation priors.
@@ -53,12 +50,6 @@ class GeoPriorProvider:
             The ``float32`` presence vector, or ``None`` when absent.
         """
         return self._store.get_week_vector(week)
-
-
-def _log_progress(week: int) -> None:
-    """Log a generation-progress line every ``_PROGRESS_EVERY`` weeks (and at 52)."""
-    if week % _PROGRESS_EVERY == 0 or week == 52:
-        logger.info("Generated geo priors: %d/52 weeks", week)
 
 
 def _needs_regeneration(
@@ -92,8 +83,8 @@ def bootstrap_geo_priors(
 
     Opens the geo-prior store, compares the cached ``(latitude, longitude,
     species_signature)`` to the current configuration, and regenerates all 52
-    weekly vectors when they differ (logging progress every 5 weeks). On a match
-    the existing cache is reused.
+    weekly vectors when they differ (logged once at the start and once when
+    finished). On a match the existing cache is reused.
 
     Args:
         settings: The loaded settings (source of the configured location).
@@ -113,9 +104,7 @@ def bootstrap_geo_priors(
             latitude,
             longitude,
         )
-        vectors = generate_all_weeks(
-            model, latitude, longitude, on_progress=_log_progress
-        )
+        vectors = generate_all_weeks(model, latitude, longitude)
         store.write_priors(
             GeoMeta(
                 latitude=latitude,
