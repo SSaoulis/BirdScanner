@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="BirdScanner">
+  <!-- Field-journal palette: forest-ink ground, goldfinch-ochre bird -->
+  <rect width="64" height="64" rx="14" fill="#2C3A2E"/>
+  <!-- perch -->
+  <rect x="16" y="50" width="30" height="3" rx="1.5" fill="#8A6113"/>
+  <!-- legs -->
+  <path d="M27 44v6M33 44v6" stroke="#8A6113" stroke-width="2.4" stroke-linecap="round"/>
+  <!-- tail -->
+  <path d="M17 28 L2 26 L19 42 Z" fill="#C08A2D"/>
+  <!-- body -->
+  <ellipse cx="28" cy="34" rx="13" ry="11.5" fill="#C08A2D"/>
+  <!-- head -->
+  <circle cx="41" cy="24" r="8.2" fill="#C08A2D"/>
+  <!-- beak -->
+  <path d="M48 21 L58 24 L48 27 Z" fill="#8A6113"/>
+  <!-- folded wing -->
+  <ellipse cx="26" cy="35" rx="8" ry="5.2" fill="#8A6113" transform="rotate(-18 26 35)"/>
+  <!-- eye -->
+  <circle cx="43.5" cy="22.5" r="1.7" fill="#2C3A2E"/>
+</svg>
