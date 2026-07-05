@@ -123,6 +123,10 @@ export interface Settings {
   multithread: boolean;
   /** Enable DEBUG-level tracking logs. */
   debug: boolean;
+  /** Deployment latitude in degrees for the geomodel prior; null when unset. */
+  latitude: number | null;
+  /** Deployment longitude in degrees for the geomodel prior; null when unset. */
+  longitude: number | null;
 }
 
 /** Settings plus the metadata the UI needs to badge/handle restart-only fields. */
