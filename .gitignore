@@ -237,3 +237,7 @@ frontend/dist/
 # Test fixtures: the labelled-image bounding-box manifest IS source (the *.json rule
 # above would otherwise exclude it); the JPEGs it references are committed too.
 !tests/_test_images/bounding_box_locations.json
+
+# The geomodel<->classifier label map is curated source (auto-generated name matches
+# plus hand-curated cross-checklist synonyms), so re-include it despite the *.json rule.
+!assets/labels/geomodel_classifier_map.json
