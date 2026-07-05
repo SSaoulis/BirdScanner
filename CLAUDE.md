@@ -53,12 +53,13 @@ absolute `birdscanner.*` path. `pyproject.toml` sets `[tool.pytest.ini_options] 
 for the app factory / SPA mount), `tests/detector/`, and `tests/tools/`. Each directory
 is a package (`__init__.py`), so duplicate basenames across layers are safe. Shared
 fixtures live in the nearest `conftest.py`:
-- **`tests/conftest.py`** (global) — the `onnxruntime` stub (so `ml` imports anywhere the
-  native runtime is absent; the model-gated tests still skip), the `frame_factory` solid-RGB
-  frame builder, and the in-memory DB fixtures (`engine`/`session_factory`/`image_dir` +
-  `detection_factory`, which inserts a row and its on-disk image/thumbnail/video stubs).
-  These are global rather than under `tests/db/` because both the `db` and `api` suites
-  need them and sibling `conftest.py` files aren't visible across packages.
+- **`tests/conftest.py`** (global) — the `frame_factory` solid-RGB frame builder and the
+  in-memory DB fixtures (`engine`/`session_factory`/`image_dir` + `detection_factory`, which
+  inserts a row and its on-disk image/thumbnail/video stubs). These are global rather than
+  under `tests/db/` because both the `db` and `api` suites need them and sibling `conftest.py`
+  files aren't visible across packages. (`onnxruntime` is a real dependency — installed in the
+  project `.venv` and pinned on the Pi/CI — so `ml` imports resolve normally; the classifier
+  tests still skip when the ONNX *model file* is absent.)
 - **`tests/api/conftest.py`** — `make_client`/`client` (`TestClient` with the DB + image
   deps overridden), `seeded_detections`, and the `FakeHttpxResponse` stand-in for the
   detector-proxy routes.
