@@ -313,7 +313,7 @@ def update_detection_classifications_cache(
 def process_detections(
     request,
     stream: str,
-    last_results: list,
+    last_results: Optional[list],
     manager: "ClassificationManager",
     labels: list,
 ) -> None:
