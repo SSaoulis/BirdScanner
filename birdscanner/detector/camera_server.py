@@ -24,6 +24,7 @@ import json
 import logging
 import os
 import threading
+from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Callable, Optional
 
@@ -34,15 +35,41 @@ logger = logging.getLogger("tracking")
 
 DEFAULT_CAMERA_SERVER_PORT = 8000
 
-# Largest crop-update request body we will read, in bytes.  The payload is a
-# tiny JSON object; this guards against a malformed/huge Content-Length.
-_MAX_CROP_BODY_BYTES = 4096
+# Largest request body we will read, in bytes.  The crop/settings payloads are
+# tiny JSON objects; this guards against a malformed/huge Content-Length.
+_MAX_BODY_BYTES = 4096
 
 # A callable that deletes the detection with the given id and returns True if a
 # record existed (False otherwise).  See :func:`db.deleter.delete_detection`.
 DeleteCallback = Callable[[int], bool]
 
+# A callable that asks the detector to restart (typically by scheduling process
+# exit so Docker's restart policy relaunches it).
+RestartCallback = Callable[[], None]
+
 _DETECTIONS_PREFIX = "/detections/"
+
+
+@dataclass
+class ControlServerDeps:
+    """Optional detector dependencies enabling the control server's routes.
+
+    Bundled into one value object (rather than passed as separate arguments) so
+    :class:`_ControlServer` / :func:`start_camera_server` keep short signatures.
+    Each dependency independently enables its routes; when one is ``None`` the
+    corresponding routes answer 404 (legacy snapshot-only mode).
+
+    Attributes:
+        crop_controller: Enables the ``/crop`` and ``/capture/full`` routes.
+        delete_detection: Enables ``DELETE /detections/{id}``.
+        settings_controller: Enables ``GET``/``POST /settings``.
+        restart: Enables ``POST /restart``.
+    """
+
+    crop_controller: Optional[Any] = None
+    delete_detection: Optional[DeleteCallback] = None
+    settings_controller: Optional[Any] = None
+    restart: Optional[RestartCallback] = None
 
 
 def encode_jpeg(frame: np.ndarray) -> bytes:
@@ -117,21 +144,18 @@ class _ControlServer(ThreadingHTTPServer):
         self,
         server_address: tuple,
         picam2: Any,
-        crop_controller: Optional[Any] = None,
-        delete_detection: Optional[DeleteCallback] = None,
+        deps: ControlServerDeps,
     ) -> None:
         """Bind the server and attach the detector dependencies.
 
         Args:
             server_address: The ``(host, port)`` to bind.
             picam2: The started ``Picamera2`` instance to capture frames from.
-            crop_controller: Optional crop controller enabling the crop routes.
-            delete_detection: Optional callable that deletes a detection by id.
+            deps: Optional detector dependencies enabling the extra routes.
         """
         super().__init__(server_address, CameraRequestHandler)
         self.picam2 = picam2
-        self.crop_controller = crop_controller
-        self.delete_detection = delete_detection
+        self.deps = deps
 
 
 class CameraRequestHandler(BaseHTTPRequestHandler):
@@ -169,7 +193,7 @@ class CameraRequestHandler(BaseHTTPRequestHandler):
     # do_GET is the stdlib-mandated handler name; the broad except is
     # intentional so any capture failure becomes a clean 503.
     def do_GET(self) -> None:  # pylint: disable=invalid-name
-        """Route GET requests to snapshot / full-preview / crop handlers."""
+        """Route GET requests to snapshot / full-preview / crop / settings."""
         path = self.path.split("?", 1)[0]
         if path == "/capture":
             self._handle_capture()
@@ -177,14 +201,21 @@ class CameraRequestHandler(BaseHTTPRequestHandler):
             self._handle_capture_full()
         elif path == "/crop":
             self._handle_get_crop()
+        elif path == "/settings":
+            self._handle_get_settings()
         else:
             self.send_error(404, "Not Found")
 
     # do_POST is the stdlib-mandated handler name.
     def do_POST(self) -> None:  # pylint: disable=invalid-name
-        """Route POST requests; only ``/crop`` is supported."""
-        if self.path.split("?", 1)[0] == "/crop":
+        """Route POST requests to the crop / settings / restart handlers."""
+        path = self.path.split("?", 1)[0]
+        if path == "/crop":
             self._handle_set_crop()
+        elif path == "/settings":
+            self._handle_set_settings()
+        elif path == "/restart":
+            self._handle_restart()
         else:
             self.send_error(404, "Not Found")
 
@@ -192,7 +223,7 @@ class CameraRequestHandler(BaseHTTPRequestHandler):
     # intentional so any deletion failure becomes a clean 500.
     def do_DELETE(self) -> None:  # pylint: disable=invalid-name
         """Handle ``DELETE /detections/{id}``: remove a detection."""
-        delete_detection = self._control.delete_detection
+        delete_detection = self._control.deps.delete_detection
         detection_id = _parse_detection_id(self.path)
         if delete_detection is None or detection_id is None:
             self.send_error(404, "Not Found")
@@ -221,7 +252,7 @@ class CameraRequestHandler(BaseHTTPRequestHandler):
 
     def _handle_capture_full(self) -> None:
         """Capture and return a JPEG of the full sensor for the crop editor."""
-        crop_controller = self._control.crop_controller
+        crop_controller = self._control.deps.crop_controller
         if crop_controller is None:
             self.send_error(404, "Crop control not available")
             return
@@ -235,14 +266,14 @@ class CameraRequestHandler(BaseHTTPRequestHandler):
 
     def _handle_get_crop(self) -> None:
         """Return the current crop region as JSON."""
-        crop_controller = self._control.crop_controller
+        crop_controller = self._control.deps.crop_controller
         if crop_controller is None:
             self.send_error(404, "Crop control not available")
             return
         self._send_json(200, crop_controller.get_state())
 
-    def _read_crop_body(self) -> Optional[dict]:
-        """Read + parse the crop-update JSON body, sending an error on failure.
+    def _read_json_body(self) -> Optional[dict]:
+        """Read + parse a small JSON request body, sending an error on failure.
 
         Returns:
             The parsed JSON object, or ``None`` when the body was missing or
@@ -253,14 +284,18 @@ class CameraRequestHandler(BaseHTTPRequestHandler):
         except ValueError:
             self.send_error(400, "Invalid Content-Length")
             return None
-        if length <= 0 or length > _MAX_CROP_BODY_BYTES:
+        if length <= 0 or length > _MAX_BODY_BYTES:
             self.send_error(400, "Invalid request body size")
             return None
         try:
-            return json.loads(self.rfile.read(length).decode("utf-8"))
+            body = json.loads(self.rfile.read(length).decode("utf-8"))
         except (ValueError, UnicodeDecodeError):
             self.send_error(400, "Invalid JSON body")
             return None
+        if not isinstance(body, dict):
+            self.send_error(400, "Body must be a JSON object")
+            return None
+        return body
 
     def _handle_set_crop(self) -> None:
         """Apply a new crop from a JSON body and return the new state.
@@ -268,11 +303,11 @@ class CameraRequestHandler(BaseHTTPRequestHandler):
         Body is ``{"reset": true}`` to restore the default, or
         ``{"nx", "ny", "nw", "nh"}`` normalized fractions in ``[0, 1]``.
         """
-        crop_controller = self._control.crop_controller
+        crop_controller = self._control.deps.crop_controller
         if crop_controller is None:
             self.send_error(404, "Crop control not available")
             return
-        payload = self._read_crop_body()
+        payload = self._read_json_body()
         if payload is None:
             return
         try:
@@ -294,6 +329,49 @@ class CameraRequestHandler(BaseHTTPRequestHandler):
             return
         self._send_json(200, state)
 
+    def _handle_get_settings(self) -> None:
+        """Return the current runtime settings + restart metadata as JSON."""
+        settings_controller = self._control.deps.settings_controller
+        if settings_controller is None:
+            self.send_error(404, "Settings control not available")
+            return
+        self._send_json(200, settings_controller.get_state())
+
+    def _handle_set_settings(self) -> None:
+        """Apply a partial settings update from a JSON body; return new state.
+
+        A validation error (unknown key / out-of-range value) is answered 400
+        with the message; a persistence failure is answered 500.
+        """
+        settings_controller = self._control.deps.settings_controller
+        if settings_controller is None:
+            self.send_error(404, "Settings control not available")
+            return
+        payload = self._read_json_body()
+        if payload is None:
+            return
+        try:
+            state = settings_controller.update(payload)
+        except ValueError as exc:
+            # JSON (not send_error's HTML) so the message survives the API proxy
+            # and reaches the Settings page.
+            self._send_json(400, {"error": str(exc)})
+            return
+        except OSError as exc:
+            logger.warning("Failed to persist settings: %s", exc)
+            self._send_json(500, {"error": "Failed to save settings"})
+            return
+        self._send_json(200, state)
+
+    def _handle_restart(self) -> None:
+        """Ask the detector to restart, returning 202 once scheduled."""
+        restart = self._control.deps.restart
+        if restart is None:
+            self.send_error(404, "Restart not available")
+            return
+        restart()
+        self._send_json(202, {"status": "restarting"})
+
     # Signature mirrors stdlib BaseHTTPRequestHandler.log_message.
     def log_message(  # pylint: disable=redefined-builtin
         self, format: str, *args: Any
@@ -305,26 +383,20 @@ class CameraRequestHandler(BaseHTTPRequestHandler):
 def start_camera_server(
     picam2: Any,
     port: int = DEFAULT_CAMERA_SERVER_PORT,
-    crop_controller: Optional[Any] = None,
-    delete_detection: Optional[DeleteCallback] = None,
+    deps: Optional[ControlServerDeps] = None,
 ) -> ThreadingHTTPServer:
     """Start the detector control HTTP server on a background daemon thread.
 
     Args:
         picam2: The started ``Picamera2`` instance to capture frames from.
         port: TCP port to listen on (all interfaces).
-        crop_controller: Optional crop controller enabling the ``/crop`` and
-            ``/capture/full`` endpoints.
-        delete_detection: Optional callable that deletes a detection by id and
-            returns ``True`` if a record existed.  When omitted, ``DELETE``
-            requests are answered with 404.
+        deps: Optional detector dependencies enabling the crop, delete, settings,
+            and restart routes.  Routes whose dependency is absent answer 404.
 
     Returns:
         The running ``ThreadingHTTPServer``; call ``shutdown()`` to stop it.
     """
-    server = _ControlServer(
-        ("0.0.0.0", port), picam2, crop_controller, delete_detection
-    )
+    server = _ControlServer(("0.0.0.0", port), picam2, deps or ControlServerDeps())
     thread = threading.Thread(
         target=server.serve_forever, daemon=True, name="camera-server"
     )

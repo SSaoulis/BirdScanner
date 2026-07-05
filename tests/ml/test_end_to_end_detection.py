@@ -41,9 +41,10 @@ from .conftest import FakeDetection, ImageCase
 # is persisted verbatim as ``detection_confidence`` so we can assert on it.
 _DETECTION_CONF = 0.87
 
-# The pipeline only saves classifications above this confidence (see
-# ``classification_pipeline._SAVE_CONFIDENCE_THRESHOLD``); the fixture birds
-# classify at ~0.9, well clear of it.
+# The pipeline only saves classifications above this confidence (the default
+# ``PipelineContext.save_confidence_threshold`` /
+# ``classification_pipeline.DEFAULT_SAVE_CONFIDENCE_THRESHOLD``); the fixture
+# birds classify at ~0.9, well clear of it.
 _SAVE_THRESHOLD = 0.4
 
 

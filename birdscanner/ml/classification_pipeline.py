@@ -49,8 +49,10 @@ if TYPE_CHECKING:
 # Root directory for saved images; overridable via IMAGE_DIR environment variable.
 IMAGE_DIR = os.environ.get("IMAGE_DIR", "/home/stefan/Pictures/bird_detections")
 
-# Minimum classification confidence before a detection is saved/persisted.
-_SAVE_CONFIDENCE_THRESHOLD = 0.4
+# Default minimum classification confidence before a detection is saved. Used as
+# the initial value of ``PipelineContext.save_confidence_threshold``; the Settings
+# page can override it live (see ``detector/settings_controller.py``).
+DEFAULT_SAVE_CONFIDENCE_THRESHOLD = 0.4
 
 # Reasons a detection ends up with no video clip (persisted as ``no_video_reason``
 # so the UI can explain the greyed-out Video control). ``None`` means a clip exists.
@@ -147,6 +149,10 @@ class PipelineContext:
             recording actually began.
         video_frame_fn: Optional callable fed every clean frame for the pre-roll
             buffer.
+        save_confidence_threshold: Minimum classification confidence before a
+            detection is saved/persisted (mutated live by the Settings page).
+        ignore_species: Species (lower-cased) that are never saved even when
+            classified (mutated live by the Settings page).
     """
 
     classifier: Classifier
@@ -156,6 +162,8 @@ class PipelineContext:
     best_frame_selector: Optional[BestFrameSelector] = None
     record_fn: Optional[Callable[[str], bool]] = None
     video_frame_fn: Optional[Callable[[np.ndarray], None]] = None
+    save_confidence_threshold: float = DEFAULT_SAVE_CONFIDENCE_THRESHOLD
+    ignore_species: set[str] = field(default_factory=set)
 
     def __post_init__(self) -> None:
         """Fill in the module-level defaults for the tracker and classify callable."""
@@ -349,14 +357,26 @@ def process_single_detection_with_stable_tracks(
         still = _best_still(context, track, still)
         result = _classify_track(context, still, detection_id, track)
 
-    if (
-        is_bird
-        and result is not None
-        and result.species
-        and result.confidence
-        and result.confidence > _SAVE_CONFIDENCE_THRESHOLD
-    ):
+    if is_bird and result is not None and _should_persist(result, context):
         _persist_detection(context, still, detection, track, result)
+
+
+def _should_persist(result: Classification, context: PipelineContext) -> bool:
+    """Return whether a classification clears the save threshold and ignore list.
+
+    Args:
+        result: The classification to weigh.
+        context: Pipeline dependencies (holds the live save threshold + ignore
+            list).
+
+    Returns:
+        ``True`` when there is a confident, non-ignored species to persist.
+    """
+    if not result.species or not result.confidence:
+        return False
+    if result.confidence <= context.save_confidence_threshold:
+        return False
+    return result.species.lower() not in context.ignore_species
 
 
 def process_detections(

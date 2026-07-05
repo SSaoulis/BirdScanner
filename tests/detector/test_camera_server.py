@@ -13,6 +13,7 @@ import pytest
 
 from birdscanner.detector.camera_server import (
     DEFAULT_CAMERA_SERVER_PORT,
+    ControlServerDeps,
     camera_server_port,
     capture_jpeg,
     start_camera_server,
@@ -140,7 +141,9 @@ def deleting_server(request):
         return outcome
 
     server = start_camera_server(
-        _FakeCamera(_solid_frame()), port=0, delete_detection=_delete_callback
+        _FakeCamera(_solid_frame()),
+        port=0,
+        deps=ControlServerDeps(delete_detection=_delete_callback),
     )
     port = server.server_address[1]
     try:
@@ -254,7 +257,9 @@ def crop_server():
     """Start the server with a fake crop controller; yield (base_url, controller)."""
     controller = _FakeCropController()
     server = start_camera_server(
-        _FakeCamera(_solid_frame()), port=0, crop_controller=controller
+        _FakeCamera(_solid_frame()),
+        port=0,
+        deps=ControlServerDeps(crop_controller=controller),
     )
     port = server.server_address[1]
     try:
@@ -327,3 +332,101 @@ def test_post_crop_invalid_json_returns_400(crop_server) -> None:
     with pytest.raises(urllib.error.HTTPError) as exc_info:
         urllib.request.urlopen(request, timeout=5)
     assert exc_info.value.code == 400
+
+
+# ---------------------------------------------------------------------------
+# Settings + restart endpoints (/settings, /restart)
+# ---------------------------------------------------------------------------
+
+
+class _FakeSettingsController:
+    """Settings-controller stand-in recording updates the server makes."""
+
+    def __init__(self) -> None:
+        self.updates: list[dict] = []
+        self._state = {
+            "settings": {"detection_threshold": 0.55, "ignore_species": []},
+            "needs_restart": False,
+            "restart_fields": ["stability_seconds"],
+            "live_fields": ["detection_threshold"],
+        }
+
+    def get_state(self) -> dict:
+        return self._state
+
+    def update(self, updates: dict) -> dict:
+        if updates.get("invalid"):
+            raise ValueError("detection_threshold must be between 0 and 1")
+        self.updates.append(updates)
+        return self._state
+
+
+@pytest.fixture()
+def settings_server():
+    """Start the control server with a fake settings controller + restart cb."""
+    controller = _FakeSettingsController()
+    restarts: list[bool] = []
+    server = start_camera_server(
+        _FakeCamera(_solid_frame()),
+        port=0,
+        deps=ControlServerDeps(
+            settings_controller=controller, restart=lambda: restarts.append(True)
+        ),
+    )
+    port = server.server_address[1]
+    try:
+        yield f"http://127.0.0.1:{port}", controller, restarts
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_get_settings_returns_state(settings_server) -> None:
+    base_url, _, _ = settings_server
+    with urllib.request.urlopen(f"{base_url}/settings", timeout=5) as resp:
+        assert resp.status == 200
+        body = json.loads(resp.read())
+    assert body["needs_restart"] is False
+    assert "detection_threshold" in body["live_fields"]
+
+
+def test_post_settings_applies_update(settings_server) -> None:
+    base_url, controller, _ = settings_server
+    status, body = _post_json(f"{base_url}/settings", {"detection_threshold": 0.8})
+    assert status == 200
+    assert controller.updates == [{"detection_threshold": 0.8}]
+    assert body["needs_restart"] is False
+
+
+def test_post_settings_invalid_returns_400_json(settings_server) -> None:
+    base_url, _, _ = settings_server
+    with pytest.raises(urllib.error.HTTPError) as exc_info:
+        _post_json(f"{base_url}/settings", {"invalid": True})
+    assert exc_info.value.code == 400
+    body = json.loads(exc_info.value.read())
+    assert "between 0 and 1" in body["error"]
+
+
+@pytest.mark.parametrize("running_server", [_FakeCamera(_solid_frame())], indirect=True)
+def test_settings_routes_absent_without_controller(running_server) -> None:
+    base_url, _ = running_server
+    with pytest.raises(urllib.error.HTTPError) as exc_info:
+        urllib.request.urlopen(f"{base_url}/settings", timeout=5)
+    assert exc_info.value.code == 404
+
+
+def test_post_restart_invokes_callback(settings_server) -> None:
+    base_url, _, restarts = settings_server
+    status, body = _post_json(f"{base_url}/restart", {})
+    assert status == 202
+    assert body["status"] == "restarting"
+    assert restarts == [True]
+
+
+@pytest.mark.parametrize("running_server", [_FakeCamera(_solid_frame())], indirect=True)
+def test_restart_absent_without_callback(running_server) -> None:
+    base_url, _ = running_server
+    request = urllib.request.Request(f"{base_url}/restart", data=b"{}", method="POST")
+    with pytest.raises(urllib.error.HTTPError) as exc_info:
+        urllib.request.urlopen(request, timeout=5)
+    assert exc_info.value.code == 404
