@@ -5,8 +5,11 @@
 # the camera stack with "numpy.dtype size changed". onnxruntime 1.23.2 is the
 # version known to run against numpy 1.24.2 on this Pi.
 numpy==1.24.2
-# OpenCV that doesn't conflict with 1.24.2 numpy
-opencv-python-headless==4.7.0
+# NB: OpenCV is intentionally NOT pip-installed here. It comes from apt
+# (python3-opencv) in Dockerfile.detector so its C-ABI matches the apt-built
+# picamera2/simplejpeg stack. A pip opencv-python-headless would drag in a
+# conflicting numpy and shadow the apt copy, crashing the camera stack with
+# "numpy.dtype size changed". (It also has no ARM wheel for a bare 4.7.0 pin.)
 onnxruntime==1.23.2
 # Pinned exactly (not `>=`) so pip does not backtrack through sqlmodel/pydantic
 # releases on the Pi's slow link.
