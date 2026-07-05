@@ -29,12 +29,19 @@ COPY requirements.detector.txt .
 # read can time out; retry instead of failing the whole build.
 RUN pip install --no-cache-dir --break-system-packages --timeout 120 --retries 10 -r requirements.detector.txt
 
-# Copy the ONNX classifier model FIRST and on its own. It rarely changes, so
-# Docker caches it and code edits below never re-copy the ~30MB model. The
-# detector resolves it package-relative via birdscanner/detector/paths.py
-# (MODEL_DIR defaults to /app/assets/models), so it must land there. Copy ONLY
-# this one model — other files in assets/models/ are training/conversion scratch.
+# Copy the ONNX models FIRST and on their own. They rarely change, so Docker
+# caches them and code edits below never re-copy these large binaries. The
+# detector resolves them package-relative via birdscanner/detector/paths.py
+# (MODEL_DIR defaults to /app/assets/models), so they must land there. Copy ONLY
+# the models the runtime loads — other files in assets/models/ are
+# training/conversion scratch.
+#   - convnext_v2_tiny_int8.onnx: the ConvNeXt V2 Tiny species classifier (~30MB).
+#   - BirdNET+_Geomodel...FP32.onnx: the BirdNET geomodel that builds the
+#     spatio-temporal species prior at startup (birdscanner/detector/geo_priors.py).
+#     Without it the detector logs "Could not build geo prior (... NO_SUCHFILE ...)"
+#     and runs on without a location prior.
 COPY assets/models/convnext_v2_tiny_int8.onnx ./assets/models/
+COPY assets/models/BirdNET+_Geomodel_V3.0.3_Global_12K_FP32.onnx ./assets/models/
 
 # Small data files + source last: editing a .py file only invalidates these tiny
 # layers, so rebuilds after a code change are seconds instead of minutes. The

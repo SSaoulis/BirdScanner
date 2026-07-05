@@ -14,7 +14,8 @@ tools/
 .claude/
 .agents/
 # The detector/api Dockerfiles COPY only the specific files they need out of
-# assets/models/ (the int8 ONNX classifier + its class map), so any training/
-# conversion scratch living alongside them is never added to an image.
+# assets/models/ (the int8 ONNX classifier + its class map, plus the BirdNET
+# geomodel ONNX for the detector), so any training/conversion scratch living
+# alongside them is never added to an image.
 *.egg-info/
 dist/
