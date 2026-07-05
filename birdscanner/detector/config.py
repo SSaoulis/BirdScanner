@@ -77,6 +77,10 @@ class Config:
             requirement to a single stable frame.
         debug: Enable DEBUG-level logging for track lifecycle events.
         preview: Show the camera preview window.
+        latitude: Deployment latitude in degrees, used to compute the geomodel
+            spatio-temporal prior; ``None`` until a location is configured, in
+            which case the prior is not built.
+        longitude: Deployment longitude in degrees (see ``latitude``).
         intrinsics: Network-intrinsics overrides (see :class:`IntrinsicsConfig`).
         video: Per-detection clip settings (see :class:`VideoConfig`).
     """
@@ -96,6 +100,8 @@ class Config:
     object_duration_threshold: float = 0.1
     debug: bool = True
     preview: bool = False
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
     intrinsics: IntrinsicsConfig = field(default_factory=IntrinsicsConfig)
     video: VideoConfig = field(default_factory=VideoConfig)
 

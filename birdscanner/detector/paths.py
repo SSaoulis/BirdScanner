@@ -45,3 +45,18 @@ def class_to_idx_path() -> Path:
 def classifier_model_path() -> Path:
     """Return the path to the quantized ConvNeXt V2 Tiny ONNX classifier model."""
     return model_dir() / "convnext_v2_tiny_int8.onnx"
+
+
+def geomodel_model_path() -> Path:
+    """Return the path to the BirdNET geomodel (spatio-temporal prior) ONNX model."""
+    return model_dir() / "BirdNET+_Geomodel_V3.0.3_Global_12K_FP32.onnx"
+
+
+def geomodel_labels_path() -> Path:
+    """Return the path to the geomodel's tab-separated species-label file."""
+    return assets_dir() / "labels" / "BirdNET+_Geomodel_V3.0.3_Global_12K_Labels.txt"
+
+
+def geomodel_map_path() -> Path:
+    """Return the path to the curated ``{classifier_label: geomodel_common_name}`` crosswalk."""
+    return assets_dir() / "labels" / "geomodel_classifier_map.json"

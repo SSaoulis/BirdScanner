@@ -5,6 +5,7 @@ priors, and maps the geomodel's ~12k species labels onto the classifier's class
 labels so the two can be combined (see :func:`build_name_mapping`).
 """
 
+import json
 import re
 import unicodedata
 
@@ -149,6 +150,92 @@ def build_name_mapping(
 
     unmatched = sorted(label for label in unmatched if label not in mapping)
     return mapping, unmatched
+
+
+def load_name_mapping(path: str) -> dict[str, str]:
+    """Load the curated ``{classifier_label: geomodel_common_name}`` crosswalk.
+
+    The file is the flat, sorted JSON object produced by
+    ``tools/build_geomodel_map.py`` (auto-matches + hand-curated synonyms/proxies).
+
+    Parameters
+    - path: path to ``geomodel_classifier_map.json``.
+
+    Returns
+    - the ``classifier_label -> geomodel_common_name`` mapping.
+    """
+    with open(path, encoding="utf-8") as f:
+        mapping: dict[str, str] = json.load(f)
+    return mapping
+
+
+def project_to_classifier(
+    predictions: np.ndarray,
+    geomodel_labels: list[GeomodelLabel],
+    mapping: dict[str, str],
+) -> dict[str, list[float]]:
+    """Project the geomodel's per-week priors onto the classifier's classes.
+
+    The geomodel emits a ``(NUM_WEEKS, n_geomodel_species)`` array whose columns are
+    in geomodel label order. For each ``classifier_label -> geomodel_common_name``
+    pair in ``mapping`` this slices out that species' column, producing the 48-week
+    occurrence prior for the classifier class. Because the mapping is many-to-one,
+    several classifier classes can borrow the same geomodel column (e.g. after an
+    eBird lump). Classifier classes whose mapped geomodel name is absent from the
+    label set are dropped (their prior is simply unavailable).
+
+    Parameters
+    - predictions: geomodel output of shape ``(NUM_WEEKS, n_geomodel_species)``.
+    - geomodel_labels: rows from :func:`load_labels`; index order = column order.
+    - mapping: ``classifier_label -> geomodel_common_name`` (see
+      :func:`load_name_mapping` / :func:`build_name_mapping`).
+
+    Returns
+    - ``{classifier_label: [prob_week_1, ..., prob_week_NUM_WEEKS]}`` for every
+      classifier class whose geomodel species is present in ``predictions``.
+    """
+    # First occurrence wins on a duplicate common name, matching build_name_mapping.
+    index_by_common: dict[str, int] = {}
+    for idx, row in enumerate(geomodel_labels):
+        index_by_common.setdefault(row["common"], idx)
+
+    priors: dict[str, list[float]] = {}
+    for classifier_label, geo_common in mapping.items():
+        column = index_by_common.get(geo_common)
+        if column is None:
+            continue
+        priors[classifier_label] = predictions[:, column].astype(float).tolist()
+    return priors
+
+
+def compute_classifier_priors(
+    model_path: str,
+    labels_path: str,
+    mapping_path: str,
+    lat: float,
+    lon: float,
+) -> dict[str, list[float]]:
+    """Compute the classifier-aligned 48-week occurrence prior for a location.
+
+    Ties together the geomodel inference and the label crosswalk: runs the geomodel
+    over all weeks for ``(lat, lon)``, loads the geomodel labels and the curated
+    mapping, and projects the result onto the classifier's classes. This is the only
+    entry point here that loads the ONNX model / touches onnxruntime.
+
+    Parameters
+    - model_path: path to the geomodel ONNX file.
+    - labels_path: path to the geomodel ``*_Labels.txt`` file.
+    - mapping_path: path to ``geomodel_classifier_map.json``.
+    - lat: latitude of the location, in degrees.
+    - lon: longitude of the location, in degrees.
+
+    Returns
+    - ``{classifier_label: [48 floats in [0, 1]]}`` for every mappable classifier class.
+    """
+    predictions = generate_grid_prediction(model_path, lat, lon)
+    geomodel_labels = load_labels(labels_path)
+    mapping = load_name_mapping(mapping_path)
+    return project_to_classifier(predictions, geomodel_labels, mapping)
 
 
 def bayesian_update(prior: np.ndarray, likelihood: np.ndarray) -> np.ndarray:
