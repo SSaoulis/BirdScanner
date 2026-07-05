@@ -101,6 +101,41 @@ export class ApiError extends Error {
   }
 }
 
+/** The user-editable detector settings (see birdscanner/detector/settings.py). */
+export interface Settings {
+  /** Minimum YOLO object-detection confidence to keep a detection (0–1). */
+  detection_threshold: number;
+  /** Minimum species-classification confidence before a detection is saved (0–1). */
+  classification_threshold: number;
+  /** Species never saved even when classified (matched case-insensitively). */
+  ignore_species: string[];
+  /** Seconds a track must be stable before classification fires. */
+  stability_seconds: number;
+  /** Root directory saved images/clips are written to. */
+  image_dir: string;
+  /** Whether to save a short mp4 clip per detection. */
+  video_save: boolean;
+  /** Seconds of buffered footage prepended to a clip. */
+  video_pre_roll_seconds: number;
+  /** Seconds recorded after a clip triggers. */
+  video_post_roll_seconds: number;
+  /** Run classification on a background thread. */
+  multithread: boolean;
+  /** Enable DEBUG-level tracking logs. */
+  debug: boolean;
+}
+
+/** Settings plus the metadata the UI needs to badge/handle restart-only fields. */
+export interface SettingsState {
+  settings: Settings;
+  /** True when a restart-only field changed since the detector last booted. */
+  needs_restart: boolean;
+  /** Field names that only take effect after a detector restart. */
+  restart_fields: string[];
+  /** Field names applied live (take effect immediately). */
+  live_fields: string[];
+}
+
 export interface DetectionListParams {
   species?: string;
   from?: string;
@@ -151,7 +186,20 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(`API ${path} → ${res.status} ${res.statusText}`);
+  if (!res.ok) {
+    // Surface the API's error detail (e.g. a validation message) when present,
+    // so callers can show why a settings update was rejected. FastAPI wraps it
+    // as {"detail": "..."}.
+    const raw = await res.text().catch(() => "");
+    let message = raw;
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed.detail === "string") message = parsed.detail;
+    } catch {
+      /* not JSON — keep the raw body */
+    }
+    throw new ApiError(res.status, message || `API ${path} → ${res.status} ${res.statusText}`);
+  }
   return res.json() as Promise<T>;
 }
 
@@ -219,6 +267,23 @@ export const api = {
     /** Apply a new crop region (a normalized box, or `{ reset: true }`). */
     setCrop: (body: NormalizedBox | { reset: true }): Promise<CropState> =>
       postJson<CropState>("/api/camera/crop", body),
+  },
+
+  settings: {
+    /** Fetch the detector's current settings + restart metadata. */
+    get: (): Promise<SettingsState> => apiFetch<SettingsState>("/api/settings"),
+
+    /**
+     * Apply a partial settings update. Rejects with an ApiError (status 400)
+     * carrying the validation message when a value is invalid, or 503 when the
+     * detector is unreachable.
+     */
+    update: (updates: Partial<Settings>): Promise<SettingsState> =>
+      postJson<SettingsState>("/api/settings", updates),
+
+    /** Ask the detector to restart so restart-only settings take effect. */
+    restart: (): Promise<{ status: string }> =>
+      postJson<{ status: string }>("/api/settings/restart", {}),
   },
 };
 

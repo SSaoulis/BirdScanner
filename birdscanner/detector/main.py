@@ -9,6 +9,8 @@ cohesive modules.
 """
 
 import logging
+import os
+import threading
 from pathlib import Path
 from typing import Any, Optional
 
@@ -28,9 +30,19 @@ from birdscanner.detector.camera import (
     prepare_intrinsics,
     wait_for_camera,
 )
-from birdscanner.detector.camera_server import camera_server_port, start_camera_server
+from birdscanner.detector.camera_server import (
+    ControlServerDeps,
+    camera_server_port,
+    start_camera_server,
+)
 from birdscanner.detector.config import config as app_config
 from birdscanner.detector.gating import Gating, build_gating, build_manager
+from birdscanner.detector.settings import load_settings, settings_config_path
+from birdscanner.detector.settings_controller import (
+    SettingsController,
+    apply_settings_to_config,
+    apply_settings_to_context,
+)
 from birdscanner.detector.track_logging import configure_logging
 from birdscanner.detector.paths import (
     class_to_idx_path,
@@ -42,18 +54,41 @@ from birdscanner.db.deleter import delete_detection
 
 logger = logging.getLogger("tracking")
 
+# Grace period before the requested restart exits the process, so the HTTP
+# response to the restart request is flushed first.
+_RESTART_DELAY_SECONDS = 0.5
 
-def _start_control_server(camera: Camera, engine: Any) -> Optional[Any]:
-    """Start the auxiliary control server (snapshots + crop + detection deletes).
+
+def _schedule_restart() -> None:
+    """Exit the process shortly so Docker's restart policy relaunches it.
+
+    The Settings page's "Apply & restart" button hits this to pick up
+    restart-only settings.  A hard ``os._exit`` from a timer thread is used
+    (rather than ``sys.exit``, which only unwinds the calling thread) so the
+    container actually restarts under the ``restart: unless-stopped`` policy.
+    Outside Docker the process simply exits and must be started again.
+    """
+    logger.info("Restart requested; exiting in %.1fs.", _RESTART_DELAY_SECONDS)
+    threading.Timer(
+        _RESTART_DELAY_SECONDS,
+        lambda: os._exit(0),  # pylint: disable=protected-access
+    ).start()
+
+
+def _start_control_server(
+    camera: Camera, engine: Any, settings_controller: SettingsController
+) -> Optional[Any]:
+    """Start the auxiliary control server (snapshots + crop + deletes + settings).
 
     The read-only API proxies here to surface a live test image, the crop editor,
-    and detection deletes (the detector owns the camera + read-write data volume
-    exclusively). If the port is already in use, log a warning and continue
-    without it rather than killing the detection pipeline.
+    detection deletes, and the Settings page (the detector owns the camera +
+    read-write data volume exclusively). If the port is already in use, log a
+    warning and continue without it rather than killing the detection pipeline.
 
     Args:
         camera: The started camera bundle.
         engine: The database engine (for the delete handler).
+        settings_controller: Applies + persists runtime settings changes.
 
     Returns:
         The running server, or ``None`` when the port could not be bound.
@@ -65,14 +100,15 @@ def _start_control_server(camera: Camera, engine: Any) -> Optional[Any]:
         """Delete a detection by id; returns True if a record existed."""
         return delete_detection(delete_session_factory, image_root, detection_id)
 
+    deps = ControlServerDeps(
+        crop_controller=camera.crop_controller,
+        delete_detection=handle_delete,
+        settings_controller=settings_controller,
+        restart=_schedule_restart,
+    )
     snapshot_port = camera_server_port()
     try:
-        return start_camera_server(
-            camera.picam2,
-            snapshot_port,
-            crop_controller=camera.crop_controller,
-            delete_detection=handle_delete,
-        )
+        return start_camera_server(camera.picam2, snapshot_port, deps=deps)
     except OSError as exc:
         logger.warning(
             "Camera snapshot server could not bind port %d (%s); continuing "
@@ -137,6 +173,11 @@ def _shutdown(
 
 def main() -> None:
     """Bird detection and classification application entry point."""
+    # Load the persisted settings overlay and push it onto the static config
+    # *before* anything is wired, so restart-only settings shape the build.
+    settings_path = settings_config_path()
+    settings = load_settings(settings_path)
+    apply_settings_to_config(settings)
     configure_logging(app_config.debug)
 
     # Create the database schema up front (the detector owns all DB writes).
@@ -155,9 +196,12 @@ def main() -> None:
     # The detector owns all DB writes; the API mounts the same database read-only.
     detection_writer = DetectionWriter(make_session_factory(engine))
     manager = build_manager(classifier, gating, detection_writer)
+    # The save-side classification settings live on the pipeline context.
+    apply_settings_to_context(settings, manager.context)
+    settings_controller = SettingsController(settings_path, settings, manager.context)
 
     camera = build_camera(imx500, intrinsics)
-    control_server = _start_control_server(camera, engine)
+    control_server = _start_control_server(camera, engine, settings_controller)
 
     try:
         _run_capture_loop(camera, manager, gating)

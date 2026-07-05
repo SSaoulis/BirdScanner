@@ -25,6 +25,7 @@ from birdscanner.api.routers import (
     images,
     network,
     reference,
+    settings,
     species,
     system,
 )
@@ -85,6 +86,7 @@ app.include_router(network.router)
 app.include_router(species.router)
 app.include_router(reference.router)
 app.include_router(camera.router)
+app.include_router(settings.router)
 
 # Serve the React frontend if the build output exists.  SPAStaticFiles falls
 # back to index.html so client-side routes (e.g. /history) load on direct
