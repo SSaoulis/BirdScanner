@@ -1,0 +1,10 @@
+# Tests
+pytest>=7.0.0
+pytest-cov>=4.0.0
+
+# Linting
+pylint>=4.0.0
+black==26.5.1
+
+# Type checking
+mypy>=2.0.0
