@@ -23,21 +23,16 @@ ignored-modules=libcamera,
 
 [MESSAGES CONTROL]
 disable=too-few-public-methods,
-        too-many-locals,
-        too-many-branches,
-        too-many-statements,
-        too-many-positional-arguments,
         import-outside-toplevel,
         broad-exception-caught,
         global-statement,
-        duplicate-code
 
 [FORMAT]
-max-line-length=120
+max-line-length=100
 
 [DESIGN]
-max-args=8
-max-attributes=18
+max-args=5
+max-attributes=15
 
 [TYPECHECK]
 # cv2's members are populated dynamically at runtime, so pylint can't see them.
