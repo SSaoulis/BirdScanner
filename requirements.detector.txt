@@ -5,6 +5,8 @@
 # the camera stack with "numpy.dtype size changed". onnxruntime 1.23.2 is the
 # version known to run against numpy 1.24.2 on this Pi.
 numpy==1.24.2
+# OpenCV that doesn't conflict with 1.24.2 numpy
+opencv-python-headless==4.7.0
 onnxruntime==1.23.2
 # Pinned exactly (not `>=`) so pip does not backtrack through sqlmodel/pydantic
 # releases on the Pi's slow link.
