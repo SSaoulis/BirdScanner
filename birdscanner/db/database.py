@@ -73,6 +73,7 @@ def make_engine(db_path: str | None = None, *, read_only: bool = False):
 _DETECTIONS_ADDED_COLUMNS: dict[str, str] = {
     "detection_confidence": "FLOAT",
     "video_path": "TEXT",
+    "no_video_reason": "TEXT",
     "box_x": "FLOAT",
     "box_y": "FLOAT",
     "box_w": "FLOAT",

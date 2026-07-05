@@ -20,6 +20,22 @@ interface LightboxProps {
   onDelete: (id: number) => void;
 }
 
+/**
+ * Human-readable explanation for why a sighting has no video clip, shown as the
+ * tooltip on the disabled Video toggle. Mirrors the `no_video_reason` values the
+ * detector persists (see `birdscanner/ml/classification_pipeline.py`).
+ */
+function noVideoReasonText(reason: string | null): string {
+  switch (reason) {
+    case "recorder_busy":
+      return "No clip — the recorder was busy saving another sighting's video. Only one clip records at a time to spare the Pi's CPU, so this sighting overlapped another recording.";
+    case "disabled":
+      return "No clip — video recording is turned off.";
+    default:
+      return "No clip available for this sighting.";
+  }
+}
+
 /** Status of the reference fetch for the current species. */
 type ReferenceState =
   | { kind: "loading" }
@@ -46,7 +62,8 @@ export function Lightbox({ detection, onClose, onPrev, onNext, onDelete }: Light
   const thumbUrl = api.images.thumbnailUrl(id);
   const videoUrl = api.images.videoUrl(id);
   // A clip exists once video_path is set; legacy/disabled/still-encoding rows are
-  // null, in which case the Photo/Video toggle is hidden (image-only).
+  // null. The Photo/Video toggle is always shown, but the Video button is
+  // disabled (with a reason tooltip) when no clip is available.
   const hasVideo = detection.video_path !== null;
   // Which media the main pane shows. Reset to the still whenever the detection
   // changes so navigating to a clip-less sighting never lands on a blank player.
@@ -262,28 +279,42 @@ export function Lightbox({ detection, onClose, onPrev, onNext, onDelete }: Light
               </span>
             )}
             <span className="text-bark">{timeAgo(timestamp)}</span>
-            {hasVideo && (
-              <div
-                className="flex overflow-hidden rounded-md border border-line"
-                role="group"
-                aria-label="Choose media"
-              >
-                {(["photo", "video"] as const).map((m) => (
+            <div
+              className="flex overflow-hidden rounded-md border border-line"
+              role="group"
+              aria-label="Choose media"
+            >
+              {(["photo", "video"] as const).map((m) => {
+                // The Video button stays visible even without a clip, but is
+                // disabled and explains why on hover. aria-disabled (not the
+                // native `disabled` attribute) keeps the title tooltip firing —
+                // browsers suppress hover events on natively-disabled buttons.
+                const unavailable = m === "video" && !hasVideo;
+                return (
                   <button
                     key={m}
                     className={`px-3 py-1.5 text-xs font-medium capitalize transition-colors ${
                       mode === m
                         ? "bg-gold text-card"
                         : "bg-paper text-ink hover:bg-card"
-                    }`}
-                    onClick={(e) => { e.stopPropagation(); setMode(m); }}
+                    } ${unavailable ? "cursor-not-allowed opacity-40 hover:bg-paper" : ""}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (!unavailable) setMode(m);
+                    }}
                     aria-pressed={mode === m}
+                    aria-disabled={unavailable}
+                    title={
+                      unavailable
+                        ? noVideoReasonText(detection.no_video_reason)
+                        : undefined
+                    }
                   >
                     {m}
                   </button>
-                ))}
-              </div>
-            )}
+                );
+              })}
+            </div>
             {mode === "photo" && hasBox && (
               <button
                 className={`ml-auto rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${

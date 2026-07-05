@@ -28,6 +28,7 @@ _EXPECTED_COLUMNS = {
     "image_path",
     "thumbnail_path",
     "video_path",
+    "no_video_reason",
     "track_id",
     "stable_frames",
     "duration_sec",
@@ -50,7 +51,7 @@ def test_init_db_creates_table_with_expected_columns(engine):
 
 
 def test_init_db_backfills_added_columns_on_legacy_table():
-    """init_db adds detection_confidence + video_path + box_* to a pre-existing table."""
+    """init_db adds detection_confidence + video_path + no_video_reason + box_* to a table."""
     engine = create_engine(
         "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
     )
@@ -70,6 +71,7 @@ def test_init_db_backfills_added_columns_on_legacy_table():
     assert {
         "detection_confidence",
         "video_path",
+        "no_video_reason",
         "box_x",
         "box_y",
         "box_w",
