@@ -45,6 +45,24 @@ class Detection:
         self.box = box
 
 
+def _decode_boxes(boxes: np.ndarray, intrinsics, input_h: int):
+    """Normalise and re-order the raw box tensor into per-detection tuples.
+
+    Args:
+        boxes: The raw ``(N, 4)`` box tensor from the inference output.
+        intrinsics: Network intrinsics with bbox normalization and order settings.
+        input_h: The network input height (for coordinate normalization).
+
+    Returns:
+        An iterator of per-detection ``(y0, x0, y1, x1)`` box tuples.
+    """
+    if intrinsics.bbox_normalization:
+        boxes = boxes / input_h
+    if intrinsics.bbox_order == "xy":
+        boxes = boxes[:, [1, 0, 3, 2]]
+    return zip(*np.array_split(boxes, 4, axis=1))
+
+
 def parse_detections(
     metadata: dict,
     imx500,
@@ -70,25 +88,13 @@ def parse_detections(
     """
     global last_detections
 
-    bbox_normalization = intrinsics.bbox_normalization
-    bbox_order = intrinsics.bbox_order
-
     np_outputs = imx500.get_outputs(metadata, add_batch=True)
-    _, input_h = imx500.get_input_size()
-
     if np_outputs is None:
         return last_detections
 
-    boxes, scores, classes = np_outputs[0][0], np_outputs[1][0], np_outputs[2][0]
-
-    if bbox_normalization:
-        boxes = boxes / input_h
-
-    if bbox_order == "xy":
-        boxes = boxes[:, [1, 0, 3, 2]]
-
-    boxes = np.array_split(boxes, 4, axis=1)
-    boxes = zip(*boxes)
+    _, input_h = imx500.get_input_size()
+    boxes = _decode_boxes(np_outputs[0][0], intrinsics, input_h)
+    scores, classes = np_outputs[1][0], np_outputs[2][0]
 
     last_detections = []
     for box, score, category in zip(boxes, scores, classes):

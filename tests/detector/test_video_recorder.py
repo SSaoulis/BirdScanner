@@ -62,7 +62,9 @@ def test_add_frame_without_trigger_does_not_encode(monkeypatch, frame_factory):
     monkeypatch.setattr(
         VideoRecorder,
         "_encode",
-        lambda self, frames, dest: calls.append(dest),  # pylint: disable=unused-argument
+        lambda self, frames, dest: calls.append(
+            dest
+        ),  # pylint: disable=unused-argument
     )
     rec = VideoRecorder(fps=10, pre_roll_seconds=0.5, post_roll_seconds=1.0)
     for i in range(5):

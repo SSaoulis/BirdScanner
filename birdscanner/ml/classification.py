@@ -14,9 +14,12 @@ class ONNXClassifier:
     Lightweight ONNX Runtime classifier wrapper.
 
     Expected input data
-    - Preprocessed batch as a numpy.ndarray with shape (N, C, H, W), dtype float32 (NCHW).
-    - Channel order must be RGB, values already normalized/rescaled as required by the model.
-    - No preprocessing is performed here; pass data that already matches the model's input size, e.g. (1, 3, 384, 384).
+    - Preprocessed batch as a numpy.ndarray with shape (N, C, H, W), dtype
+      float32 (NCHW).
+    - Channel order must be RGB, values already normalized/rescaled as required
+      by the model.
+    - No preprocessing is performed here; pass data that already matches the
+      model's input size, e.g. (1, 3, 384, 384).
     """
 
     def __init__(self, model_path):
@@ -28,7 +31,8 @@ class ONNXClassifier:
 
         Expected input
         - data: numpy.ndarray with shape (N, C, H, W) and dtype float32 (NCHW).
-        - Values must already be preprocessed (resize/crop/normalize) to match the model's input contract.
+        - Values must already be preprocessed (resize/crop/normalize) to match
+          the model's input contract.
 
         Returns
         - numpy.ndarray with model outputs. For classifiers this is typically (N, num_classes).
@@ -48,14 +52,17 @@ class Classifier:
     Higher-level wrapper that can apply optional preprocessing before ONNX inference.
 
     Expected input data
-    - If preprocessing is None: same as ONNXClassifier, a numpy.ndarray of shape (N, C, H, W), float32.
-    - If preprocessing is set: a raw image or array that the preprocessing callable accepts, for example
-      a PIL.Image.Image or numpy array shaped (H, W, 3/4) uint8 or float in [0, 1]. The preprocessing
-      callable must return a numpy.ndarray (N, C, H, W) float32 batch.
+    - If preprocessing is None: same as ONNXClassifier, a numpy.ndarray of shape
+      (N, C, H, W), float32.
+    - If preprocessing is set: a raw image or array that the preprocessing
+      callable accepts, for example a PIL.Image.Image or numpy array shaped
+      (H, W, 3/4) uint8 or float in [0, 1]. The preprocessing callable must
+      return a numpy.ndarray (N, C, H, W) float32 batch.
 
     Parameters
     - model: an object exposing predict(NCHW_float32) -> np.ndarray
-    - class_index_path: optional path to a JSON mapping of {class_name: index}. If provided, it enables classify().
+    - class_index_path: optional path to a JSON mapping of {class_name: index}.
+      If provided, it enables classify().
     - preprocessing: optional callable to convert raw inputs to NCHW float32.
     """
 
@@ -81,7 +88,8 @@ class Classifier:
 
         Expected input
         - data: numpy.ndarray with shape (N, C, H, W) and dtype float32 (NCHW).
-        - Values must already be preprocessed (resize/crop/normalize) to match the model's input contract.
+        - Values must already be preprocessed (resize/crop/normalize) to match
+          the model's input contract.
 
         Returns
         - numpy.ndarray with model outputs. For classifiers this is typically (N, num_classes).
@@ -102,14 +110,17 @@ class Classifier:
         Classify a single sample and return the predicted class name and confidence.
 
         Expected input
-        - Same as predict(): either preprocessed NCHW float32 or raw input if a preprocessing callable was provided.
+        - Same as predict(): either preprocessed NCHW float32 or raw input if a
+          preprocessing callable was provided.
 
         Returns
-        - (class_name, confidence) where confidence is the predicted probability for the top class.
+        - (class_name, confidence) where confidence is the predicted probability
+          for the top class.
         """
         if self.idx_to_class is None:
             raise ValueError(
-                "No class index mapping provided. Initialize Classifier with class_index_path to use classify()."
+                "No class index mapping provided. Initialize Classifier with "
+                "class_index_path to use classify()."
             )
         probs = self.predict(data)
         # handle batch, pick first sample
@@ -127,7 +138,8 @@ class Classifier:
 # - rgb_values: {"mean": list[float], "std": list[float]}
 # - center_crop: float (default 1.0)
 # - simple_crop: bool (default False)
-# The returned callable accepts a PIL.Image.Image or numpy array (H,W,3/4) and returns numpy array (1,3,H,W) float32.
+# The returned callable accepts a PIL.Image.Image or numpy array (H,W,3/4) and
+# returns numpy array (1,3,H,W) float32.
 
 
 def build_preprocessing(config: Dict[str, Any]) -> Callable[[Any], np.ndarray]:
@@ -213,17 +225,3 @@ def build_preprocessing(config: Dict[str, Any]) -> Callable[[Any], np.ndarray]:
         return nchw
 
     return preprocessing_fn
-
-
-def setup_classifier(model_path: str, class_to_idx_path: str):
-    """Initialize the ONNX classifier with preprocessing."""
-    onnx_model = ONNXClassifier(str(model_path))
-    preprocessing = build_preprocessing(
-        {
-            "size": (384, 384),
-            "rgb_values": {"mean": [0.485, 0.456, 0.406], "std": [0.229, 0.224, 0.225]},
-            "center_crop": 1.0,
-            "simple_crop": False,
-        }
-    )
-    return Classifier(onnx_model, class_to_idx_path, preprocessing=preprocessing)

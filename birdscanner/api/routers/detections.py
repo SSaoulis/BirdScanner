@@ -21,21 +21,67 @@ _DEFAULT_DETECTOR_URL = "http://detector:8000"
 _DELETE_TIMEOUT_SEC = 10.0
 
 
+class DetectionFilters:
+    """Query-parameter filters for the detections list endpoint.
+
+    Grouping the filters into one dependency keeps the endpoint signature short
+    and gives the filter-to-SQL translation a single home (:meth:`apply`).
+    """
+
+    def __init__(
+        self,
+        species: Optional[str] = Query(
+            default=None, description="Filter by species name"
+        ),
+        from_: Optional[datetime] = Query(
+            default=None, alias="from", description="Earliest timestamp (inclusive)"
+        ),
+        to: Optional[datetime] = Query(
+            default=None, description="Latest timestamp (inclusive)"
+        ),
+        min_confidence: Optional[float] = Query(
+            default=None,
+            ge=0.0,
+            le=1.0,
+            description="Only return detections with confidence at or above this value (0–1)",
+        ),
+    ) -> None:
+        """Capture the request's filter query parameters.
+
+        Args:
+            species: Optional species-name filter.
+            from_: Optional inclusive earliest timestamp (``from`` query alias).
+            to: Optional inclusive latest timestamp.
+            min_confidence: Optional 0–1 floor on the classification confidence.
+        """
+        self.species = species
+        self.from_ = from_
+        self.to = to
+        self.min_confidence = min_confidence
+
+    def apply(self, query):
+        """Return ``query`` narrowed by whichever filters were supplied.
+
+        Args:
+            query: The base ``select(DetectionRecord)`` statement.
+
+        Returns:
+            The statement with a ``where`` clause per supplied filter.
+        """
+        if self.species is not None:
+            query = query.where(DetectionRecord.species == self.species)
+        if self.from_ is not None:
+            query = query.where(DetectionRecord.timestamp >= self.from_)
+        if self.to is not None:
+            query = query.where(DetectionRecord.timestamp <= self.to)
+        if self.min_confidence is not None:
+            query = query.where(DetectionRecord.confidence >= self.min_confidence)
+        return query
+
+
 @router.get("", response_model=List[DetectionRecord])
 def list_detections(
-    species: Optional[str] = Query(default=None, description="Filter by species name"),
-    from_: Optional[datetime] = Query(
-        default=None, alias="from", description="Earliest timestamp (inclusive)"
-    ),
-    to: Optional[datetime] = Query(
-        default=None, description="Latest timestamp (inclusive)"
-    ),
-    min_confidence: Optional[float] = Query(
-        default=None,
-        ge=0.0,
-        le=1.0,
-        description="Only return detections with confidence at or above this value (0–1)",
-    ),
+    filters: DetectionFilters = Depends(),
     limit: int = Query(default=50, ge=1, le=500, description="Max records to return"),
     offset: int = Query(default=0, ge=0, description="Number of records to skip"),
     session: Session = Depends(get_session),
@@ -43,11 +89,7 @@ def list_detections(
     """Return a paginated, optionally filtered list of detection records.
 
     Args:
-        species: If provided, only return detections for this species.
-        from_: If provided, only return detections at or after this timestamp.
-        to: If provided, only return detections at or before this timestamp.
-        min_confidence: If provided, only return detections whose confidence is
-            at or above this value (0–1).
+        filters: Injected filter query parameters (see :class:`DetectionFilters`).
         limit: Maximum number of records to return (1–500, default 50).
         offset: Number of records to skip for pagination.
         session: Injected database session.
@@ -56,15 +98,7 @@ def list_detections(
         List of ``DetectionRecord`` objects ordered by timestamp descending,
         with ``id`` descending as a tiebreaker for a deterministic page order.
     """
-    query = select(DetectionRecord)
-    if species is not None:
-        query = query.where(DetectionRecord.species == species)
-    if from_ is not None:
-        query = query.where(DetectionRecord.timestamp >= from_)
-    if to is not None:
-        query = query.where(DetectionRecord.timestamp <= to)
-    if min_confidence is not None:
-        query = query.where(DetectionRecord.confidence >= min_confidence)
+    query = filters.apply(select(DetectionRecord))
     # Order by timestamp, then id, so rows with identical timestamps keep a
     # stable order across paginated requests. Without the id tiebreaker SQLite
     # may return tied rows in a different order per query, which makes

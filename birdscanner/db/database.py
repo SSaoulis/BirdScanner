@@ -20,10 +20,12 @@ from sqlalchemy import inspect, text
 from sqlmodel import Session, SQLModel, create_engine
 
 # Imported for its side effect: importing the model registers it on SQLModel's
-# metadata so ``init_db`` can create the table.
-from birdscanner.db.models import (
-    DetectionRecord,
-)  # noqa: F401  # pylint: disable=unused-import
+# metadata so ``init_db`` can create the table. The block disable survives black
+# re-wrapping the import (a line-level disable would drift off the anchor line).
+# pylint: disable=unused-import
+from birdscanner.db.models import DetectionRecord  # noqa: F401
+
+# pylint: enable=unused-import
 
 _DEFAULT_DB_PATH = "detections.db"
 

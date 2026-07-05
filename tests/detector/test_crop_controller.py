@@ -11,10 +11,11 @@ import pytest
 from birdscanner.detector.crop import (
     SENSOR_H,
     SENSOR_W,
+    SensorDimensions,
     default_crop_region,
     main_stream_size_for_crop,
 )
-from birdscanner.detector.crop_controller import CropController
+from birdscanner.detector.crop_controller import CropController, CropControllerConfig
 
 
 class _FakeRequest:
@@ -74,12 +75,13 @@ def _controller(tmp_path, cam, region=None):
     main_size = main_stream_size_for_crop(region.w, region.h)
     return CropController(
         cam,
-        region,
-        main_size,
-        config_factory=lambda main, scaler: ("config", main, scaler),
-        config_path=str(tmp_path / "crop.json"),
-        sensor_w=SENSOR_W,
-        sensor_h=SENSOR_H,
+        CropControllerConfig(
+            region=region,
+            main_size=main_size,
+            config_factory=lambda main, scaler: ("config", main, scaler),
+            config_path=str(tmp_path / "crop.json"),
+            sensor=SensorDimensions(SENSOR_W, SENSOR_H),
+        ),
     )
 
 

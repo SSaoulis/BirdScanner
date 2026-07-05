@@ -7,7 +7,9 @@ and assert the proxying + status relaying, using the shared ``fake_httpx_respons
 
 
 class TestCamera:
-    def test_snapshot_proxies_detector_jpeg(self, client, monkeypatch, fake_httpx_response):
+    def test_snapshot_proxies_detector_jpeg(
+        self, client, monkeypatch, fake_httpx_response
+    ):
         from birdscanner.api.routers import camera
 
         captured = {}
@@ -35,7 +37,9 @@ class TestCamera:
         resp = client.get("/api/camera/snapshot")
         assert resp.status_code == 503
 
-    def test_full_snapshot_proxies_detector_jpeg(self, client, monkeypatch, fake_httpx_response):
+    def test_full_snapshot_proxies_detector_jpeg(
+        self, client, monkeypatch, fake_httpx_response
+    ):
         from birdscanner.api.routers import camera
 
         captured = {}
@@ -50,7 +54,9 @@ class TestCamera:
         assert resp.content == b"FULLJPEG"
         assert captured["url"].endswith("/capture/full")
 
-    def test_get_crop_proxies_detector_json(self, client, monkeypatch, fake_httpx_response):
+    def test_get_crop_proxies_detector_json(
+        self, client, monkeypatch, fake_httpx_response
+    ):
         from birdscanner.api.routers import camera
 
         state = {"x": 1, "y": 2, "w": 900, "h": 900, "sensor_w": 4056}
@@ -72,9 +78,7 @@ class TestCamera:
         def _fake_post(url, json, timeout):
             captured["url"] = url
             captured["json"] = json
-            return fake_httpx_response(
-                content_type="application/json", json_body=state
-            )
+            return fake_httpx_response(content_type="application/json", json_body=state)
 
         monkeypatch.setattr(camera.httpx, "post", _fake_post)
         resp = client.post(
@@ -85,7 +89,9 @@ class TestCamera:
         assert captured["url"].endswith("/crop")
         assert captured["json"] == {"nx": 0.1, "ny": 0.2, "nw": 0.3, "nh": 0.4}
 
-    def test_set_crop_relays_detector_400(self, client, monkeypatch, fake_httpx_response):
+    def test_set_crop_relays_detector_400(
+        self, client, monkeypatch, fake_httpx_response
+    ):
         from birdscanner.api.routers import camera
 
         def _fake_post(url, json, timeout):

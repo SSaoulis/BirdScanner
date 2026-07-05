@@ -9,6 +9,7 @@ from birdscanner.detector.crop import (
     SENSOR_H,
     SENSOR_W,
     CropRegion,
+    NormalizedBox,
     crop_config_path,
     default_crop_region,
     load_crop_region,
@@ -27,7 +28,7 @@ def test_default_crop_region_is_square_within_bounds() -> None:
 
 
 def test_full_normalized_box_maps_to_full_sensor() -> None:
-    region = normalized_to_sensor(0.0, 0.0, 1.0, 1.0)
+    region = normalized_to_sensor(NormalizedBox(0.0, 0.0, 1.0, 1.0))
     assert region == CropRegion(0, 0, SENSOR_W, SENSOR_H)
 
 
@@ -35,7 +36,7 @@ def test_normalized_to_sensor_maps_directly_without_rotation() -> None:
     # libcamera applies ScalerCrop in the same orientation as the transformed
     # preview, so a box in the top-left of the display maps to the top-left of
     # the sensor crop (no 180-degree inversion).
-    region = normalized_to_sensor(0.0, 0.0, 0.25, 0.25)
+    region = normalized_to_sensor(NormalizedBox(0.0, 0.0, 0.25, 0.25))
     assert region.x == 0
     assert region.y == 0
     assert region.w == round(0.25 * SENSOR_W)
@@ -45,20 +46,19 @@ def test_normalized_to_sensor_maps_directly_without_rotation() -> None:
 def test_bottom_right_box_maps_to_bottom_right_crop() -> None:
     # Regression: drawing the box in the bottom-right must crop the bottom-right
     # region, not the diagonally-opposite top-left.
-    region = normalized_to_sensor(0.6, 0.6, 0.4, 0.4)
+    region = normalized_to_sensor(NormalizedBox(0.6, 0.6, 0.4, 0.4))
     assert region.x == round(0.6 * SENSOR_W)
     assert region.y == round(0.6 * SENSOR_H)
 
 
 def test_normalized_round_trip() -> None:
     region = default_crop_region()
-    nx, ny, nw, nh = sensor_to_normalized(region)
-    back = normalized_to_sensor(nx, ny, nw, nh)
+    back = normalized_to_sensor(sensor_to_normalized(region))
     assert back == region
 
 
 def test_tiny_box_is_clamped_to_minimum_size() -> None:
-    region = normalized_to_sensor(0.5, 0.5, 0.0001, 0.0001)
+    region = normalized_to_sensor(NormalizedBox(0.5, 0.5, 0.0001, 0.0001))
     assert region.w >= MIN_CROP_PX
     assert region.h >= MIN_CROP_PX
 

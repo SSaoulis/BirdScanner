@@ -6,9 +6,7 @@ callers (including the camera callback thread) are never blocked by I/O.
 
 import logging
 import threading
-from datetime import datetime
 from queue import Empty, Full, Queue
-from typing import Optional
 
 from birdscanner.db.database import SessionFactory
 from birdscanner.db.models import DetectionRecord
@@ -30,7 +28,7 @@ class DetectionWriter:
     Usage::
 
         writer = DetectionWriter(session_factory)
-        writer.write(timestamp=..., species=..., ...)
+        writer.write(DetectionRecord(timestamp=..., species=..., ...))
         # on shutdown:
         writer.stop()
     """
@@ -50,67 +48,23 @@ class DetectionWriter:
         )
         self._thread.start()
 
-    def write(  # pylint: disable=too-many-arguments
-        # The parameters mirror the DetectionRecord columns one-to-one; they are
-        # keyword-only, so the count never hurts call-site readability.
-        self,
-        *,
-        timestamp: datetime,
-        species: str,
-        confidence: float,
-        image_path: str,
-        thumbnail_path: str,
-        video_path: Optional[str] = None,
-        detection_confidence: Optional[float] = None,
-        track_id: Optional[int] = None,
-        stable_frames: Optional[int] = None,
-        duration_sec: Optional[float] = None,
-        box_x: Optional[float] = None,
-        box_y: Optional[float] = None,
-        box_w: Optional[float] = None,
-        box_h: Optional[float] = None,
-    ) -> None:
+    def write(self, record: DetectionRecord) -> None:
         """Enqueue a detection record for asynchronous persistence.
 
-        Returns immediately; if the queue is full the record is dropped.
+        Returns immediately; if the queue is full the record is dropped. The
+        caller builds the ``DetectionRecord`` (its keyword-only constructor keeps
+        every column named at the call site), so the writer stays a thin
+        transport with no column list of its own to maintain.
 
         Args:
-            timestamp: Wall-clock time of the detection.
-            species: Classified species name.
-            confidence: Species-classification confidence in [0, 1].
-            image_path: Path to saved image, relative to IMAGE_DIR.
-            thumbnail_path: Path to thumbnail, relative to IMAGE_DIR.
-            video_path: Path to the saved mp4 clip, relative to IMAGE_DIR (optional).
-            detection_confidence: Object-detection (YOLO) confidence in [0, 1] (optional).
-            track_id: Stable-tracker track identifier (optional).
-            stable_frames: Consecutive stable frames before classification (optional).
-            duration_sec: Approximate track lifetime in seconds (optional).
-            box_x: Detection box left edge as a fraction [0, 1] of image width (optional).
-            box_y: Detection box top edge as a fraction [0, 1] of image height (optional).
-            box_w: Detection box width as a fraction [0, 1] of image width (optional).
-            box_h: Detection box height as a fraction [0, 1] of image height (optional).
+            record: The fully-populated detection row to persist.
         """
-        record = DetectionRecord(
-            timestamp=timestamp,
-            species=species,
-            confidence=confidence,
-            detection_confidence=detection_confidence,
-            image_path=image_path,
-            thumbnail_path=thumbnail_path,
-            video_path=video_path,
-            track_id=track_id,
-            stable_frames=stable_frames,
-            duration_sec=duration_sec,
-            box_x=box_x,
-            box_y=box_y,
-            box_w=box_w,
-            box_h=box_h,
-        )
         try:
             self._queue.put_nowait(record)
         except Full:
             logger.warning(
-                "DetectionWriter queue full; dropping detection for %s", species
+                "DetectionWriter queue full; dropping detection for %s",
+                record.species,
             )
 
     def stop(self, timeout: float = 5.0) -> None:

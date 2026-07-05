@@ -19,7 +19,10 @@ import pytest
 import birdscanner.ml.classification_pipeline as cp
 from birdscanner.ml.best_frame import BestFrameSelector
 from birdscanner.ml.classification import Classifier
-from birdscanner.ml.classification_pipeline import ClassificationManager
+from birdscanner.ml.classification_pipeline import (
+    ClassificationManager,
+    PipelineContext,
+)
 from birdscanner.ml.tracking import should_run_bird_classification_for_detection
 
 
@@ -46,10 +49,12 @@ def test_async_worker_survives_a_raising_detection(monkeypatch):
         if len(calls) == 2:
             done.set()
 
-    monkeypatch.setattr(cp, "process_single_detection_with_stable_tracks", fake_dispatch)
+    monkeypatch.setattr(
+        cp, "process_single_detection_with_stable_tracks", fake_dispatch
+    )
 
     manager = ClassificationManager(
-        classifier=cast(Classifier, object()),
+        PipelineContext(classifier=cast(Classifier, object())),
         use_multithreading=True,
         use_stable_track_gating=True,
     )
@@ -70,10 +75,12 @@ def test_sync_dispatch_swallows_exceptions(monkeypatch):
     def fake_dispatch(item, **_kwargs):
         raise ValueError("simulated classifier failure")
 
-    monkeypatch.setattr(cp, "process_single_detection_with_stable_tracks", fake_dispatch)
+    monkeypatch.setattr(
+        cp, "process_single_detection_with_stable_tracks", fake_dispatch
+    )
 
     manager = ClassificationManager(
-        classifier=cast(Classifier, object()),
+        PipelineContext(classifier=cast(Classifier, object())),
         use_multithreading=False,
         use_stable_track_gating=True,
     )
@@ -89,7 +96,12 @@ def test_sync_dispatch_swallows_exceptions(monkeypatch):
 
 
 def test_stable_track_classifies_saves_and_writes(
-    tmp_path, monkeypatch, fake_detection, recording_writer, stable_tracker, frame_factory
+    tmp_path,
+    monkeypatch,
+    fake_detection,
+    recording_writer,
+    stable_tracker,
+    frame_factory,
 ):
     """A stable bird detection classifies, saves still+thumbnail, and writes a row."""
     monkeypatch.setattr(cp, "IMAGE_DIR", str(tmp_path))
@@ -99,19 +111,21 @@ def test_stable_track_classifies_saves_and_writes(
 
     cp.process_single_detection_with_stable_tracks(
         (frame, 0, det, ["bird"], "bird"),
-        results_lock=threading.Lock(),
-        classifier=cast(Classifier, object()),
-        tracker=tracker,
-        classify_fn=lambda _classifier, _roi: ("Robin", 0.95),
-        detection_writer=recording_writer,
+        PipelineContext(
+            classifier=cast(Classifier, object()),
+            tracker=tracker,
+            classify_fn=lambda _classifier, _roi: ("Robin", 0.95),
+            detection_writer=recording_writer,
+        ),
+        threading.Lock(),
     )
 
     assert len(recording_writer.writes) == 1
     write = recording_writer.writes[0]
-    assert write["species"] == "Robin"
-    assert write["confidence"] == 0.95
-    assert write["detection_confidence"] == pytest.approx(0.9)  # from det.conf
-    assert write["video_path"] is None  # no record_fn supplied
+    assert write.species == "Robin"
+    assert write.confidence == 0.95
+    assert write.detection_confidence == pytest.approx(0.9)  # from det.conf
+    assert write.video_path is None  # no record_fn supplied
 
     species_dir = tmp_path / "Robin"
     assert len(list(species_dir.glob("*.png"))) == 1
@@ -120,7 +134,12 @@ def test_stable_track_classifies_saves_and_writes(
 
 
 def test_stable_track_skips_degenerate_zero_area_box(
-    tmp_path, monkeypatch, fake_detection, recording_writer, stable_tracker, frame_factory
+    tmp_path,
+    monkeypatch,
+    fake_detection,
+    recording_writer,
+    stable_tracker,
+    frame_factory,
 ):
     """A zero-area ROI is skipped without classifying, saving, or marking the track."""
     monkeypatch.setattr(cp, "IMAGE_DIR", str(tmp_path))
@@ -135,11 +154,13 @@ def test_stable_track_skips_degenerate_zero_area_box(
 
     cp.process_single_detection_with_stable_tracks(
         (frame, 0, det, ["bird"], "bird"),
-        results_lock=threading.Lock(),
-        classifier=cast(Classifier, object()),
-        tracker=tracker,
-        classify_fn=_classify,
-        detection_writer=recording_writer,
+        PipelineContext(
+            classifier=cast(Classifier, object()),
+            tracker=tracker,
+            classify_fn=_classify,
+            detection_writer=recording_writer,
+        ),
+        threading.Lock(),
     )
 
     assert classify_calls == []  # classifier never invoked on an empty ROI
@@ -169,20 +190,27 @@ def test_stable_track_video_path_only_when_recording_started(
 
     cp.process_single_detection_with_stable_tracks(
         (frame_factory(120, (32, 32)), 0, det, ["bird"], "bird"),
-        results_lock=threading.Lock(),
-        classifier=cast(Classifier, object()),
-        tracker=tracker,
-        classify_fn=lambda _c, _r: ("Robin", 0.95),
-        detection_writer=recording_writer,
-        record_fn=recorder,
+        PipelineContext(
+            classifier=cast(Classifier, object()),
+            tracker=tracker,
+            classify_fn=lambda _c, _r: ("Robin", 0.95),
+            detection_writer=recording_writer,
+            record_fn=recorder,
+        ),
+        threading.Lock(),
     )
 
     assert len(recorder.paths) == 1  # record_fn always attempted
-    assert (recording_writer.writes[0]["video_path"] is not None) is expect_video
+    assert (recording_writer.writes[0].video_path is not None) is expect_video
 
 
 def test_stable_track_uses_best_frame(
-    tmp_path, monkeypatch, fake_detection, recording_writer, stable_tracker, frame_factory
+    tmp_path,
+    monkeypatch,
+    fake_detection,
+    recording_writer,
+    stable_tracker,
+    frame_factory,
 ):
     """When a best frame is stored, it drives the ROI + persisted normalized box."""
     monkeypatch.setattr(cp, "IMAGE_DIR", str(tmp_path))
@@ -195,20 +223,22 @@ def test_stable_track_uses_best_frame(
 
     cp.process_single_detection_with_stable_tracks(
         (frame_factory(120, (32, 32)), 0, det, ["bird"], "bird"),
-        results_lock=threading.Lock(),
-        classifier=cast(Classifier, object()),
-        tracker=tracker,
-        classify_fn=lambda _c, _r: ("Robin", 0.95),
-        detection_writer=recording_writer,
-        best_frame_selector=selector,
+        PipelineContext(
+            classifier=cast(Classifier, object()),
+            tracker=tracker,
+            classify_fn=lambda _c, _r: ("Robin", 0.95),
+            detection_writer=recording_writer,
+            best_frame_selector=selector,
+        ),
+        threading.Lock(),
     )
 
     # The selector was drained (its frame was taken for classification).
     assert selector.take(track.track_id) is None
     # The persisted normalized box comes from the best frame's box (1,1,10,10)/32.
     write = recording_writer.writes[0]
-    assert write["box_x"] == pytest.approx(1 / 32)
-    assert write["box_w"] == pytest.approx(10 / 32)
+    assert write.box_x == pytest.approx(1 / 32)
+    assert write.box_w == pytest.approx(10 / 32)
 
 
 # ---------------------------------------------------------------------------
@@ -276,12 +306,14 @@ def test_process_detections_feeds_video_observes_and_queues(
     )
 
     manager = ClassificationManager(
-        classifier=cast(Classifier, object()),
+        PipelineContext(
+            classifier=cast(Classifier, object()),
+            tracker=tracker,
+            best_frame_selector=selector,
+            video_frame_fn=fed.append,
+        ),
         use_multithreading=False,
         use_stable_track_gating=True,
-        tracker=tracker,
-        best_frame_selector=selector,
-        video_frame_fn=fed.append,
     )
     manager.set_results_lock(threading.Lock())
 

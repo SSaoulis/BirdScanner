@@ -52,6 +52,7 @@ import re
 import time
 import urllib.parse
 import urllib.request
+from dataclasses import dataclass
 from typing import Any, Optional
 
 # --- Paths -----------------------------------------------------------------
@@ -102,9 +103,7 @@ DEFAULT_OVERRIDES: dict[str, dict[str, Any]] = {
     "Cettis warbler": {"wikipedia_title": "Cetti's warbler"},
     "Sykess warbler": {"wikipedia_title": "Sykes's warbler"},
     "Pallass leaf warbler": {"wikipedia_title": "Pallas's leaf warbler"},
-    "Pallass grasshopper warbler": {
-        "wikipedia_title": "Pallas's grasshopper warbler"
-    },
+    "Pallass grasshopper warbler": {"wikipedia_title": "Pallas's grasshopper warbler"},
     "Pallass reed bunting": {"wikipedia_title": "Pallas's reed bunting"},
     "Pallass gull": {"wikipedia_title": "Pallas's gull"},
     "Temmincks stint": {"wikipedia_title": "Temminck's stint"},
@@ -236,14 +235,18 @@ def fetch_behaviour(title: str) -> Optional[str]:
     Returns:
         The section's plain text, or ``None`` when no such section exists.
     """
-    sections_url = MEDIAWIKI_API + "?" + urllib.parse.urlencode(
-        {
-            "action": "parse",
-            "page": title,
-            "prop": "sections",
-            "format": "json",
-            "redirects": "1",
-        }
+    sections_url = (
+        MEDIAWIKI_API
+        + "?"
+        + urllib.parse.urlencode(
+            {
+                "action": "parse",
+                "page": title,
+                "prop": "sections",
+                "format": "json",
+                "redirects": "1",
+            }
+        )
     )
     try:
         sections_doc = _http_get_json(sections_url)
@@ -262,15 +265,19 @@ def fetch_behaviour(title: str) -> Optional[str]:
     if not section_index:
         return None
 
-    extract_url = MEDIAWIKI_API + "?" + urllib.parse.urlencode(
-        {
-            "action": "query",
-            "prop": "extracts",
-            "explaintext": "1",
-            "titles": title,
-            "format": "json",
-            "redirects": "1",
-        }
+    extract_url = (
+        MEDIAWIKI_API
+        + "?"
+        + urllib.parse.urlencode(
+            {
+                "action": "query",
+                "prop": "extracts",
+                "explaintext": "1",
+                "titles": title,
+                "format": "json",
+                "redirects": "1",
+            }
+        )
     )
     try:
         extract_doc = _http_get_json(extract_url)
@@ -364,14 +371,18 @@ def fetch_image_metadata(image_title: str) -> dict[str, Optional[str]]:
     Returns:
         A dict with ``attribution`` and ``license`` keys (values may be None).
     """
-    url = MEDIAWIKI_API + "?" + urllib.parse.urlencode(
-        {
-            "action": "query",
-            "titles": image_title,
-            "prop": "imageinfo",
-            "iiprop": "extmetadata|url",
-            "format": "json",
-        }
+    url = (
+        MEDIAWIKI_API
+        + "?"
+        + urllib.parse.urlencode(
+            {
+                "action": "query",
+                "titles": image_title,
+                "prop": "imageinfo",
+                "iiprop": "extmetadata|url",
+                "format": "json",
+            }
+        )
     )
     result: dict[str, Optional[str]] = {"attribution": None, "license": None}
     try:
@@ -634,14 +645,27 @@ def compute_coverage(
     return report
 
 
+@dataclass(frozen=True)
+class BuildOptions:
+    """Options controlling an incremental manifest build.
+
+    Attributes:
+        force: Refetch every non-skipped label, ignoring the cache.
+        limit: Process at most this many labels that need fetching (``None`` for
+            no limit).
+        throttle: Seconds to sleep between species (politeness).
+    """
+
+    force: bool = False
+    limit: Optional[int] = None
+    throttle: float = THROTTLE_SECONDS
+
+
 def build_manifest(
     labels: list[str],
     overrides: dict[str, dict[str, Any]],
     existing: dict[str, Any],
-    *,
-    force: bool = False,
-    limit: Optional[int] = None,
-    throttle: float = THROTTLE_SECONDS,
+    options: BuildOptions = BuildOptions(),
 ) -> dict[str, Any]:
     """Build (or incrementally update) the species reference manifest.
 
@@ -649,9 +673,7 @@ def build_manifest(
         labels: All species labels (sorted by class index).
         overrides: The loaded overrides map.
         existing: The previously-written manifest (``{}`` for a fresh build).
-        force: Refetch every non-skipped label, ignoring the cache.
-        limit: Process at most this many labels that need fetching.
-        throttle: Seconds to sleep between species (politeness).
+        options: Build controls (force/limit/throttle); see :class:`BuildOptions`.
 
     Returns:
         The complete manifest document ready to serialise.
@@ -662,14 +684,18 @@ def build_manifest(
         if overrides.get(label, {}).get("skip"):
             species.pop(label, None)
             continue
-        if not force and label in species and species_is_complete(species[label]):
+        if (
+            not options.force
+            and label in species
+            and species_is_complete(species[label])
+        ):
             continue
-        if limit is not None and processed >= limit:
+        if options.limit is not None and processed >= options.limit:
             break
         species[label] = build_species_entry(label, overrides)
         processed += 1
-        if throttle:
-            time.sleep(throttle)
+        if options.throttle:
+            time.sleep(options.throttle)
 
     return {
         "version": MANIFEST_VERSION,
@@ -737,9 +763,7 @@ def main(argv: Optional[list[str]] = None) -> None:
         labels,
         overrides,
         existing,
-        force=args.force,
-        limit=args.limit,
-        throttle=args.throttle,
+        BuildOptions(force=args.force, limit=args.limit, throttle=args.throttle),
     )
     write_json_file(MANIFEST_PATH, manifest)
 

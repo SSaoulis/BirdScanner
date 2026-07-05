@@ -27,13 +27,42 @@ import json
 import logging
 import os
 from dataclasses import dataclass
-from typing import Tuple
+from typing import NamedTuple, Tuple
 
 logger = logging.getLogger("tracking")
 
 # Native full resolution of the Sony IMX500 sensor's active pixel array.
 SENSOR_W = 4056
 SENSOR_H = 3040
+
+
+class NormalizedBox(NamedTuple):
+    """A UI box as ``[0, 1]`` fractions of the displayed full-sensor preview.
+
+    Attributes:
+        nx: Normalized left edge.
+        ny: Normalized top edge.
+        nw: Normalized width.
+        nh: Normalized height.
+    """
+
+    nx: float
+    ny: float
+    nw: float
+    nh: float
+
+
+class SensorDimensions(NamedTuple):
+    """Sensor active-area dimensions in pixels.
+
+    Attributes:
+        w: Sensor active-area width.
+        h: Sensor active-area height.
+    """
+
+    w: int = SENSOR_W
+    h: int = SENSOR_H
+
 
 # Smallest crop edge we allow, in sensor pixels.  Guards against degenerate
 # zero/tiny regions (from a stray UI drag) that would starve the detector.
@@ -129,50 +158,39 @@ def _clamp01(value: float) -> float:
 
 
 def normalized_to_sensor(
-    nx: float,
-    ny: float,
-    nw: float,
-    nh: float,
-    sensor_w: int = SENSOR_W,
-    sensor_h: int = SENSOR_H,
+    box: NormalizedBox, sensor: SensorDimensions = SensorDimensions()
 ) -> CropRegion:
     """Convert a normalized UI box into a sensor-space :class:`CropRegion`.
 
-    The box is given as ``(nx, ny, nw, nh)`` fractions in ``[0, 1]`` of the
-    full-sensor preview the user drew on, where ``(nx, ny)`` is the box's
-    top-left corner *as displayed*.  libcamera applies ``ScalerCrop`` in the same
-    orientation as the (vflip+hflip) transformed preview, so the mapping is a
-    direct per-axis scale: the displayed top-left maps straight to the
-    ``ScalerCrop`` top-left, with no rotation.
+    The box's ``(nx, ny)`` is its top-left corner *as displayed*. libcamera
+    applies ``ScalerCrop`` in the same orientation as the (vflip+hflip)
+    transformed preview, so the mapping is a direct per-axis scale — the
+    displayed top-left maps straight to the ``ScalerCrop`` top-left, no rotation.
 
     Args:
-        nx: Normalized left edge of the box on the displayed preview.
-        ny: Normalized top edge of the box on the displayed preview.
-        nw: Normalized box width.
-        nh: Normalized box height.
-        sensor_w: Sensor active-area width in pixels.
-        sensor_h: Sensor active-area height in pixels.
+        box: The normalized box drawn on the displayed preview.
+        sensor: Sensor active-area dimensions in pixels.
 
     Returns:
         The corresponding sensor-space :class:`CropRegion`, clamped to bounds.
     """
-    left = _clamp01(nx)
-    top = _clamp01(ny)
-    right = _clamp01(left + max(0.0, nw))
-    bottom = _clamp01(top + max(0.0, nh))
+    left = _clamp01(box.nx)
+    top = _clamp01(box.ny)
+    right = _clamp01(left + max(0.0, box.nw))
+    bottom = _clamp01(top + max(0.0, box.nh))
 
     region = CropRegion(
-        x=round(left * sensor_w),
-        y=round(top * sensor_h),
-        w=round((right - left) * sensor_w),
-        h=round((bottom - top) * sensor_h),
+        x=round(left * sensor.w),
+        y=round(top * sensor.h),
+        w=round((right - left) * sensor.w),
+        h=round((bottom - top) * sensor.h),
     )
-    return region.clamped(sensor_w, sensor_h)
+    return region.clamped(sensor.w, sensor.h)
 
 
 def sensor_to_normalized(
-    region: CropRegion, sensor_w: int = SENSOR_W, sensor_h: int = SENSOR_H
-) -> Tuple[float, float, float, float]:
+    region: CropRegion, sensor: SensorDimensions = SensorDimensions()
+) -> NormalizedBox:
     """Convert a sensor-space :class:`CropRegion` to a normalized UI box.
 
     Inverse of :func:`normalized_to_sensor`: maps a sensor region back to the
@@ -182,18 +200,18 @@ def sensor_to_normalized(
 
     Args:
         region: The sensor-space crop region.
-        sensor_w: Sensor active-area width in pixels.
-        sensor_h: Sensor active-area height in pixels.
+        sensor: Sensor active-area dimensions in pixels.
 
     Returns:
-        A ``(nx, ny, nw, nh)`` tuple of fractions in ``[0, 1]`` for the displayed
+        A :class:`NormalizedBox` of fractions in ``[0, 1]`` for the displayed
         preview.
     """
-    nx = region.x / sensor_w
-    ny = region.y / sensor_h
-    nw = region.w / sensor_w
-    nh = region.h / sensor_h
-    return (nx, ny, nw, nh)
+    return NormalizedBox(
+        nx=region.x / sensor.w,
+        ny=region.y / sensor.h,
+        nw=region.w / sensor.w,
+        nh=region.h / sensor.h,
+    )
 
 
 def _align(value: int, align: int = SIZE_ALIGN) -> int:
