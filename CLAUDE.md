@@ -14,7 +14,7 @@ The development cycle is based on a worktree approach. Therefore there are a fix
 - ALWAYS pull latest changes from main onto the worktree before any files are read/analysed.
 - Once a change is made, ALWAYS update the CLAUDE.md, and make a PR.
 
-
+Use the .venv in the project root - this contains the linting/formatting tools and all required packages installed. 
 
 ## Commands
 
