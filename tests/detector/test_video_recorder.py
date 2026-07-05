@@ -82,3 +82,11 @@ def test_real_encode_does_not_raise(tmp_path, frame_factory):
     # when it actually wrote the file.
     if dest.exists():
         assert dest.stat().st_size > 0
+
+
+def test_encode_with_no_frames_is_a_noop(tmp_path):
+    """Encoding an empty frame list writes nothing and returns without raising."""
+    rec = VideoRecorder(fps=5, pre_roll_seconds=0.4, post_roll_seconds=0.0)
+    dest = tmp_path / "empty.mp4"
+    rec._encode([], str(dest))  # pylint: disable=protected-access
+    assert not dest.exists()
