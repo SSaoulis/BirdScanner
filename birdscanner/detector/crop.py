@@ -72,7 +72,9 @@ class CropRegion:
         """
         return (self.x, self.y, self.w, self.h)
 
-    def clamped(self, sensor_w: int = SENSOR_W, sensor_h: int = SENSOR_H) -> "CropRegion":
+    def clamped(
+        self, sensor_w: int = SENSOR_W, sensor_h: int = SENSOR_H
+    ) -> "CropRegion":
         """Return a copy clamped to the sensor bounds with a minimum size.
 
         Width/height are first floored at :data:`MIN_CROP_PX` (and capped at the
@@ -93,7 +95,9 @@ class CropRegion:
         return CropRegion(x, y, w, h)
 
 
-def default_crop_region(sensor_w: int = SENSOR_W, sensor_h: int = SENSOR_H) -> CropRegion:
+def default_crop_region(
+    sensor_w: int = SENSOR_W, sensor_h: int = SENSOR_H
+) -> CropRegion:
     """Return the historical default crop (900x900 aimed at the bird feeder).
 
     Mirrors the previously hardcoded ``main.py`` crop: a 900x900 square anchored
@@ -291,9 +295,7 @@ def save_crop_region(path: str, region: CropRegion) -> None:
             os.makedirs(parent, exist_ok=True)
         tmp = f"{path}.tmp"
         with open(tmp, "w", encoding="utf-8") as fh:
-            json.dump(
-                {"x": region.x, "y": region.y, "w": region.w, "h": region.h}, fh
-            )
+            json.dump({"x": region.x, "y": region.y, "w": region.w, "h": region.h}, fh)
         os.replace(tmp, path)
     except OSError as exc:
         logger.warning("Could not save crop config %s (%s)", path, exc)

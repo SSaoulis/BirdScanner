@@ -93,7 +93,7 @@ def _parse_detection_id(path: str) -> Optional[int]:
     route = path.split("?", 1)[0]
     if not route.startswith(_DETECTIONS_PREFIX):
         return None
-    tail = route[len(_DETECTIONS_PREFIX):]
+    tail = route[len(_DETECTIONS_PREFIX) :]
     try:
         return int(tail)
     except ValueError:

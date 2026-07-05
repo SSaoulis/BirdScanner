@@ -155,6 +155,4 @@ class VideoRecorder:
                 writer.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
         finally:
             writer.release()
-        logger.info(
-            "VideoRecorder: wrote %d-frame clip to %s", len(frames), dest_path
-        )
+        logger.info("VideoRecorder: wrote %d-frame clip to %s", len(frames), dest_path)

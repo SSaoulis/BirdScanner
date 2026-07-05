@@ -71,6 +71,7 @@ class SPAStaticFiles(StaticFiles):
                 return await super().get_response("index.html", scope)
             raise
 
+
 app = FastAPI(
     title="BirdScanner API",
     description="REST API for the BirdScanner real-time bird detection system.",

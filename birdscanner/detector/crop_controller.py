@@ -122,9 +122,7 @@ class CropController:
         Returns:
             The new state dict (see :meth:`get_state`).
         """
-        region = normalized_to_sensor(
-            nx, ny, nw, nh, self._sensor_w, self._sensor_h
-        )
+        region = normalized_to_sensor(nx, ny, nw, nh, self._sensor_w, self._sensor_h)
         return self._apply(region)
 
     def reset_to_default(self) -> Dict[str, Any]:
@@ -193,9 +191,7 @@ class CropController:
             finally:
                 self._picam2.set_controls({"ScalerCrop": previous})
 
-    def _capture_settled(
-        self, target: Tuple[int, int, int, int]
-    ) -> np.ndarray:
+    def _capture_settled(self, target: Tuple[int, int, int, int]) -> np.ndarray:
         """Pull frames until the requested ScalerCrop has taken effect.
 
         ``set_controls`` applies on a future frame, so this discards frames until

@@ -16,7 +16,11 @@ import cv2
 import numpy as np
 
 from birdscanner.ml.best_frame import BestFrameSelector
-from birdscanner.ml.classification import Classifier, ONNXClassifier, build_preprocessing
+from birdscanner.ml.classification import (
+    Classifier,
+    ONNXClassifier,
+    build_preprocessing,
+)
 from birdscanner.ml.detection_utils import (
     draw_boxes,
     iou,
@@ -368,7 +372,10 @@ def process_detections(
                     track = manager.tracker.track_for_detection_id(detection_id)
                     if track is not None:
                         manager.best_frame_selector.observe(
-                            track.track_id, full_img, detection.box, float(detection.conf)
+                            track.track_id,
+                            full_img,
+                            detection.box,
+                            float(detection.conf),
                         )
 
                 manager.process(
@@ -496,9 +503,7 @@ class ClassificationManager:
                     classifier=self.classifier,
                 )
         except Exception:  # pylint: disable=broad-exception-caught
-            logger.exception(
-                "Classification failed for a detection; skipping it"
-            )
+            logger.exception("Classification failed for a detection; skipping it")
 
     def _worker_loop(self) -> None:
         """Worker thread main loop for processing queued detections.
