@@ -20,12 +20,15 @@ they rely on live in :mod:`crop` and are unit-tested without a camera.
 import logging
 import threading
 import time
+from dataclasses import dataclass
 from typing import Any, Callable, Dict, Tuple
 
 import numpy as np
 
 from birdscanner.detector.crop import (
     CropRegion,
+    NormalizedBox,
+    SensorDimensions,
     default_crop_region,
     main_stream_size_for_crop,
     normalized_to_sensor,
@@ -47,39 +50,44 @@ _PREVIEW_MAX_FRAMES = 12
 ConfigFactory = Callable[[Tuple[int, int], Tuple[int, int, int, int]], Any]
 
 
+@dataclass
+class CropControllerConfig:
+    """Everything a :class:`CropController` needs besides the live camera handle.
+
+    Attributes:
+        region: The crop region the camera was started with.
+        main_size: The ``(w, h)`` of the ``main`` stream the camera was started
+            with (used to decide whether a reconfigure is needed).
+        config_factory: Callable building a picamera2 config from a ``main`` size
+            and a ScalerCrop tuple (see :data:`ConfigFactory`).
+        config_path: Path to persist the region to on every change.
+        sensor: Sensor active-area dimensions in pixels.
+    """
+
+    region: CropRegion
+    main_size: Tuple[int, int]
+    config_factory: ConfigFactory
+    config_path: str
+    sensor: SensorDimensions
+
+
 class CropController:
     """Applies and persists the detection crop region on a running camera."""
 
-    def __init__(
-        self,
-        picam2: Any,
-        region: CropRegion,
-        main_size: Tuple[int, int],
-        config_factory: ConfigFactory,
-        config_path: str,
-        sensor_w: int,
-        sensor_h: int,
-    ) -> None:
+    def __init__(self, picam2: Any, config: CropControllerConfig) -> None:
         """Initialise the controller around an already-started camera.
 
         Args:
             picam2: The started ``Picamera2`` instance to control.
-            region: The crop region the camera was started with.
-            main_size: The ``(w, h)`` of the ``main`` stream the camera was
-                started with (used to decide whether a reconfigure is needed).
-            config_factory: Callable building a picamera2 config from a
-                ``main`` size and a ScalerCrop tuple (see :data:`ConfigFactory`).
-            config_path: Path to persist the region to on every change.
-            sensor_w: Sensor active-area width in pixels.
-            sensor_h: Sensor active-area height in pixels.
+            config: Static configuration (crop, stream geometry, persistence, and
+                sensor dimensions); see :class:`CropControllerConfig`.
         """
         self._picam2 = picam2
-        self._region = region
-        self._main_size = main_size
-        self._config_factory = config_factory
-        self._config_path = config_path
-        self._sensor_w = sensor_w
-        self._sensor_h = sensor_h
+        self._region = config.region
+        self._main_size = config.main_size
+        self._config_factory = config.config_factory
+        self._config_path = config.config_path
+        self._sensor = config.sensor
         # Re-entrant so capture_full_preview can hold the lock while calling
         # other guarded helpers on the same thread.
         self.camera_lock = threading.RLock()
@@ -97,15 +105,15 @@ class CropController:
         """
         with self.camera_lock:
             region = self._region
-        nx, ny, nw, nh = sensor_to_normalized(region, self._sensor_w, self._sensor_h)
+        norm = sensor_to_normalized(region, self._sensor)
         return {
             "x": region.x,
             "y": region.y,
             "w": region.w,
             "h": region.h,
-            "norm": {"nx": nx, "ny": ny, "nw": nw, "nh": nh},
-            "sensor_w": self._sensor_w,
-            "sensor_h": self._sensor_h,
+            "norm": {"nx": norm.nx, "ny": norm.ny, "nw": norm.nw, "nh": norm.nh},
+            "sensor_w": self._sensor.w,
+            "sensor_h": self._sensor.h,
         }
 
     def set_from_normalized(
@@ -122,7 +130,7 @@ class CropController:
         Returns:
             The new state dict (see :meth:`get_state`).
         """
-        region = normalized_to_sensor(nx, ny, nw, nh, self._sensor_w, self._sensor_h)
+        region = normalized_to_sensor(NormalizedBox(nx, ny, nw, nh), self._sensor)
         return self._apply(region)
 
     def reset_to_default(self) -> Dict[str, Any]:
@@ -131,7 +139,7 @@ class CropController:
         Returns:
             The new state dict (see :meth:`get_state`).
         """
-        region = default_crop_region(self._sensor_w, self._sensor_h)
+        region = default_crop_region(self._sensor.w, self._sensor.h)
         return self._apply(region)
 
     def _apply(self, region: CropRegion) -> Dict[str, Any]:
@@ -182,7 +190,7 @@ class CropController:
         Returns:
             An RGB ``numpy`` array of the full-sensor frame.
         """
-        full = (0, 0, self._sensor_w, self._sensor_h)
+        full = (0, 0, self._sensor.w, self._sensor.h)
         with self.camera_lock:
             previous = self._region.as_tuple()
             self._picam2.set_controls({"ScalerCrop": full})

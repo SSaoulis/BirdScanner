@@ -5,16 +5,18 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from birdscanner.ml.classification import Classifier, ONNXClassifier, build_preprocessing
+from birdscanner.ml.classification import (
+    Classifier,
+    ONNXClassifier,
+    build_preprocessing,
+)
 
 # Paths (this file lives at tests/ml/, so the repo root is two parents up and the
 # shared image fixtures live under tests/).
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _TESTS_DIR = Path(__file__).resolve().parents[1]
 MODEL_PATH = _REPO_ROOT / "assets/models/convnext_v2_tiny.onnx"
-CLASS_TO_IDX_PATH = (
-    _REPO_ROOT / "assets/models/convnext_v2_tiny.onnx_class_to_idx.json"
-)
+CLASS_TO_IDX_PATH = _REPO_ROOT / "assets/models/convnext_v2_tiny.onnx_class_to_idx.json"
 IMAGES_DIR = _TESTS_DIR / "bird_species"
 
 

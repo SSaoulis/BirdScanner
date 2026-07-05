@@ -3,18 +3,25 @@
 Wires detections coming out of the IMX500 / tracker into the ConvNeXt species
 classifier, draws annotated frames, persists high-confidence results, and
 manages synchronous vs. background-thread dispatch (``ClassificationManager``).
+
+The per-detection processing dependencies (classifier, tracker, DB writer,
+best-frame selector, video callables) are bundled into a single
+:class:`PipelineContext` so they travel as one object instead of a long
+parameter list.
 """
 
 import logging
 import os
 import threading
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, Optional
+from typing import TYPE_CHECKING, Callable, NamedTuple, Optional
 
 import cv2
 import numpy as np
 
+from birdscanner.db.models import DetectionRecord
 from birdscanner.ml.best_frame import BestFrameSelector
 from birdscanner.ml.classification import (
     Classifier,
@@ -43,6 +50,9 @@ if TYPE_CHECKING:
 # Root directory for saved images; overridable via IMAGE_DIR environment variable.
 IMAGE_DIR = os.environ.get("IMAGE_DIR", "/home/stefan/Pictures/bird_detections")
 
+# Minimum classification confidence before a detection is saved/persisted.
+_SAVE_CONFIDENCE_THRESHOLD = 0.4
+
 logger = logging.getLogger("tracking")
 
 
@@ -50,6 +60,32 @@ logger = logging.getLogger("tracking")
 classification_results: dict[int, tuple[str | None, float | None]] = {}
 # List of (box, species, confidence) tuples for temporal filtering.
 last_detection_classifications: list[tuple] = []
+
+ClassifyFn = Callable[[Classifier, np.ndarray], tuple]
+
+
+class Still(NamedTuple):
+    """A candidate frame plus the detection box within it.
+
+    Attributes:
+        frame: The RGB frame to classify / save.
+        box: The detection box ``(x, y, w, h)`` in ``frame`` pixel coordinates.
+    """
+
+    frame: np.ndarray
+    box: tuple
+
+
+class Classification(NamedTuple):
+    """A species-classification result.
+
+    Attributes:
+        species: The predicted species name.
+        confidence: The prediction confidence in ``[0, 1]``.
+    """
+
+    species: str
+    confidence: float
 
 
 def setup_classifier(model_path: str, class_to_idx_path: str) -> Classifier:
@@ -80,209 +116,302 @@ def setup_classifier(model_path: str, class_to_idx_path: str) -> Classifier:
 def run_bird_classification(classifier: Classifier, image: np.ndarray) -> tuple:
     """Run bird classification on the given image.
 
-    Performs species classification on a bird image using the configured
-    ONNX classifier.
-
     Args:
         classifier: Classifier instance for inference.
         image: Input bird image as numpy array.
 
     Returns:
-        tuple: (species, confidence) where species is a string and
-            confidence is a float between 0.0 and 1.0.
+        tuple: (species, confidence) where species is a string and confidence is
+            a float between 0.0 and 1.0.
     """
     return classifier.classify(image)
 
 
-def process_single_detection_with_stable_tracks(  # pylint: disable=too-many-arguments
-    # All but ``item`` are keyword-only, so the count never hurts call-site
-    # readability (mirrors DetectionWriter.write).
-    item: tuple,
-    *,
-    results_lock: threading.Lock,
-    classifier: Classifier,
-    tracker: StableDetectionTracker,
-    classify_fn: Optional[Callable[[Classifier, np.ndarray], tuple]] = None,
-    detection_writer: Optional["DetectionWriter"] = None,
-    best_frame_selector: Optional[BestFrameSelector] = None,
-    record_fn: Optional[Callable[[str], bool]] = None,
-) -> None:
-    """Process detection using the new multi-frame stable-track gating logic.
+@dataclass
+class PipelineContext:
+    """Injected dependencies for processing a single detection.
 
-    The existing, older per-frame cache logic is intentionally left in
-    `process_single_detection` for reference.
+    Bundling these into one object keeps the per-detection functions (and
+    :class:`ClassificationManager`) to a short, readable parameter list. All
+    fields except ``classifier`` are optional so tests and the legacy path can
+    supply only what they need.
+
+    Attributes:
+        classifier: Classifier used for species classification.
+        tracker: Stability tracker gating classification (defaults to the
+            module-global ``stable_detection_tracker``).
+        classify_fn: Callable performing the classification (overridable in tests;
+            defaults to :func:`run_bird_classification`).
+        detection_writer: Optional writer persisting each saved detection.
+        best_frame_selector: Optional per-track best-frame store.
+        record_fn: Optional callable starting a video clip; returns ``True`` when
+            recording actually began.
+        video_frame_fn: Optional callable fed every clean frame for the pre-roll
+            buffer.
+    """
+
+    classifier: Classifier
+    tracker: StableDetectionTracker = field(default=None)  # type: ignore[assignment]
+    classify_fn: ClassifyFn = field(default=None)  # type: ignore[assignment]
+    detection_writer: Optional["DetectionWriter"] = None
+    best_frame_selector: Optional[BestFrameSelector] = None
+    record_fn: Optional[Callable[[str], bool]] = None
+    video_frame_fn: Optional[Callable[[np.ndarray], None]] = None
+
+    def __post_init__(self) -> None:
+        """Fill in the module-level defaults for the tracker and classify callable."""
+        if self.tracker is None:
+            self.tracker = stable_detection_tracker
+        if self.classify_fn is None:
+            self.classify_fn = run_bird_classification
+
+
+def _best_still(context: PipelineContext, track, still: Still) -> Still:
+    """Return the best :class:`Still` for a track, else the trigger still.
+
+    Args:
+        context: Pipeline dependencies (holds the best-frame selector).
+        track: The stable track, or ``None``.
+        still: The still from the frame that triggered classification.
+
+    Returns:
+        The best still observed for the track when available, otherwise
+        ``still`` unchanged.
+    """
+    if context.best_frame_selector is None or track is None:
+        return still
+    best = context.best_frame_selector.take(track.track_id)
+    if best is None:
+        return still
+    return Still(best.frame, best.box)
+
+
+def _classify_track(
+    context: PipelineContext, still: Still, detection_id: int, track
+) -> Optional[Classification]:
+    """Classify a track's ROI and mark it classified, unless the ROI is empty.
+
+    A degenerate (zero-area) box yields an empty ROI the classifier cannot
+    process; that case returns ``None`` *without* marking the track, so a later,
+    non-degenerate frame can still classify it.
+
+    Args:
+        context: Pipeline dependencies (classifier + classify callable + tracker).
+        still: The frame + box to classify.
+        detection_id: Detection index, for logging.
+        track: The stable track, or ``None``.
+
+    Returns:
+        The :class:`Classification`, or ``None`` when the ROI is empty.
+    """
+    roi, _ = preprocess_roi(still.frame, still.box)
+    if roi.size == 0:
+        logger.warning(
+            "Skipping classification for detection %s: empty ROI from box %s",
+            detection_id,
+            still.box,
+        )
+        return None
+    species, confidence = context.classify_fn(context.classifier, roi)
+    if track is not None:
+        context.tracker.mark_classified(track.track_id, species=species)
+    return Classification(species, confidence)
+
+
+def _save_still_and_thumbnail(species_dir: Path, stem: str, still: Still) -> None:
+    """Write the clean full still (no box drawn) and its thumbnail to disk.
+
+    Args:
+        species_dir: Directory for this species' images.
+        stem: Filename stem shared by the still, thumbnail, and clip.
+        still: The best frame + box (the box crops the thumbnail ROI).
+    """
+    cv2.imwrite(
+        str(species_dir / f"{stem}.png"),
+        cv2.cvtColor(still.frame, cv2.COLOR_RGB2BGR),
+    )
+    thumb_roi, _ = preprocess_roi(still.frame, still.box)
+    save_thumbnail(thumb_roi, str(species_dir / f"{stem}_thumb.jpg"))
+
+
+def _start_clip(
+    context: PipelineContext, species_dir: Path, stem: str, species: str
+) -> Optional[str]:
+    """Start a video clip for this detection, returning its relative path.
+
+    Args:
+        context: Pipeline dependencies (holds the record callable).
+        species_dir: Directory for this species' clips.
+        stem: Filename stem shared by the still and clip.
+        species: Species name (the relative path's directory).
+
+    Returns:
+        The clip path relative to ``IMAGE_DIR`` when recording began, else
+        ``None`` (no recorder, or a single-flight-declined trigger).
+    """
+    if context.record_fn is None:
+        return None
+    started = context.record_fn(str(species_dir / f"{stem}.mp4"))
+    return f"{species}/{stem}.mp4" if started else None
+
+
+def _persist_detection(
+    context: PipelineContext,
+    still: Still,
+    detection,
+    track,
+    result: Classification,
+) -> None:
+    """Save the still/thumbnail/clip and write the DB row for a classified bird.
+
+    The saved still is the *clean* best frame (no box drawn); the box is stored
+    as normalized coordinates so the UI can overlay it on demand.
+
+    Args:
+        context: Pipeline dependencies (writer + recorder).
+        still: The best frame + box to save.
+        detection: The triggering detection (for its YOLO confidence).
+        track: The stable track, or ``None``.
+        result: The species classification to persist.
+    """
+    ts = datetime.now()
+    stem = str(ts).replace(":", "-")
+    species_dir = Path(IMAGE_DIR) / result.species
+    species_dir.mkdir(parents=True, exist_ok=True)
+
+    _save_still_and_thumbnail(species_dir, stem, still)
+    video_rel = _start_clip(context, species_dir, stem, result.species)
+
+    if context.detection_writer is None:
+        return
+
+    norm = normalized_box(still.box, still.frame.shape)
+    context.detection_writer.write(
+        DetectionRecord(
+            timestamp=ts,
+            species=result.species,
+            confidence=result.confidence,
+            detection_confidence=float(detection.conf),
+            image_path=f"{result.species}/{stem}.png",
+            thumbnail_path=f"{result.species}/{stem}_thumb.jpg",
+            video_path=video_rel,
+            track_id=track.track_id if track is not None else None,
+            stable_frames=track.stable_frames if track is not None else None,
+            box_x=norm[0],
+            box_y=norm[1],
+            box_w=norm[2],
+            box_h=norm[3],
+        )
+    )
+
+
+def process_single_detection_with_stable_tracks(
+    item: tuple,
+    context: PipelineContext,
+    results_lock: threading.Lock,
+) -> None:
+    """Process a detection using multi-frame stable-track gating.
+
+    Gates classification until the track has been stable for the tracker's
+    configured number of frames, classifies the track's best observed frame, and
+    persists the result when it clears the confidence threshold.
 
     Args:
         item: Tuple of (image, detection_id, detection, labels, classifier_class).
-        results_lock: Lock for thread-safe access to the classification results dict.
-        classifier: Classifier instance for bird species classification.
-        tracker: StableDetectionTracker to gate classification by track stability.
-        classify_fn: Optional override for the classification callable (used in tests).
-        detection_writer: Optional DetectionWriter for persisting records to SQLite.
-        best_frame_selector: Optional selector holding the best frame seen per
-            track; when present, the still/thumbnail/classification use that best
-            frame instead of the (arbitrary) frame that triggered this call.
-        record_fn: Optional callable that starts recording a video clip to the
-            given path, returning ``True`` if recording actually started. The
-            persisted ``video_path`` is only set when it returns ``True``.
+        context: Injected pipeline dependencies.
+        results_lock: Lock guarding the shared classification-results dict.
     """
+    _image, detection_id, detection, _labels, classifier_class = item
 
-    if classify_fn is None:
-        classify_fn = run_bird_classification
-
-    # ``labels`` is part of the queued tuple but no longer used here now that the
-    # bounding box is not drawn onto the saved image.
-    image, detection_id, detection, _labels, classifier_class = item
-
-    species = None
-    confidence = None
+    is_bird = classifier_class.lower() == "bird"
+    result: Optional[Classification] = None
     track = None
+    still = Still(_image, detection.box)
 
-    # Default still source is the frame that triggered this call; the best-frame
-    # selector may replace it with a clearer frame observed earlier in the track.
-    still_frame = image
-    still_box = detection.box
-
-    # Gate classification until stable over N frames.
-    if (
-        classifier_class.lower() == "bird"
-        and should_run_bird_classification_for_detection(detection_id, tracker=tracker)
+    if is_bird and should_run_bird_classification_for_detection(
+        detection_id, tracker=context.tracker
     ):
-        track = tracker.track_for_detection_id(detection_id)
+        track = context.tracker.track_for_detection_id(detection_id)
+        still = _best_still(context, track, still)
+        result = _classify_track(context, still, detection_id, track)
 
-        # Prefer the best (highest-confidence) frame observed across this track.
-        if best_frame_selector is not None and track is not None:
-            best = best_frame_selector.take(track.track_id)
-            if best is not None:
-                still_frame = best.frame
-                still_box = best.box
-
-        roi, _ = preprocess_roi(still_frame, still_box)
-        if roi.size == 0:
-            # A degenerate (zero-area) detection box yields an empty ROI that the
-            # classifier cannot process (PIL raises on an empty array). Skip it
-            # without marking the track classified, so a later, non-degenerate
-            # frame for the same track can still be classified.
-            logger.warning(
-                "Skipping classification for detection %s: empty ROI from box %s",
-                detection_id,
-                still_box,
-            )
-        else:
-            species, confidence = classify_fn(classifier, roi)
-
-            if track is not None:
-                tracker.mark_classified(track.track_id, species=species)
-
-    # Save only after a classification actually happened.
     if (
-        classifier_class.lower() == "bird"
-        and species
-        and confidence
-        and confidence > 0.4
+        is_bird
+        and result is not None
+        and result.species
+        and result.confidence
+        and result.confidence > _SAVE_CONFIDENCE_THRESHOLD
     ):
-        ts = datetime.now()
-        species_dir = Path(IMAGE_DIR) / species
-        species_dir.mkdir(parents=True, exist_ok=True)
-
-        stem = str(ts).replace(":", "-")
-        image_rel = f"{species}/{stem}.png"
-        thumb_rel = f"{species}/{stem}_thumb.jpg"
-        video_rel = f"{species}/{stem}.mp4"
-
-        # Save the *clean* best frame (no box drawn) — the box is persisted as
-        # normalized coordinates so the UI can overlay it on demand.
-        output_image = cv2.cvtColor(still_frame, cv2.COLOR_RGB2BGR)
-        cv2.imwrite(str(species_dir / f"{stem}.png"), output_image)
-
-        thumb_roi, _ = preprocess_roi(still_frame, still_box)
-        save_thumbnail(thumb_roi, str(species_dir / f"{stem}_thumb.jpg"))
-
-        # Start a video clip; only persist the path if recording actually began
-        # (single-flight: a clip already in progress declines new triggers). The
-        # mp4 finishes encoding a few seconds later, so the file may not exist yet
-        # when the DB row is written.
-        saved_video_rel = None
-        if record_fn is not None and record_fn(str(species_dir / f"{stem}.mp4")):
-            saved_video_rel = video_rel
-
-        box = normalized_box(still_box, still_frame.shape)
-        if detection_writer is not None:
-            detection_writer.write(
-                timestamp=ts,
-                species=species,
-                confidence=confidence,
-                detection_confidence=float(detection.conf),
-                image_path=image_rel,
-                thumbnail_path=thumb_rel,
-                video_path=saved_video_rel,
-                track_id=track.track_id if track is not None else None,
-                stable_frames=track.stable_frames if track is not None else None,
-                box_x=box[0],
-                box_y=box[1],
-                box_w=box[2],
-                box_h=box[3],
-            )
+        _persist_detection(context, still, detection, track, result)
 
     with results_lock:
-        classification_results[detection_id] = (species, confidence)
+        classification_results[detection_id] = (
+            (result.species, result.confidence) if result is not None else (None, None)
+        )
+
+
+def _reuse_classification(box: tuple) -> tuple:
+    """Reuse a previous frame's classification when its box overlaps ``box``.
+
+    Args:
+        box: The current detection box.
+
+    Returns:
+        ``(species, confidence)`` from a sufficiently-overlapping previous
+        detection, or ``(None, None)`` when there is no match.
+    """
+    for last_box, last_species, last_confidence in last_detection_classifications:
+        if iou(box, last_box) > 0.6:
+            return last_species, last_confidence
+    return None, None
+
+
+def _save_legacy_detection(image_with_boxes: np.ndarray, species: str) -> None:
+    """Save an annotated legacy detection image under the species directory.
+
+    Args:
+        image_with_boxes: The annotated frame to save.
+        species: Classified species name (the sub-directory).
+    """
+    species_dir = f"/home/stefan/Pictures/bird_detections/{species}/"
+    os.makedirs(species_dir, exist_ok=True)
+    output_image = cv2.cvtColor(image_with_boxes, cv2.COLOR_RGB2BGR)
+    cv2.imwrite(f"{species_dir}{datetime.now()}.png", output_image)
 
 
 def process_single_detection(
     item: tuple,
-    *,
+    context: PipelineContext,
     results_lock: threading.Lock,
-    classifier: Classifier,
 ) -> None:
-    """Process one detection item and optionally save high-confidence results.
+    """Process one detection with the legacy per-frame temporal-reuse logic.
 
-    Performs bird species classification on a detection, applies temporal
-    filtering to reuse previous classifications when boxes overlap, and
-    saves high-confidence detections to disk.
-
-    NOTE: This is the legacy logic (per-frame reuse). The new multi-frame
-    gating logic lives in `process_single_detection_with_stable_tracks`.
+    NOTE: This is the legacy path (per-frame reuse). The current multi-frame
+    gating logic lives in :func:`process_single_detection_with_stable_tracks`.
 
     Args:
         item: Tuple of (image, detection_id, detection, labels, classifier_class).
-        results_lock: Thread lock for safe results dictionary access.
-        classifier: Classifier instance for bird species classification.
+        context: Injected pipeline dependencies.
+        results_lock: Lock guarding the shared classification-results dict.
     """
     image, detection_id, detection, labels, classifier_class = item
 
-    # Temporal filtering: reuse classification if the box overlaps significantly
-    # with any detection from the previous frame.
-    species = None
-    confidence = None
-
-    for last_box, last_species, last_confidence in last_detection_classifications:
-        if iou(detection.box, last_box) > 0.6:
-            # Reuse classification from previous frame
-            species = last_species
-            confidence = last_confidence
-            break
-
-    # Run classification only if we didn't reuse
-    if species is None:
-        roi, coords = preprocess_roi(image, detection.box)
-        species, confidence = run_bird_classification(classifier, roi)
-
+    species, confidence = _reuse_classification(detection.box)
     roi, coords = preprocess_roi(image, detection.box)
+    if species is None:
+        species, confidence = context.classify_fn(context.classifier, roi)
+
     image_with_boxes = draw_boxes(
-        image.copy(), coords, detection, labels, species, confidence
+        image.copy(), coords, detection, labels, (species, confidence)
     )
 
-    if classifier_class.lower() == "bird" and species and confidence:
-        if confidence > 0.4:
-            time = datetime.now()
-            os.makedirs(
-                f"/home/stefan/Pictures/bird_detections/{species}/", exist_ok=True
-            )
-            output_image = cv2.cvtColor(image_with_boxes, cv2.COLOR_RGB2BGR)
-            cv2.imwrite(
-                f"/home/stefan/Pictures/bird_detections/{species}/{time}.png",
-                output_image,
-            )
+    if (
+        classifier_class.lower() == "bird"
+        and species
+        and confidence
+        and confidence > _SAVE_CONFIDENCE_THRESHOLD
+    ):
+        _save_legacy_detection(image_with_boxes, species)
 
     with results_lock:
         classification_results[detection_id] = (species, confidence)
@@ -321,11 +450,7 @@ def process_detections(
     manager: "ClassificationManager",
     labels: list,
 ) -> None:
-    """Draw detections onto ISP output and queue for classification.
-
-    Processes all detections from the current frame by drawing boxes on
-    the preview stream and queuing bird detections for asynchronous
-    species classification.
+    """Draw detections onto ISP output and queue bird detections for classification.
 
     Args:
         request: Camera request object with frame data.
@@ -338,13 +463,14 @@ def process_detections(
         return
     from picamera2 import MappedArray  # type: ignore
 
+    context = manager.context
     with MappedArray(request, stream) as m:
         full_img = m.array.copy()
 
         # Feed every clean frame into the video ring buffer (cheap; no encoding
         # while idle) so a triggered clip has pre-roll footage.
-        if manager.video_frame_fn is not None:
-            manager.video_frame_fn(full_img)
+        if context.video_frame_fn is not None:
+            context.video_frame_fn(full_img)
 
         for detection_id, detection in enumerate(last_results):
             classifier_class = label_for_category(labels, int(detection.category))
@@ -365,71 +491,54 @@ def process_detections(
             m.array[:] = image_with_boxes
 
             if classifier_class.lower() == "bird":
-                # Offer this frame as a best-frame candidate for the track it
-                # belongs to (the tracker's per-detection map was refreshed this
-                # frame, before this callback ran).
-                if manager.best_frame_selector is not None:
-                    track = manager.tracker.track_for_detection_id(detection_id)
-                    if track is not None:
-                        manager.best_frame_selector.observe(
-                            track.track_id,
-                            full_img,
-                            detection.box,
-                            float(detection.conf),
-                        )
-
+                _observe_best_frame(context, detection_id, detection, full_img)
                 manager.process(
                     (full_img, detection_id, detection, labels, classifier_class)
                 )
 
 
+def _observe_best_frame(
+    context: PipelineContext, detection_id: int, detection, frame: np.ndarray
+) -> None:
+    """Offer ``frame`` to the best-frame selector for the detection's track.
+
+    Args:
+        context: Pipeline dependencies (holds the best-frame selector + tracker).
+        detection_id: Detection index within the frame.
+        detection: The detection (box + YOLO confidence).
+        frame: The clean frame to offer as a candidate.
+    """
+    if context.best_frame_selector is None:
+        return
+    track = context.tracker.track_for_detection_id(detection_id)
+    if track is not None:
+        context.best_frame_selector.observe(
+            track.track_id, frame, detection.box, float(detection.conf)
+        )
+
+
 class ClassificationManager:
     """Manages bird classification processing with optional multithreading."""
 
-    def __init__(  # pylint: disable=too-many-arguments
-        # All configuration is keyword-only, so the count never hurts call-site
-        # readability (mirrors DetectionWriter.write).
+    def __init__(
         self,
-        classifier: Classifier,
+        context: PipelineContext,
         *,
         use_multithreading: bool = False,
         queue_maxsize: int = 0,
         use_stable_track_gating: bool = False,
-        tracker: Optional[StableDetectionTracker] = None,
-        detection_writer: Optional["DetectionWriter"] = None,
-        best_frame_selector: Optional[BestFrameSelector] = None,
-        record_fn: Optional[Callable[[str], bool]] = None,
-        video_frame_fn: Optional[Callable[[np.ndarray], None]] = None,
     ) -> None:
         """Initialize the ClassificationManager.
 
-        Creates a classification processor that can operate in synchronous or
-        asynchronous mode. In async mode, detections are queued for processing
-        by a background worker thread.
-
         Args:
-            classifier: Classifier instance for bird species classification.
-            use_multithreading: If True, enable async processing with background thread.
-            queue_maxsize: Maximum queue size for async processing. 0 means unlimited.
-            use_stable_track_gating: If True, gate classification until track is stable.
-            tracker: Optional tracker instance (defaults to module-global stable_detection_tracker).
-            detection_writer: Optional DetectionWriter for persisting records after each
-                high-confidence classification.
-            best_frame_selector: Optional per-track best-frame selector; when present,
-                the still/thumbnail/classification use the best frame seen for the track.
-            record_fn: Optional callable that starts a video clip at the given path,
-                returning ``True`` if recording began (see ``VideoRecorder.trigger``).
-            video_frame_fn: Optional callable fed every clean frame so the recorder
-                keeps a pre-roll buffer (see ``VideoRecorder.add_frame``).
+            context: Injected pipeline dependencies (see :class:`PipelineContext`).
+            use_multithreading: If True, process detections on a background thread.
+            queue_maxsize: Maximum queue size for async processing (0 = unlimited).
+            use_stable_track_gating: If True, gate classification on track stability.
         """
-        self.classifier = classifier
+        self.context = context
         self.use_multithreading = use_multithreading
         self.use_stable_track_gating = use_stable_track_gating
-        self.tracker = tracker or stable_detection_tracker
-        self.detection_writer = detection_writer
-        self.best_frame_selector = best_frame_selector
-        self.record_fn = record_fn
-        self.video_frame_fn = video_frame_fn
         self._results_lock: threading.Lock | None = None
         self._queue: "Queue[tuple] | None" = None
         self._thread: threading.Thread | None = None
@@ -447,16 +556,16 @@ class ClassificationManager:
         """Set the lock for thread-safe results access.
 
         Args:
-            results_lock: Threading lock for synchronizing results dictionary access.
+            results_lock: Threading lock synchronizing results-dict access.
         """
         self._results_lock = results_lock
 
     def process(self, item: tuple) -> None:
         """Process a detection item synchronously or queue it for async processing.
 
-        In synchronous mode, the detection is processed immediately on the
-        calling thread. In async mode, it is queued for the background worker.
-        If the queue is full, the item is dropped to prevent frame blocking.
+        In synchronous mode the detection is processed immediately on the calling
+        thread. In async mode it is queued for the background worker; if the queue
+        is full the item is dropped to prevent blocking the camera callback.
 
         Args:
             item: Detection item tuple to process.
@@ -475,12 +584,11 @@ class ClassificationManager:
     def _dispatch(self, item: tuple) -> None:
         """Run the configured per-detection processing for one item.
 
-        Exceptions raised while processing a single detection (e.g. a degenerate
-        ROI the classifier rejects, or an I/O error while saving) are logged and
-        swallowed so one bad detection never takes down the pipeline. In async
-        mode an unhandled exception would kill the worker thread permanently and
-        silently stop all further classification; in sync mode it would crash
-        the camera callback.
+        Exceptions from processing a single detection are logged and swallowed so
+        one bad detection never takes down the pipeline: in async mode an
+        unhandled exception would kill the worker thread permanently and silently
+        stop all further classification; in sync mode it would crash the camera
+        callback.
 
         Args:
             item: Detection item tuple to process.
@@ -489,28 +597,20 @@ class ClassificationManager:
             if self.use_stable_track_gating:
                 process_single_detection_with_stable_tracks(
                     item,
+                    context=self.context,
                     results_lock=self._results_lock,  # type: ignore[arg-type]
-                    classifier=self.classifier,
-                    tracker=self.tracker,
-                    detection_writer=self.detection_writer,
-                    best_frame_selector=self.best_frame_selector,
-                    record_fn=self.record_fn,
                 )
             else:
                 process_single_detection(
                     item,
+                    context=self.context,
                     results_lock=self._results_lock,  # type: ignore[arg-type]
-                    classifier=self.classifier,
                 )
         except Exception:  # pylint: disable=broad-exception-caught
             logger.exception("Classification failed for a detection; skipping it")
 
     def _worker_loop(self) -> None:
-        """Worker thread main loop for processing queued detections.
-
-        Continuously retrieves items from the queue and processes them
-        until a None sentinel value is received, indicating shutdown.
-        """
+        """Worker thread loop: process queued detections until the sentinel arrives."""
         while not self._stop_event.is_set():  # type: ignore
             item = self._queue.get()  # type: ignore
             if item is None:
@@ -525,11 +625,7 @@ class ClassificationManager:
                 self._queue.task_done()  # type: ignore
 
     def stop(self) -> None:
-        """Stop the worker thread gracefully.
-
-        Signals the worker thread to stop and waits for it to finish
-        with a 5-second timeout. In synchronous mode, this is a no-op.
-        """
+        """Stop the worker thread gracefully (a no-op in synchronous mode)."""
         if not self.use_multithreading:
             return
         self._stop_event.set()  # type: ignore

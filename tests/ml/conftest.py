@@ -6,7 +6,7 @@ lightweight fakes exercise the real orchestration without a camera, an ONNX mode
 or a database.
 """
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 import pytest
 
@@ -28,11 +28,11 @@ class RecordingWriter:
 
     def __init__(self) -> None:
         """Start with an empty capture log."""
-        self.writes: List[Dict[str, Any]] = []
+        self.writes: List[Any] = []
 
-    def write(self, **kwargs: Any) -> None:
-        """Record one write payload."""
-        self.writes.append(kwargs)
+    def write(self, record: Any) -> None:
+        """Record one written ``DetectionRecord``."""
+        self.writes.append(record)
 
 
 class RecordingRecorder:

@@ -49,9 +49,7 @@ def _write_manifest(reference_dir: Path) -> None:
             }
         },
     }
-    (reference_dir / "manifest.json").write_text(
-        json.dumps(manifest), encoding="utf-8"
-    )
+    (reference_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
 
 
 @pytest.fixture()

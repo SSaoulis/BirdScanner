@@ -17,7 +17,10 @@ _REPO_ROOT = os.path.dirname(
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-from tools import build_species_reference as builder  # noqa: E402  # pylint: disable=wrong-import-position
+# pylint: disable=wrong-import-position
+from tools import build_species_reference as builder  # noqa: E402
+
+# pylint: enable=wrong-import-position
 
 
 # --- slug + pure helpers ---------------------------------------------------
@@ -64,13 +67,16 @@ def test_slice_section_returns_none_when_no_heading_matches():
 
 def _patch_fetches(monkeypatch, *, with_image=True, summary_found=True):
     """Patch all network functions with deterministic canned behaviour."""
+
     def fake_summary(title):
         if not summary_found:
             return None
         doc = {
             "titles": {"canonical": title.replace(" ", "_")},
             "extract": f"{title} is a small bird.",
-            "content_urls": {"desktop": {"page": f"https://en.wikipedia.org/wiki/{title}"}},
+            "content_urls": {
+                "desktop": {"page": f"https://en.wikipedia.org/wiki/{title}"}
+            },
             "wikibase_item": "Q123",
         }
         if with_image:
@@ -156,7 +162,7 @@ def test_build_manifest_skips_skip_labels(monkeypatch, tmp_path):
     overrides = {"Unknown": {"skip": True}}
 
     manifest = builder.build_manifest(
-        ["Unknown", "Arctic tern"], overrides, {}, throttle=0
+        ["Unknown", "Arctic tern"], overrides, {}, builder.BuildOptions(throttle=0)
     )
 
     assert "Unknown" not in manifest["species"]
@@ -170,17 +176,20 @@ def test_build_manifest_incremental_skips_complete_entries(monkeypatch, tmp_path
     monkeypatch.setattr(builder, "OUTPUT_DIR", str(tmp_path))
     _patch_fetches(monkeypatch)
 
-    first = builder.build_manifest(["Arctic tern"], {}, {}, throttle=0)
+    first = builder.build_manifest(
+        ["Arctic tern"], {}, {}, builder.BuildOptions(throttle=0)
+    )
 
     calls = []
 
     def _record_no_summary(title):
-        calls.append(title)
-        return None
+        calls.append(title)  # stands in for a missing article (returns None)
 
     monkeypatch.setattr(builder, "fetch_wikipedia_summary", _record_no_summary)
 
-    second = builder.build_manifest(["Arctic tern"], {}, first, throttle=0)
+    second = builder.build_manifest(
+        ["Arctic tern"], {}, first, builder.BuildOptions(throttle=0)
+    )
 
     assert not calls  # no refetch
     assert second["species"]["Arctic tern"] == first["species"]["Arctic tern"]
@@ -190,10 +199,14 @@ def test_build_manifest_refetches_when_image_missing(monkeypatch, tmp_path):
     """A complete entry whose image file is gone is refetched."""
     monkeypatch.setattr(builder, "OUTPUT_DIR", str(tmp_path))
     _patch_fetches(monkeypatch)
-    first = builder.build_manifest(["Arctic tern"], {}, {}, throttle=0)
+    first = builder.build_manifest(
+        ["Arctic tern"], {}, {}, builder.BuildOptions(throttle=0)
+    )
 
     # Delete the downloaded image so the entry is now incomplete.
-    img_path = os.path.join(str(tmp_path), first["species"]["Arctic tern"]["images"][0]["path"])
+    img_path = os.path.join(
+        str(tmp_path), first["species"]["Arctic tern"]["images"][0]["path"]
+    )
     os.remove(img_path)
 
     refetched = []
@@ -204,7 +217,7 @@ def test_build_manifest_refetches_when_image_missing(monkeypatch, tmp_path):
         return orig_summary(title)
 
     monkeypatch.setattr(builder, "fetch_wikipedia_summary", tracking_summary)
-    builder.build_manifest(["Arctic tern"], {}, first, throttle=0)
+    builder.build_manifest(["Arctic tern"], {}, first, builder.BuildOptions(throttle=0))
 
     assert refetched == ["Arctic tern"]
 
@@ -213,7 +226,9 @@ def test_build_manifest_force_refetches_everything(monkeypatch, tmp_path):
     """``--force`` refetches even complete entries."""
     monkeypatch.setattr(builder, "OUTPUT_DIR", str(tmp_path))
     _patch_fetches(monkeypatch)
-    first = builder.build_manifest(["Arctic tern"], {}, {}, throttle=0)
+    first = builder.build_manifest(
+        ["Arctic tern"], {}, {}, builder.BuildOptions(throttle=0)
+    )
 
     calls = []
     orig = builder.fetch_wikipedia_summary
@@ -223,7 +238,9 @@ def test_build_manifest_force_refetches_everything(monkeypatch, tmp_path):
         return orig(t)
 
     monkeypatch.setattr(builder, "fetch_wikipedia_summary", _record_and_delegate)
-    builder.build_manifest(["Arctic tern"], {}, first, force=True, throttle=0)
+    builder.build_manifest(
+        ["Arctic tern"], {}, first, builder.BuildOptions(force=True, throttle=0)
+    )
 
     assert calls == ["Arctic tern"]
 
@@ -234,7 +251,10 @@ def test_build_manifest_limit_caps_processed_labels(monkeypatch, tmp_path):
     _patch_fetches(monkeypatch)
 
     manifest = builder.build_manifest(
-        ["A bird", "B bird", "C bird"], {}, {}, limit=2, throttle=0
+        ["A bird", "B bird", "C bird"],
+        {},
+        {},
+        builder.BuildOptions(limit=2, throttle=0),
     )
 
     assert len(manifest["species"]) == 2

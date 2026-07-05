@@ -1,12 +1,14 @@
 """Shared geometry and drawing helpers for the detection pipeline.
 
-These utilities operate on bounding boxes in ``(x, y, w, h)`` ISP-output pixel
-coordinates and on image arrays. They are intentionally free of any tracking or
-classification state so they can be reused across the pipeline and unit-tested
-in isolation.
+Bounding-box maths lives on the :class:`Box` value object; the module-level
+functions (``iou``, ``preprocess_roi``, ``normalized_box``, ``draw_boxes``) are
+thin, tuple-based wrappers around it so existing call sites keep passing plain
+``(x, y, w, h)`` tuples. Everything here is free of tracking/classification
+state so it can be reused across the pipeline and unit-tested in isolation.
 """
 
-from typing import TYPE_CHECKING, Optional
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -14,6 +16,115 @@ from PIL import Image
 
 if TYPE_CHECKING:
     from birdscanner.ml.object_detection import Detection
+
+# Fraction the ROI is padded by when squared up for the classifier (10% a side).
+_ROI_PAD_FRAC = 0.2
+
+
+def _clamp(value: float, low: float, high: float) -> float:
+    """Clamp ``value`` to the closed ``[low, high]`` interval."""
+    return max(low, min(high, value))
+
+
+@dataclass(frozen=True)
+class Box:
+    """An axis-aligned bounding box in ``(x, y, w, h)`` pixel coordinates.
+
+    The box owns every geometric operation the pipeline needs (overlap, square
+    padding, cropping, normalisation) so its callers stay declarative and their
+    per-function local-variable count stays small.
+    """
+
+    x: float
+    y: float
+    w: float
+    h: float
+
+    @classmethod
+    def from_xywh(cls, box: Tuple[float, float, float, float]) -> "Box":
+        """Build a :class:`Box` from an ``(x, y, w, h)`` tuple."""
+        x, y, w, h = box
+        return cls(x, y, w, h)
+
+    @property
+    def x2(self) -> float:
+        """Right edge (``x + w``)."""
+        return self.x + self.w
+
+    @property
+    def y2(self) -> float:
+        """Bottom edge (``y + h``)."""
+        return self.y + self.h
+
+    @property
+    def area(self) -> float:
+        """Box area (``w * h``)."""
+        return self.w * self.h
+
+    def iou(self, other: "Box") -> float:
+        """Return the Intersection-over-Union overlap with ``other`` in ``[0, 1]``.
+
+        Args:
+            other: The box to compare against.
+
+        Returns:
+            The IoU score; ``0.0`` when the boxes are disjoint or degenerate.
+        """
+        inter_w = max(0.0, min(self.x2, other.x2) - max(self.x, other.x))
+        inter_h = max(0.0, min(self.y2, other.y2) - max(self.y, other.y))
+        intersection = inter_w * inter_h
+        union = self.area + other.area - intersection
+        return intersection / union if union > 0 else 0.0
+
+    def padded_square(self, img_w: int, img_h: int) -> "Box":
+        """Return a square, ``_ROI_PAD_FRAC``-padded box centred on this one.
+
+        The result is expanded to a square using the longer side, padded, then
+        clamped so it stays fully inside a ``img_w`` x ``img_h`` image while
+        remaining square. Integer-aligned so it can index a numpy array.
+
+        Args:
+            img_w: Image width in pixels.
+            img_h: Image height in pixels.
+
+        Returns:
+            The padded, clamped square box (integer coordinates).
+        """
+        size = min(max(self.w, self.h) * (1.0 + _ROI_PAD_FRAC), img_w, img_h)
+        left = _clamp(self.x + self.w / 2 - size / 2, 0.0, max(0.0, img_w - size))
+        top = _clamp(self.y + self.h / 2 - size / 2, 0.0, max(0.0, img_h - size))
+        return Box(int(left), int(top), int(size), int(size))
+
+    def crop(self, image: np.ndarray) -> np.ndarray:
+        """Return the image patch covered by this box (a numpy view)."""
+        x1, y1 = int(self.x), int(self.y)
+        return image[y1 : y1 + int(self.h), x1 : x1 + int(self.w)]
+
+    def as_int_tuple(self) -> Tuple[int, int, int, int]:
+        """Return the box as an integer ``(x, y, w, h)`` tuple."""
+        return (int(self.x), int(self.y), int(self.w), int(self.h))
+
+    def normalized(
+        self, image_shape: Tuple[int, ...]
+    ) -> Tuple[float, float, float, float]:
+        """Return the box as ``[0, 1]`` fractions of the image dimensions.
+
+        Args:
+            image_shape: The image's numpy shape, i.e. ``(height, width, ...)``.
+
+        Returns:
+            ``(x, y, w, h)`` clamped to ``[0, 1]``; all zeros for a degenerate
+            image.
+        """
+        img_h, img_w = image_shape[:2]
+        if img_w <= 0 or img_h <= 0:
+            return (0.0, 0.0, 0.0, 0.0)
+        return (
+            _clamp(self.x / img_w, 0.0, 1.0),
+            _clamp(self.y / img_h, 0.0, 1.0),
+            _clamp(self.w / img_w, 0.0, 1.0),
+            _clamp(self.h / img_h, 0.0, 1.0),
+        )
 
 
 def label_for_category(labels: list, category: int) -> Optional[str]:
@@ -42,8 +153,7 @@ def normalized_box(box: tuple, image_shape: tuple) -> tuple:
 
     The detection box is stored normalized so the frontend can overlay it on the
     saved image at any rendered size without needing the original pixel
-    dimensions. The result is clamped to ``[0, 1]`` so a box that extends past
-    the frame edge never renders outside the image.
+    dimensions. The result is clamped to ``[0, 1]``.
 
     Args:
         box: Bounding box in ``(x, y, w, h)`` pixel coordinates.
@@ -53,27 +163,11 @@ def normalized_box(box: tuple, image_shape: tuple) -> tuple:
         tuple: ``(x, y, w, h)`` as fractions in ``[0, 1]`` of the image's width
         and height.
     """
-    x, y, w, h = box
-    img_h, img_w = image_shape[:2]
-    if img_w <= 0 or img_h <= 0:
-        return (0.0, 0.0, 0.0, 0.0)
-
-    def _clamp(value: float) -> float:
-        return max(0.0, min(1.0, value))
-
-    return (
-        _clamp(x / img_w),
-        _clamp(y / img_h),
-        _clamp(w / img_w),
-        _clamp(h / img_h),
-    )
+    return Box.from_xywh(box).normalized(image_shape)
 
 
 def iou(box1: tuple, box2: tuple) -> float:
     """Calculate Intersection over Union (IoU) between two boxes.
-
-    Computes the IoU metric for two bounding boxes, commonly used for
-    overlap detection and temporal filtering.
 
     Args:
         box1: Bounding box in format (x, y, w, h).
@@ -82,106 +176,83 @@ def iou(box1: tuple, box2: tuple) -> float:
     Returns:
         float: IoU score between 0.0 and 1.0, where 1.0 indicates complete overlap.
     """
-    x1, y1, w1, h1 = box1
-    x2, y2, w2, h2 = box2
-
-    # Convert to (x1, y1, x2, y2) format
-    box1_x1, box1_y1, box1_x2, box1_y2 = x1, y1, x1 + w1, y1 + h1
-    box2_x1, box2_y1, box2_x2, box2_y2 = x2, y2, x2 + w2, y2 + h2
-
-    # Calculate intersection
-    inter_x1 = max(box1_x1, box2_x1)
-    inter_y1 = max(box1_y1, box2_y1)
-    inter_x2 = min(box1_x2, box2_x2)
-    inter_y2 = min(box1_y2, box2_y2)
-
-    inter_area = max(0, inter_x2 - inter_x1) * max(0, inter_y2 - inter_y1)
-
-    # Calculate union
-    box1_area = w1 * h1
-    box2_area = w2 * h2
-    union_area = box1_area + box2_area - inter_area
-
-    if union_area == 0:
-        return 0.0
-    return inter_area / union_area
+    return Box.from_xywh(box1).iou(Box.from_xywh(box2))
 
 
 def preprocess_roi(image: np.ndarray, box: tuple) -> tuple:
     """Preprocess the region of interest for classification.
 
-    Extracts and preprocesses a detection region by:
-    1. Converting to square by using the larger dimension
-    2. Expanding by 20% (10% on each side) through the center
-    3. Clamping to image boundaries while maintaining square shape
+    Expands the detection box to a padded square (see :meth:`Box.padded_square`)
+    centred on the box, clamped to the image bounds, and crops it.
 
     Args:
         image: Input image as numpy array.
         box: Bounding box in format (x, y, w, h).
 
     Returns:
-        tuple: (roi, coords) where roi is the preprocessed image patch
-            and coords is the final box in format (x, y, size, size).
+        tuple: (roi, coords) where roi is the preprocessed image patch and coords
+            is the final box in format (x, y, size, size).
     """
-    x, y, w, h = box
     img_h, img_w = image.shape[:2]
+    square = Box.from_xywh(box).padded_square(img_w, img_h)
+    return square.crop(image), square.as_int_tuple()
 
-    # Step 1: Make it square by using the maximum side
-    max_side = max(w, h)
 
-    # Center the smaller dimension
-    x_offset = (max_side - w) // 2
-    y_offset = (max_side - h) // 2
+def _format_label(
+    detection: "Detection",
+    labels: list,
+    classification: Optional[Tuple[Optional[str], Optional[float]]],
+) -> str:
+    """Build the annotation caption for a detection box.
 
-    x1 = x - x_offset
-    y1 = y - y_offset
-    x2 = x1 + max_side
-    y2 = y1 + max_side
+    Args:
+        detection: Detection object exposing ``category`` and ``conf``.
+        labels: List of class label strings.
+        classification: Optional ``(species, confidence)`` from the classifier.
 
-    # Step 2: Expand by 20% from center
-    expansion = int(max_side * 0.2 / 2)  # 10% on each side
+    Returns:
+        The formatted label string (e.g. ``"bird (0.91) - 0.87 - Robin"``).
+    """
+    category = int(detection.category)
+    label_name = label_for_category(labels, category) or f"id:{category}"
+    label = f"{label_name} ({detection.conf:.2f})"
+    species, confidence = classification or (None, None)
+    if confidence is not None:
+        label += f" - {confidence:.2f}"
+    if species:
+        label += f" - {species}"
+    return label
 
-    x1 -= expansion
-    y1 -= expansion
-    x2 += expansion
-    y2 += expansion
 
-    expanded_size = x2 - x1
+def _draw_caption(image_array: np.ndarray, origin: Tuple[int, int], text: str) -> None:
+    """Draw ``text`` at ``origin`` over a semi-transparent white plate, in place.
 
-    # Step 3: Clamp to image boundaries while keeping it square
-    if x1 < 0:
-        x1 = 0
-        x2 = expanded_size
-    if y1 < 0:
-        y1 = 0
-        y2 = expanded_size
-    if x2 > img_w:
-        x2 = img_w
-        x1 = max(0, x2 - expanded_size)
-    if y2 > img_h:
-        y2 = img_h
-        y1 = max(0, y2 - expanded_size)
+    Args:
+        image_array: Image to annotate (modified in place).
+        origin: The box's top-left ``(x, y)`` corner.
+        text: The caption to render.
+    """
+    text_x, text_y = origin[0] + 5, origin[1] + 15
+    (width, height), baseline = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
 
-    # Ensure square: take the smaller of the two clamped dimensions
-    final_size = min(x2 - x1, y2 - y1)
-
-    # Re-center if we had to clamp
-    if final_size < expanded_size:
-        cx = (x1 + x2) / 2
-        cy = (y1 + y2) / 2
-        x1 = int(cx - final_size / 2)
-        y1 = int(cy - final_size / 2)
-        x2 = x1 + final_size
-        y2 = y1 + final_size
-
-        # Final clamp to image boundaries
-        x1 = max(0, min(x1, img_w - final_size))
-        y1 = max(0, min(y1, img_h - final_size))
-        x2 = min(x1 + final_size, img_w)
-        y2 = min(y1 + final_size, img_h)
-
-    roi = image[y1:y2, x1:x2]
-    return roi, (x1, y1, final_size, final_size)
+    overlay = image_array.copy()
+    cv2.rectangle(
+        overlay,
+        (text_x, text_y - height),
+        (text_x + width, text_y + baseline),
+        (255, 255, 255),
+        cv2.FILLED,
+    )
+    cv2.addWeighted(overlay, 0.30, image_array, 0.70, 0, image_array)
+    cv2.putText(
+        image_array,
+        text,
+        (text_x, text_y),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.5,
+        (0, 0, 255),
+        1,
+    )
 
 
 def draw_boxes(
@@ -189,63 +260,23 @@ def draw_boxes(
     coords: tuple,
     detection: "Detection",
     labels: list,
-    species: Optional[str] = None,
-    confidence: Optional[float] = None,
+    classification: Optional[Tuple[Optional[str], Optional[float]]] = None,
 ) -> np.ndarray:
-    """Draw detection boxes and labels on image array.
-
-    Draws bounding boxes, class labels, and optional classification results
-    on the image. Includes a semi-transparent background for text readability.
+    """Draw a detection box and its label on ``image_array`` in place.
 
     Args:
         image_array: Input image as numpy array (modified in-place).
         coords: Box coordinates in format (x, y, w, h).
-        detection: Detection object with category and confidence.
+        detection: Detection object with ``category`` and ``conf``.
         labels: List of class label strings.
-        species: Optional species name from classification.
-        confidence: Optional classification confidence score.
+        classification: Optional ``(species, confidence)`` classification result.
 
     Returns:
-        np.ndarray: The modified image array with drawn boxes and labels.
+        np.ndarray: The modified image array with the drawn box and label.
     """
     x, y, w, h = coords
-    overlay = image_array.copy()
-    category = int(detection.category)
-    label_name = label_for_category(labels, category)
-    if label_name is None:
-        label_name = f"id:{category}"
-    label = f"{label_name} ({detection.conf:.2f})"
-    if confidence is not None:
-        label += f" - {confidence:.2f}"
-    if species:
-        label += f" - {species}"
-
-    (text_width, text_height), baseline = cv2.getTextSize(
-        label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1
-    )
-    text_x = x + 5
-    text_y = y + 15
-
-    cv2.rectangle(
-        overlay,
-        (text_x, text_y - text_height),
-        (text_x + text_width, text_y + baseline),
-        (255, 255, 255),
-        cv2.FILLED,
-    )
-    alpha = 0.30
-    cv2.addWeighted(overlay, alpha, image_array, 1 - alpha, 0, image_array)
-
+    _draw_caption(image_array, (x, y), _format_label(detection, labels, classification))
     cv2.rectangle(image_array, (x, y), (x + w, y + h), (0, 255, 0, 0), thickness=2)
-    cv2.putText(
-        image_array,
-        label,
-        (text_x, text_y),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.5,
-        (0, 0, 255),
-        1,
-    )
     return image_array
 
 
