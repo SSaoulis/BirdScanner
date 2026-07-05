@@ -12,6 +12,13 @@ export interface Detection {
   thumbnail_path: string;
   /** Path to the saved mp4 clip; null for legacy rows, disabled video, or while the clip is still encoding. */
   video_path: string | null;
+  /**
+   * Why this sighting has no clip, when `video_path` is null:
+   * `"recorder_busy"` (a clip for another sighting was recording — only one
+   * records at a time), `"disabled"` (video recording is off), or null for
+   * legacy rows written before the reason was persisted.
+   */
+  no_video_reason: string | null;
   track_id: number | null;
   stable_frames: number | null;
   duration_sec: number | null;

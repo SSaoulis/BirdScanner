@@ -53,6 +53,11 @@ IMAGE_DIR = os.environ.get("IMAGE_DIR", "/home/stefan/Pictures/bird_detections")
 # Minimum classification confidence before a detection is saved/persisted.
 _SAVE_CONFIDENCE_THRESHOLD = 0.4
 
+# Reasons a detection ends up with no video clip (persisted as ``no_video_reason``
+# so the UI can explain the greyed-out Video control). ``None`` means a clip exists.
+NO_VIDEO_RECORDER_BUSY = "recorder_busy"  # single-flight recorder declined the trigger
+NO_VIDEO_DISABLED = "disabled"  # no recorder wired (save_video off)
+
 logger = logging.getLogger("tracking")
 
 
@@ -236,8 +241,8 @@ def _save_still_and_thumbnail(species_dir: Path, stem: str, still: Still) -> Non
 
 def _start_clip(
     context: PipelineContext, species_dir: Path, stem: str, species: str
-) -> Optional[str]:
-    """Start a video clip for this detection, returning its relative path.
+) -> tuple[Optional[str], Optional[str]]:
+    """Start a video clip for this detection, returning its path and no-clip reason.
 
     Args:
         context: Pipeline dependencies (holds the record callable).
@@ -246,13 +251,18 @@ def _start_clip(
         species: Species name (the relative path's directory).
 
     Returns:
-        The clip path relative to ``IMAGE_DIR`` when recording began, else
-        ``None`` (no recorder, or a single-flight-declined trigger).
+        A ``(video_path, no_video_reason)`` pair. When recording began,
+        ``video_path`` is the clip path relative to ``IMAGE_DIR`` and the reason
+        is ``None``. Otherwise ``video_path`` is ``None`` and the reason is
+        ``NO_VIDEO_DISABLED`` (no recorder wired) or ``NO_VIDEO_RECORDER_BUSY``
+        (the single-flight recorder was already capturing another clip).
     """
     if context.record_fn is None:
-        return None
+        return None, NO_VIDEO_DISABLED
     started = context.record_fn(str(species_dir / f"{stem}.mp4"))
-    return f"{species}/{stem}.mp4" if started else None
+    if started:
+        return f"{species}/{stem}.mp4", None
+    return None, NO_VIDEO_RECORDER_BUSY
 
 
 def _persist_detection(
@@ -280,7 +290,7 @@ def _persist_detection(
     species_dir.mkdir(parents=True, exist_ok=True)
 
     _save_still_and_thumbnail(species_dir, stem, still)
-    video_rel = _start_clip(context, species_dir, stem, result.species)
+    video_rel, no_video_reason = _start_clip(context, species_dir, stem, result.species)
 
     if context.detection_writer is None:
         return
@@ -295,6 +305,7 @@ def _persist_detection(
             image_path=f"{result.species}/{stem}.png",
             thumbnail_path=f"{result.species}/{stem}_thumb.jpg",
             video_path=video_rel,
+            no_video_reason=no_video_reason,
             track_id=track.track_id if track is not None else None,
             stable_frames=track.stable_frames if track is not None else None,
             box_x=norm[0],

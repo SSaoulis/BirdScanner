@@ -126,6 +126,7 @@ def test_stable_track_classifies_saves_and_writes(
     assert write.confidence == 0.95
     assert write.detection_confidence == pytest.approx(0.9)  # from det.conf
     assert write.video_path is None  # no record_fn supplied
+    assert write.no_video_reason == cp.NO_VIDEO_DISABLED  # no recorder wired
 
     species_dir = tmp_path / "Robin"
     assert len(list(species_dir.glob("*.png"))) == 1
@@ -170,7 +171,10 @@ def test_stable_track_skips_degenerate_zero_area_box(
     assert should_run_bird_classification_for_detection(0, tracker=tracker) is True
 
 
-@pytest.mark.parametrize("started,expect_video", [(True, True), (False, False)])
+@pytest.mark.parametrize(
+    "started,expect_video,expect_reason",
+    [(True, True, None), (False, False, cp.NO_VIDEO_RECORDER_BUSY)],
+)
 def test_stable_track_video_path_only_when_recording_started(
     tmp_path,
     monkeypatch,
@@ -181,6 +185,7 @@ def test_stable_track_video_path_only_when_recording_started(
     frame_factory,
     started,
     expect_video,
+    expect_reason,
 ):
     """video_path is persisted only when record_fn reports recording began."""
     monkeypatch.setattr(cp, "IMAGE_DIR", str(tmp_path))
@@ -201,7 +206,9 @@ def test_stable_track_video_path_only_when_recording_started(
     )
 
     assert len(recorder.paths) == 1  # record_fn always attempted
-    assert (recording_writer.writes[0].video_path is not None) is expect_video
+    write = recording_writer.writes[0]
+    assert (write.video_path is not None) is expect_video
+    assert write.no_video_reason == expect_reason
 
 
 def test_stable_track_uses_best_frame(
