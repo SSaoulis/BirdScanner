@@ -130,11 +130,15 @@ pylint tests --rcfile=tests/.pylintrc        # tests (test-tuned config)
     `SensorDimensions`, `detector/crop_controller.CropControllerConfig`,
     `api/routers/detections.DetectionFilters` (a FastAPI `Depends` class), and
     `tools/build_species_reference.BuildOptions`.
-  - Decomposed god-functions: `detector/main.main` (now a sequence of `_prepare_intrinsics`
-    / `_build_gating` / `_build_manager` / `_build_camera` / `_start_control_server` /
-    `_run_capture_loop`, threading state through the `_Camera` / `_Gating` bundles) and
-    `detector/camera_server` (the request handler is a module-level `CameraRequestHandler`
-    reading its deps off a `_ControlServer`, not a per-server closure).
+  - Decomposed god-functions: `detector/main.main` (now a short startup script:
+    `configure_logging` → `init_db` → `wait_for_camera`/`prepare_intrinsics`/`build_camera`
+    (from `detector/camera.py`) → `build_gating`/`build_manager` (from `detector/gating.py`)
+    → `_start_control_server` → `_run_capture_loop`, threading state through the `Camera` /
+    `Gating` bundles). The camera bring-up and classification-pipeline wiring now live in
+    their own cohesive modules (`detector/camera.py`, `detector/gating.py`) so `main.py` is
+    just the entry point plus the per-frame loop. `detector/camera_server` (the request
+    handler is a module-level `CameraRequestHandler` reading its deps off a `_ControlServer`,
+    not a per-server closure).
 - **`tests/.pylintrc`** additionally relaxes pytest idioms (`missing-*-docstring`,
   `redefined-outer-name` from fixtures, `unused-argument`, `protected-access`,
   `use-implicit-booleaness-not-comparison` for exact-empty-literal assertions). It exists
@@ -178,8 +182,9 @@ imports. It has four layered subpackages plus the consolidated assets and dev to
 
 ```
 birdscanner/
-  detector/   Pi-only camera + hardware control and the entry point (main, config,
-              camera_server, crop, crop_controller, track_logging, paths, video_recorder)
+  detector/   Pi-only camera + hardware control and the entry point (main, camera,
+              gating, config, camera_server, crop, crop_controller, track_logging,
+              paths, video_recorder)
   ml/         platform-independent inference (object_detection, detection_utils,
               tracking, classification, classification_pipeline, best_frame)
   api/        FastAPI REST API + routers (was backend/)
@@ -260,16 +265,21 @@ from `detector/` or `api/`.
 **`birdscanner/detector/paths.py`** — package-anchored data-file resolution:
 - Resolves the detector's on-disk data files relative to the **package location** (`<repo>/assets`, `/app/assets` in Docker), not the current working directory — this is what lets the detector run as `python -m birdscanner.detector.main` from anywhere (the old `cwd=src` requirement is gone). `assets_dir()` / `model_dir()` are overridable via the `ASSETS_DIR` / `MODEL_DIR` env vars (default `assets/` and `assets/models/`). Helpers `coco_labels_path()`, `class_to_idx_path()`, `classifier_model_path()` return the concrete files; `main.py` uses them instead of hardcoded relative strings
 
-**`birdscanner/detector/main.py`** — entry point:
-- `main()` is decomposed into focused builders (`_configure_logging`, `_prepare_intrinsics`, `_build_gating`, `_build_manager`, `_build_camera`, `_start_control_server`, `_run_capture_loop`, `_shutdown`) instead of one long function; state is threaded through the `_Camera` (picam2 + imx500 + intrinsics + crop_controller) and `_Gating` (tracker + best-frame selector + video recorder) bundles so no builder takes a long argument list. A `KeyboardInterrupt` out of `_run_capture_loop` triggers `_shutdown`
-- Reads all runtime settings from `config.config` (imported as `app_config`); no `argparse`. `_prepare_intrinsics` iterates `vars(app_config.intrinsics)`, so optional intrinsic fields left as `None` do not clobber the network intrinsics defaults
-- The detection crop region is **variable and set from the UI** (no longer hardcoded). On startup it loads the persisted region via `load_crop_region(crop_config_path(), default_crop_region(...))` (default = the historical 900×900 at `(4/13, 5/10)` of the 4056×3040 sensor, aimed at the feeder), sizes the `main` stream to the crop's aspect ratio (`main_stream_size_for_crop`), and builds the camera config through a `build_camera_config(main_size, scaler_crop)` closure that centralises every picamera2 knob so `CropController` can rebuild it on a reconfigure
-- A `CropController` (see `birdscanner/detector/crop_controller.py`) owns all live crop changes and exposes a `camera_lock`; the main capture loop holds that lock across `capture_metadata()` + `parse_detections()` so a UI-triggered reconfigure (which may `stop()`/`start()` the camera) never races an in-flight capture
-- `vflip=True, hflip=True` transforms are applied (camera is mounted upside-down)
-- Calls `update_detection_classifications_cache` each frame to keep the legacy temporal filter in sync alongside the new tracker
-- Creates the SQLite engine and runs `init_db()` on startup **before camera init**, so the schema always exists; the detector owns all DB writes, so this lets the read-only API serve an empty gallery even when the camera never comes up. The same `engine` is reused to wire a `DetectionWriter` into the `ClassificationManager` so every high-confidence classification is persisted; the writer is flushed via `detection_writer.stop()` on `KeyboardInterrupt`.
-- When stable-track gating is active it also constructs a `BestFrameSelector` (freed per-track via the tracker's combined `on_track_deleted` callback — a non-optional local is captured by that closure so it never dereferences a possibly-`None` selector) and, when `save_video` is set, a `VideoRecorder`; the recorder's `add_frame`/`trigger` are injected into the `ClassificationManager` as `video_frame_fn`/`record_fn` (keeping picamera2 out of `ml/`)
+**`birdscanner/detector/main.py`** — entry point + capture loop only:
+- `main()` reads as a short startup script (`configure_logging` → `make_engine`/`init_db` → `wait_for_camera`/`prepare_intrinsics` → `setup_classifier` → `build_gating` → `DetectionWriter`/`build_manager` → `build_camera` → `_start_control_server` → `_run_capture_loop`). The camera bring-up lives in `detector/camera.py` and the classification-pipeline wiring in `detector/gating.py`; `main.py` keeps only `_start_control_server`, `_run_capture_loop`, `_shutdown`, and `main`. A `KeyboardInterrupt` out of `_run_capture_loop` triggers `_shutdown`
+- Reads all runtime settings from `config.config` (imported as `app_config`); no `argparse`
+- `_run_capture_loop` installs the per-frame `detection_callback` (updates the tracker + queues bird detections via `process_detections`) then loops: it holds the `CropController`'s `camera_lock` across `capture_metadata()` + `parse_detections()` so a UI-triggered reconfigure (which may `stop()`/`start()` the camera) never races an in-flight capture, and calls `update_detection_classifications_cache` each frame to keep the legacy temporal filter in sync alongside the new tracker
+- Creates the SQLite engine and runs `init_db()` on startup **before camera init**, so the schema always exists; the detector owns all DB writes, so this lets the read-only API serve an empty gallery even when the camera never comes up. The same `engine` is reused to wire a `DetectionWriter` into the `ClassificationManager` (via `build_manager`) so every high-confidence classification is persisted, and to bind the delete callback for `_start_control_server`; the writer is flushed via `detection_writer.stop()` on `KeyboardInterrupt`
+- `_start_control_server` wires the `camera_server` (snapshots + crop + detection deletes) to the started camera and the DB engine; a port-bind `OSError` is logged and swallowed so the detection pipeline keeps running without it
+
+**`birdscanner/detector/camera.py`** — camera bring-up (IMX500 + Picamera2 + crop):
 - `wait_for_camera()` wraps `IMX500(...)` in a retry-with-backoff loop (30 s default): when the camera dev-node is missing it logs a concise warning and retries instead of crashing, so the detector never crash-loops and auto-recovers when the camera reappears
+- `prepare_intrinsics(imx500)` validates the object-detection task and iterates `vars(app_config.intrinsics)`, so optional intrinsic fields left as `None` do not clobber the network intrinsics defaults (and `print_intrinsics` prints + exits)
+- `build_camera(imx500, intrinsics)` loads the persisted crop region via `load_crop_region(crop_config_path(), default_crop_region(...))` (default = the historical 900×900 at `(4/13, 5/10)` of the 4056×3040 sensor, aimed at the feeder), sizes the `main` stream to the crop's aspect ratio (`main_stream_size_for_crop`), applies `vflip=True, hflip=True` (camera is mounted upside-down), starts the camera, and builds the `CropController`. The camera config is built through a `build_camera_config(main_size, scaler_crop)` closure that centralises every picamera2 knob so `CropController` can rebuild it on a reconfigure. Returns a `Camera` bundle (picam2 + imx500 + intrinsics + crop_controller). This module is Pi-only (imports `libcamera`/`picamera2`); no test imports it
+
+**`birdscanner/detector/gating.py`** — classification-pipeline wiring:
+- `build_gating(intrinsics)` builds the stable-track gating machinery and returns a `Gating` bundle (`use_stable_tracks`, tracker, best-frame selector, video recorder). When `object_duration_threshold <= 0` gating is disabled (legacy per-frame mode) and every component is `None`. Otherwise it constructs the `StableDetectionTracker` (wired to a `TrackingLogger` for lifecycle logging), a `BestFrameSelector` freed per-track via the tracker's combined `on_track_deleted` callback (a non-optional local captured by that closure so it never dereferences a possibly-`None` selector), and — when `save_video` is set — a `VideoRecorder`. `min_stable_frames(fps)` converts `object_duration_threshold` × fps into a frame count
+- `build_manager(classifier, gating, detection_writer)` assembles the `PipelineContext` and `ClassificationManager` from the `Gating` bundle; the recorder's `add_frame`/`trigger` are injected as `video_frame_fn`/`record_fn` (keeping picamera2 out of `ml/`). It installs the manager's results lock. Imports only `ml/`, `config`, `track_logging`, `video_recorder`, and `db/writer` — no picamera2, so it is importable without a camera
 
 **`birdscanner/detector/video_recorder.py`** — on-demand short-clip recorder (unit-tested in `tests/test_video_recorder.py`):
 - `VideoRecorder` keeps a bounded `deque` of recent raw `main`-stream frames (the pre-roll) fed by `add_frame` every frame — **cheap, no encoding while idle**, which matters because the **Pi 5 has no hardware video encoder** so all encoding is software (CPU). `trigger(dest_path)` snapshots the pre-roll, keeps collecting `post_roll_seconds` of live frames, then encodes the whole sequence to an mp4 (`cv2.VideoWriter`, `mp4v`, RGB→BGR like the still writes) on a **background thread** so the camera callback never blocks. **Single-flight**: a trigger while a clip is recording is declined (returns `False`), bounding CPU/RAM. Durations come from `config` (`video_pre_roll_seconds`/`video_post_roll_seconds`); fps from the camera inference rate. Trade-off: the RAM buffer costs ~1.2 MB/frame × pre-roll frames — downscale/limit if it bites
@@ -312,7 +322,7 @@ from `detector/` or `api/`.
 - `capture_full_preview_array()` — briefly widens `ScalerCrop` to the full sensor under the lock, pulls a settled frame (`_capture_settled` waits for the control to take effect), then restores the previous crop; the momentary widening is a deliberate, brief glitch in the live feed while configuring
 - `get_state()` — returns the crop as sensor pixels + normalized box + sensor dimensions (for the UI)
 
-**`birdscanner/detector/track_logging.py`** — `TrackingLogger` logs stable-track and track-deletion events to the `tracking` logger
+**`birdscanner/detector/track_logging.py`** — the `tracking` logger module: `configure_logging(debug)` sets up the stdout stream handler at DEBUG/INFO (called once from `main`), and `TrackingLogger` logs stable-track and track-deletion events (used by `gating.build_gating`)
 
 ### Model files (not in repo, must exist on the Pi)
 
