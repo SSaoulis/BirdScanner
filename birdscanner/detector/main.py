@@ -24,6 +24,7 @@ from birdscanner.ml.classification_pipeline import (
     ClassificationManager,
 )
 from birdscanner.ml import classification_pipeline
+from birdscanner.ml.geolocation import PlaceholderGeolocationModel, load_species_order
 from birdscanner.detector.camera import (
     Camera,
     build_camera,
@@ -37,6 +38,7 @@ from birdscanner.detector.camera_server import (
 )
 from birdscanner.detector.config import config as app_config
 from birdscanner.detector.gating import Gating, build_gating, build_manager
+from birdscanner.detector.geo import bootstrap_geo_priors
 from birdscanner.detector.settings import load_settings, settings_config_path
 from birdscanner.detector.settings_controller import (
     SettingsController,
@@ -191,6 +193,16 @@ def main() -> None:
     classifier = setup_classifier(
         str(classifier_model_path()), str(class_to_idx_path())
     )
+
+    # Precompute + cache this location's 52 weekly presence vectors (only
+    # regenerates when the location/species set changed). The returned provider
+    # is consumed once the Bayesian prior update is wired (follow-up); building
+    # the cache here is the groundwork for it.
+    geo_model = PlaceholderGeolocationModel(
+        load_species_order(str(class_to_idx_path()))
+    )
+    bootstrap_geo_priors(settings, geo_model)
+
     gating = build_gating(intrinsics)
 
     # The detector owns all DB writes; the API mounts the same database read-only.

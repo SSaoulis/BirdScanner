@@ -77,6 +77,11 @@ class Config:
             requirement to a single stable frame.
         debug: Enable DEBUG-level logging for track lifecycle events.
         preview: Show the camera preview window.
+        latitude: Camera location latitude in degrees, ``[-90, 90]``. Seeds the
+            geolocation prior cache; changing it (via Settings) regenerates the
+            per-week presence vectors on the next boot.
+        longitude: Camera location longitude in degrees, ``[-180, 180]`` (see
+            ``latitude``).
         intrinsics: Network-intrinsics overrides (see :class:`IntrinsicsConfig`).
         video: Per-detection clip settings (see :class:`VideoConfig`).
     """
@@ -96,6 +101,8 @@ class Config:
     object_duration_threshold: float = 0.1
     debug: bool = True
     preview: bool = False
+    latitude: float = 0.0
+    longitude: float = 0.0
     intrinsics: IntrinsicsConfig = field(default_factory=IntrinsicsConfig)
     video: VideoConfig = field(default_factory=VideoConfig)
 

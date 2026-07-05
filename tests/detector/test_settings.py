@@ -69,6 +69,32 @@ def test_merge_rejects_empty_image_dir() -> None:
         merge_settings(default_settings(), {"image_dir": "   "})
 
 
+def test_merge_accepts_valid_coordinates() -> None:
+    merged = merge_settings(
+        default_settings(), {"latitude": 51.5074, "longitude": -0.1278}
+    )
+    assert merged.latitude == 51.5074
+    assert merged.longitude == -0.1278
+
+
+@pytest.mark.parametrize("value", [-91.0, 90.5, "abc"])
+def test_merge_rejects_out_of_range_latitude(value) -> None:
+    with pytest.raises(ValueError):
+        merge_settings(default_settings(), {"latitude": value})
+
+
+@pytest.mark.parametrize("value", [-181.0, 180.5, "abc"])
+def test_merge_rejects_out_of_range_longitude(value) -> None:
+    with pytest.raises(ValueError):
+        merge_settings(default_settings(), {"longitude": value})
+
+
+def test_location_fields_require_restart() -> None:
+    # Location seeds the startup geo-prior generation, so it is restart-only.
+    assert {"latitude", "longitude"} <= RESTART_FIELDS
+    assert not {"latitude", "longitude"} & LIVE_FIELDS
+
+
 def test_ignore_species_trims_and_dedupes() -> None:
     merged = merge_settings(
         default_settings(), {"ignore_species": [" Robin ", "Robin", "", "Unknown"]}

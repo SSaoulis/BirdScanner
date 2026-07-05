@@ -58,6 +58,11 @@ class Settings:
             (restart).
         multithread: Run classification on a background thread (restart).
         debug: Enable DEBUG-level tracking logs (applied live).
+        latitude: Camera location latitude in degrees, ``[-90, 90]``; seeds the
+            geolocation prior cache (requires restart — the 52 weekly presence
+            vectors are regenerated at startup when it changes).
+        longitude: Camera location longitude in degrees, ``[-180, 180]`` (requires
+            restart; see ``latitude``).
     """
 
     detection_threshold: float
@@ -70,6 +75,8 @@ class Settings:
     video_post_roll_seconds: float
     multithread: bool
     debug: bool
+    latitude: float
+    longitude: float
 
 
 # Fields that a running detector reads live, so a change takes effect at once.
@@ -95,6 +102,11 @@ _POSITIVE_FLOAT_FIELDS = frozenset(
     {"stability_seconds", "video_pre_roll_seconds", "video_post_roll_seconds"}
 )
 _BOOL_FIELDS = frozenset({"video_save", "multithread", "debug"})
+# Fields validated as a float within an inclusive ``(low, high)`` range.
+_BOUNDED_FLOAT_FIELDS: dict[str, tuple[float, float]] = {
+    "latitude": (-90.0, 90.0),
+    "longitude": (-180.0, 180.0),
+}
 
 
 def default_settings() -> Settings:
@@ -117,6 +129,8 @@ def default_settings() -> Settings:
         video_post_roll_seconds=app_config.video.post_roll_seconds,
         multithread=app_config.multithread,
         debug=app_config.debug,
+        latitude=app_config.latitude,
+        longitude=app_config.longitude,
     )
 
 
@@ -139,6 +153,17 @@ def _as_positive_float(name: str, value: Any) -> float:
         raise ValueError(f"{name} must be a number") from exc
     if number < 0.0:
         raise ValueError(f"{name} must not be negative")
+    return number
+
+
+def _as_bounded_float(name: str, value: Any, low: float, high: float) -> float:
+    """Coerce ``value`` to a float within ``[low, high]`` or raise ``ValueError``."""
+    try:
+        number = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{name} must be a number") from exc
+    if not low <= number <= high:
+        raise ValueError(f"{name} must be between {low:g} and {high:g}")
     return number
 
 
@@ -171,6 +196,9 @@ def _coerce_field(name: str, value: Any) -> Any:
         return _as_bool(name, value)
     if name == "ignore_species":
         return _as_species_list(value)
+    if name in _BOUNDED_FLOAT_FIELDS:
+        low, high = _BOUNDED_FLOAT_FIELDS[name]
+        return _as_bounded_float(name, value, low, high)
     if name == "image_dir":
         text = str(value).strip()
         if not text:

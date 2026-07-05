@@ -57,6 +57,9 @@ def apply_settings_to_config(settings: Settings) -> None:
     app_config.video.save = settings.video_save
     app_config.video.pre_roll_seconds = settings.video_pre_roll_seconds
     app_config.video.post_roll_seconds = settings.video_post_roll_seconds
+    # Location seeds the geolocation prior cache, which is (re)built at startup.
+    app_config.latitude = settings.latitude
+    app_config.longitude = settings.longitude
     # IMAGE_DIR is a module-level global read when each detection is saved.
     classification_pipeline.IMAGE_DIR = settings.image_dir
 

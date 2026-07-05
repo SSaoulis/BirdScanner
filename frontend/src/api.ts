@@ -123,6 +123,10 @@ export interface Settings {
   multithread: boolean;
   /** Enable DEBUG-level tracking logs. */
   debug: boolean;
+  /** Camera location latitude in degrees (−90–90); seeds the geolocation prior cache. */
+  latitude: number;
+  /** Camera location longitude in degrees (−180–180); seeds the geolocation prior cache. */
+  longitude: number;
 }
 
 /** Settings plus the metadata the UI needs to badge/handle restart-only fields. */

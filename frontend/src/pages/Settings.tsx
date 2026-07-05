@@ -223,6 +223,32 @@ export function Settings() {
         />
       </Section>
 
+      <Section title="Location" eyebrow="Where the camera is">
+        <p className="text-xs text-bark">
+          Used by the geolocation model to weight which species are plausible
+          here at this time of year. Changing the location rebuilds its cache when
+          the detector restarts.
+        </p>
+        <NumberField
+          label="Latitude"
+          suffix="°"
+          step={0.0001}
+          help="Degrees north (−90 to 90). Negative is south of the equator."
+          value={form.latitude}
+          onChange={(v) => setField("latitude", v)}
+          restart={restartFields.has("latitude")}
+        />
+        <NumberField
+          label="Longitude"
+          suffix="°"
+          step={0.0001}
+          help="Degrees east (−180 to 180). Negative is west of the prime meridian."
+          value={form.longitude}
+          onChange={(v) => setField("longitude", v)}
+          restart={restartFields.has("longitude")}
+        />
+      </Section>
+
       <Section title="System" eyebrow="How the detector runs">
         <ToggleField
           label="Multithreaded classification"
