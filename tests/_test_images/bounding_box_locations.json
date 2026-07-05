@@ -1,0 +1,12 @@
+[
+    {
+        "image": "tests/_test_images/Erithacus_rubecula.jpg",
+        "species": "European robin",
+        "bounding_box": [[612, 455], [2322, 1779]]
+    },
+    {
+        "image": "tests/_test_images/Eurasian_jay.jpg",
+        "species": "Eurasian jay",
+        "bounding_box": [[385, 441], [2781, 2357]]
+    }
+]

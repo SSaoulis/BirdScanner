@@ -64,10 +64,36 @@ fixtures live in the nearest `conftest.py`:
   deps overridden), `seeded_detections`, and the `FakeHttpxResponse` stand-in for the
   detector-proxy routes.
 - **`tests/ml/conftest.py`** — injectable pipeline fakes (`FakeDetection`, `RecordingWriter`,
-  `RecordingRecorder`, and a `stable_tracker` builder) for the classification-pipeline tests.
+  `RecordingRecorder`, and a `stable_tracker` builder) for the classification-pipeline tests,
+  plus the two **real-model** fixtures used by the end-to-end tests: `bird_image_cases`
+  (loads the labelled `tests/_test_images/` JPEGs + their boxes into `ImageCase`
+  tuples — `skip`s if the manifest/images are absent) and `real_classifier` (builds the
+  int8 ONNX `Classifier` via `setup_classifier` — `skip`s if the model file is absent).
+  Both are module-scoped so the large JPEGs / ONNX session are loaded once per module.
 Camera/crop fakes stay local to their single test file (`test_camera_server.py`,
 `test_crop_controller.py`) since they are not shared and are constructed at parametrize
 time (before fixtures exist).
+
+**End-to-end detection tests** — `tests/_test_images/` holds a small labelled fixture
+set (`Erithacus_rubecula.jpg`, `Eurasian_jay.jpg`) plus `bounding_box_locations.json`
+(each entry: `image` repo-relative path, `species` = the **classifier label** the crop
+should predict, and `bounding_box` = `[[tlx, tly], [brx, bry]]`). The JSON is tracked via
+a `!tests/_test_images/bounding_box_locations.json` negation of the repo-wide `*.json`
+ignore; the JPEGs are committed so the tests are runnable off the Pi (the `.onnx` model
+stays out-of-band, so the tests `skip` where it is absent). The hand-labelled boxes stand
+in for **Stage 1** (the IMX500 `.rpk` object detector, which only runs on the camera
+silicon and cannot execute off-Pi); everything downstream runs for real:
+- **`tests/ml/test_bird_species_classification.py`** — classifier accuracy: crops each
+  box with the live `preprocess_roi`, classifies with the real int8 model, and asserts the
+  prediction equals the manifest's `species`.
+- **`tests/ml/test_end_to_end_detection.py`** — the full seam from classifier to DB: a
+  `Detection` built from the JSON box flows through `ClassificationManager` (stable-track
+  gating, sync dispatch) → real classifier → `_persist_detection`, writing the still +
+  thumbnail to a tmp `IMAGE_DIR` (via `monkeypatch` of `classification_pipeline.IMAGE_DIR`)
+  and a `DetectionRecord` through the real `DetectionWriter` into the in-memory SQLite
+  `engine`/`session_factory`. Asserts the row (species, `detection_confidence`, normalized
+  box, `no_video_reason`) and the on-disk files. A second test feeds a zero-area box and
+  asserts the empty-ROI guard skips it (no row; the track left unclassified).
 
 ### Type checking (mypy)
 

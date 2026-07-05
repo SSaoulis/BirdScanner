@@ -233,3 +233,7 @@ frontend/dist/
 !frontend/package.json
 !frontend/package-lock.json
 !frontend/tsconfig.json
+
+# Test fixtures: the labelled-image bounding-box manifest IS source (the *.json rule
+# above would otherwise exclude it); the JPEGs it references are committed too.
+!tests/_test_images/bounding_box_locations.json
