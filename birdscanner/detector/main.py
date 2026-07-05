@@ -20,7 +20,6 @@ from birdscanner.ml.classification_pipeline import (
     process_detections,
     setup_classifier,
     ClassificationManager,
-    update_detection_classifications_cache,
 )
 from birdscanner.ml import classification_pipeline
 from birdscanner.detector.camera import (
@@ -91,9 +90,8 @@ def _run_capture_loop(
     """Run the frame-capture loop until interrupted.
 
     Installs the per-frame detection callback (which updates the tracker and
-    queues bird detections) and then repeatedly captures metadata, parses
-    detections under the crop controller's lock, and refreshes the legacy
-    temporal-filter cache.
+    queues bird detections) and then repeatedly captures metadata and parses
+    detections under the crop controller's lock.
 
     Args:
         camera: The started camera bundle.
@@ -105,8 +103,7 @@ def _run_capture_loop(
 
     def detection_callback(request):
         """Update tracker state and process detections for one frame."""
-        if gating.use_stable_tracks:
-            gating.tracker.update_frame(state["last_results"] or [])
+        gating.tracker.update_frame(state["last_results"] or [])
         process_detections(request, "main", state["last_results"], manager, labels)
 
     camera.picam2.pre_callback = detection_callback
@@ -124,9 +121,6 @@ def _run_capture_loop(
                 app_config.threshold,
                 camera.picam2,
             )
-        update_detection_classifications_cache(
-            state["last_results"], classification_pipeline.classification_results
-        )
 
 
 def _shutdown(

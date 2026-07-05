@@ -30,7 +30,6 @@ from birdscanner.ml.classification import (
 )
 from birdscanner.ml.detection_utils import (
     draw_boxes,
-    iou,
     label_for_category,
     normalized_box,
     preprocess_roi,
@@ -60,11 +59,6 @@ NO_VIDEO_DISABLED = "disabled"  # no recorder wired (save_video off)
 
 logger = logging.getLogger("tracking")
 
-
-# Global classification state shared with the live frame loop.
-classification_results: dict[int, tuple[str | None, float | None]] = {}
-# List of (box, species, confidence) tuples for temporal filtering.
-last_detection_classifications: list[tuple] = []
 
 ClassifyFn = Callable[[Classifier, np.ndarray], tuple]
 
@@ -138,8 +132,8 @@ class PipelineContext:
 
     Bundling these into one object keeps the per-detection functions (and
     :class:`ClassificationManager`) to a short, readable parameter list. All
-    fields except ``classifier`` are optional so tests and the legacy path can
-    supply only what they need.
+    fields except ``classifier`` are optional so tests can supply only what
+    they need.
 
     Attributes:
         classifier: Classifier used for species classification.
@@ -330,7 +324,6 @@ def _persist_detection(
 def process_single_detection_with_stable_tracks(
     item: tuple,
     context: PipelineContext,
-    results_lock: threading.Lock,
 ) -> None:
     """Process a detection using multi-frame stable-track gating.
 
@@ -341,7 +334,6 @@ def process_single_detection_with_stable_tracks(
     Args:
         item: Tuple of (image, detection_id, detection, labels, classifier_class).
         context: Injected pipeline dependencies.
-        results_lock: Lock guarding the shared classification-results dict.
     """
     _image, detection_id, detection, _labels, classifier_class = item
 
@@ -365,104 +357,6 @@ def process_single_detection_with_stable_tracks(
         and result.confidence > _SAVE_CONFIDENCE_THRESHOLD
     ):
         _persist_detection(context, still, detection, track, result)
-
-    with results_lock:
-        classification_results[detection_id] = (
-            (result.species, result.confidence) if result is not None else (None, None)
-        )
-
-
-def _reuse_classification(box: tuple) -> tuple:
-    """Reuse a previous frame's classification when its box overlaps ``box``.
-
-    Args:
-        box: The current detection box.
-
-    Returns:
-        ``(species, confidence)`` from a sufficiently-overlapping previous
-        detection, or ``(None, None)`` when there is no match.
-    """
-    for last_box, last_species, last_confidence in last_detection_classifications:
-        if iou(box, last_box) > 0.6:
-            return last_species, last_confidence
-    return None, None
-
-
-def _save_legacy_detection(image_with_boxes: np.ndarray, species: str) -> None:
-    """Save an annotated legacy detection image under the species directory.
-
-    Args:
-        image_with_boxes: The annotated frame to save.
-        species: Classified species name (the sub-directory).
-    """
-    species_dir = f"/home/stefan/Pictures/bird_detections/{species}/"
-    os.makedirs(species_dir, exist_ok=True)
-    output_image = cv2.cvtColor(image_with_boxes, cv2.COLOR_RGB2BGR)
-    cv2.imwrite(f"{species_dir}{datetime.now()}.png", output_image)
-
-
-def process_single_detection(
-    item: tuple,
-    context: PipelineContext,
-    results_lock: threading.Lock,
-) -> None:
-    """Process one detection with the legacy per-frame temporal-reuse logic.
-
-    NOTE: This is the legacy path (per-frame reuse). The current multi-frame
-    gating logic lives in :func:`process_single_detection_with_stable_tracks`.
-
-    Args:
-        item: Tuple of (image, detection_id, detection, labels, classifier_class).
-        context: Injected pipeline dependencies.
-        results_lock: Lock guarding the shared classification-results dict.
-    """
-    image, detection_id, detection, labels, classifier_class = item
-
-    species, confidence = _reuse_classification(detection.box)
-    roi, coords = preprocess_roi(image, detection.box)
-    if species is None:
-        species, confidence = context.classify_fn(context.classifier, roi)
-
-    image_with_boxes = draw_boxes(
-        image.copy(), coords, detection, labels, (species, confidence)
-    )
-
-    if (
-        classifier_class.lower() == "bird"
-        and species
-        and confidence
-        and confidence > _SAVE_CONFIDENCE_THRESHOLD
-    ):
-        _save_legacy_detection(image_with_boxes, species)
-
-    with results_lock:
-        classification_results[detection_id] = (species, confidence)
-
-
-def update_detection_classifications_cache(
-    detections: list,
-    results: dict,
-) -> None:
-    """Update the cache of detection classifications for the current frame.
-
-    Builds a list of (box, species, confidence) tuples from the current
-    detections and their classification results, replacing the previous
-    frame's cache.
-
-    Args:
-        detections: List of Detection objects from current frame.
-        results: Dictionary mapping detection_id to (species, confidence).
-    """
-    global last_detection_classifications
-
-    new_classifications = []
-    for detection_id, detection in enumerate(detections):
-        if detection_id in results:
-            species, confidence = results[detection_id]
-            if species and confidence:
-                new_classifications.append((detection.box, species, confidence))
-
-    last_detection_classifications = new_classifications
 
 
 def process_detections(
@@ -548,7 +442,6 @@ class ClassificationManager:
         *,
         use_multithreading: bool = False,
         queue_maxsize: int = 0,
-        use_stable_track_gating: bool = False,
     ) -> None:
         """Initialize the ClassificationManager.
 
@@ -556,12 +449,9 @@ class ClassificationManager:
             context: Injected pipeline dependencies (see :class:`PipelineContext`).
             use_multithreading: If True, process detections on a background thread.
             queue_maxsize: Maximum queue size for async processing (0 = unlimited).
-            use_stable_track_gating: If True, gate classification on track stability.
         """
         self.context = context
         self.use_multithreading = use_multithreading
-        self.use_stable_track_gating = use_stable_track_gating
-        self._results_lock: threading.Lock | None = None
         self._queue: "Queue[tuple] | None" = None
         self._thread: threading.Thread | None = None
         self._stop_event: threading.Event | None = None
@@ -573,14 +463,6 @@ class ClassificationManager:
             self._queue = Queue(maxsize=queue_maxsize)
             self._thread = threading.Thread(target=self._worker_loop, daemon=True)
             self._thread.start()
-
-    def set_results_lock(self, results_lock: threading.Lock) -> None:
-        """Set the lock for thread-safe results access.
-
-        Args:
-            results_lock: Threading lock synchronizing results-dict access.
-        """
-        self._results_lock = results_lock
 
     def process(self, item: tuple) -> None:
         """Process a detection item synchronously or queue it for async processing.
@@ -616,18 +498,7 @@ class ClassificationManager:
             item: Detection item tuple to process.
         """
         try:
-            if self.use_stable_track_gating:
-                process_single_detection_with_stable_tracks(
-                    item,
-                    context=self.context,
-                    results_lock=self._results_lock,  # type: ignore[arg-type]
-                )
-            else:
-                process_single_detection(
-                    item,
-                    context=self.context,
-                    results_lock=self._results_lock,  # type: ignore[arg-type]
-                )
+            process_single_detection_with_stable_tracks(item, context=self.context)
         except Exception:  # pylint: disable=broad-exception-caught
             logger.exception("Classification failed for a detection; skipping it")
 
