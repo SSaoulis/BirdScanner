@@ -240,10 +240,12 @@ def main() -> None:
     settings_controller = SettingsController(settings_path, settings, manager.context)
 
     camera = build_camera(imx500, intrinsics)
-    # Record the full, uncropped field of view: feed the recorder the raw stream
-    # (debayered + downscaled) instead of the cropped `main` frame. Only wired
-    # when video recording is on (the recorder is only built then).
-    if gating.video_recorder is not None:
+    # By default the clip records the cropped, ISP-processed `main` frame (so it
+    # matches the saved still). Only when `video.full_fov` is enabled do we feed
+    # the recorder the raw stream (debayered + downscaled) to record the whole,
+    # uncropped field of view. Either way this is only wired when video recording
+    # is on (the recorder is only built then).
+    if gating.video_recorder is not None and app_config.video.full_fov:
         manager.context.video_frame_source = build_clip_frame_source(camera.picam2)
     control_server = _start_control_server(
         camera, engine, settings_controller, species_labels

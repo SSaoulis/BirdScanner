@@ -199,9 +199,12 @@ def build_camera(imx500: IMX500, intrinsics: Any) -> Camera:
         crop_config_path(), default_crop_region(SENSOR_W, SENSOR_H)
     )
     initial_main_size = main_stream_size_for_crop(crop_region.w, crop_region.h)
-    # The full-FOV raw stream feeds the (uncropped) video clip. Computed once and
-    # reused across reconfigures — it does not depend on the crop or main size.
-    raw_stream = _full_fov_raw_stream(picam2)
+    # The full-FOV raw stream feeds the (uncropped) video clip, but only when the
+    # full-FOV clip mode is enabled. By default the clip records the cropped
+    # `main` frame (matching the still), so we skip the explicit raw request and
+    # its unpacked-format CMA premium (~+14 MB). Computed once and reused across
+    # reconfigures — it does not depend on the crop or main size.
+    raw_stream = _full_fov_raw_stream(picam2) if app_config.video.full_fov else None
 
     def build_camera_config(
         main_size: tuple[int, int], scaler_crop: tuple[int, int, int, int]
@@ -219,6 +222,12 @@ def build_camera(imx500: IMX500, intrinsics: Any) -> Camera:
         Returns:
             A picamera2 preview configuration object.
         """
+        # The raw stream is the full sensor field of view (ScalerCrop only affects
+        # the processed `main` stream), used to record the uncropped video clip
+        # when full-FOV mode is on; it is already allocated, so requesting it
+        # explicitly only makes it accessible in the per-frame callback. Omitted
+        # (``raw_stream is None``) in the default cropped-clip mode.
+        raw_kwargs = {"raw": raw_stream} if raw_stream is not None else {}
         return picam2.create_preview_configuration(
             # picamera2's "888" format names are byte-reversed vs. the numpy
             # array they yield: "BGR888" delivers an [R, G, B]-ordered array. The
@@ -227,11 +236,7 @@ def build_camera(imx500: IMX500, intrinsics: Any) -> Camera:
             # get RGB. Using "RGB888" here yields BGR and swaps red<->blue
             # everywhere downstream.
             main={"size": main_size, "format": "BGR888"},
-            # The raw stream is the full sensor field of view (ScalerCrop only
-            # affects the processed `main` stream), used to record the uncropped
-            # video clip; it is already allocated, so requesting it explicitly
-            # only makes it accessible in the per-frame callback.
-            raw=raw_stream,
+            **raw_kwargs,
             controls={
                 "FrameRate": intrinsics.inference_rate,
                 "ScalerCrop": scaler_crop,
