@@ -74,8 +74,6 @@ export function Lightbox({
   // caption jump to the next sighting a beat before its (network-fetched) image
   // catches up, which reads as clunky. Everything below is derived from `shown`.
   const [shown, setShown] = useState<Detection>(detection);
-  // True while the next sighting's full image is preloading off-screen.
-  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     // Same record (e.g. an in-place species correction): the image bytes are
@@ -89,12 +87,10 @@ export function Lightbox({
     // appear together. Falls through on error so a broken image still swaps
     // (showing its own broken state) instead of trapping the loader.
     let cancelled = false;
-    setLoading(true);
     const preload = new Image();
     const settle = () => {
       if (cancelled) return;
       setShown(detection);
-      setLoading(false);
     };
     preload.onload = settle;
     preload.onerror = settle;
@@ -311,24 +307,6 @@ export function Lightbox({
                 alt={`Captured ${species}`}
                 className="block max-h-[80vh] max-w-[44vw] animate-plate-develop rounded-lg bg-ink shadow-plate-lift"
               />
-            )}
-
-            {/* ── Developing veil ──
-                While the next sighting's full image preloads off-screen, the
-                current plate is held on screen and dimmed under a warm scrim
-                while a soft goldfinch light sweeps down it — like a naturalist
-                reading a photographic plate. It sits below the on-image controls
-                (z-10) so they stay bright and clickable, and is click-through. */}
-            {mode === "photo" && loading && (
-              <div
-                className="pointer-events-none absolute inset-0 z-[5] overflow-hidden rounded-lg"
-                role="status"
-                aria-live="polite"
-              >
-                <div className="absolute inset-0 bg-ink/40" />
-                <div className="absolute inset-x-0 top-0 h-2/5 -translate-y-full animate-plate-scan bg-gradient-to-b from-transparent via-gold/45 to-transparent" />
-                <span className="sr-only">Developing the next plate…</span>
-              </div>
             )}
 
             {/* Detection box overlay — positioned in normalized [0,1] space over

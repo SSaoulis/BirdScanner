@@ -55,37 +55,23 @@
   }
 }
 
-/* ── Lightbox: developing a fresh plate ──
+/* ── Lightbox: the next plate resolves into focus ──
    When the viewer moves to the next sighting, the current image is held on
-   screen while a soft goldfinch light sweeps down it (plate-scan), then the
-   next image — already preloaded — resolves out of a blur into focus
-   (plate-develop), so the picture, its box and its label all land together. */
-@keyframes plate-scan {
-  0% {
-    transform: translateY(-100%);
-  }
-  100% {
-    transform: translateY(350%);
-  }
-}
-.animate-plate-scan {
-  animation: plate-scan 1.15s ease-in-out infinite;
-}
-
+   screen while the next one preloads off-screen, then swaps in and quietly
+   resolves out of a soft focus — a gentle cross-fade so the picture, its box
+   and its label all land together, with no scrim or moving highlight. */
 @keyframes plate-develop {
   0% {
     opacity: 0;
-    filter: blur(12px);
-    transform: scale(1.02);
+    filter: blur(4px);
   }
   100% {
     opacity: 1;
     filter: blur(0);
-    transform: scale(1);
   }
 }
 .animate-plate-develop {
-  animation: plate-develop 0.55s ease-out both;
+  animation: plate-develop 0.4s ease-out both;
 }
 
 /* Warm, slim scrollbars so the horizontal strips don't show a cold grey bar. */
