@@ -28,10 +28,13 @@ from birdscanner.ml.classification_pipeline import (
     ClassificationManager,
     PipelineContext,
 )
+from birdscanner.ml.geomodel import GeoPriorAdjuster
 
 from birdscanner.detector.config import config as app_config
 from birdscanner.detector.track_logging import TrackingLogger
 from birdscanner.detector.video_recorder import VideoRecorder
+from birdscanner.db.database import SessionFactory
+from birdscanner.db.geo_prior_store import load_geo_priors
 from birdscanner.db.writer import DetectionWriter
 
 logger = logging.getLogger("tracking")
@@ -103,8 +106,42 @@ def build_gating(intrinsics: Any) -> Gating:
     return Gating(tracker, selector, recorder)
 
 
+def build_geo_adjuster(
+    classifier: Any, session_factory: SessionFactory
+) -> Optional[GeoPriorAdjuster]:
+    """Build the runtime geomodel adjuster from the stored prior, if available.
+
+    Reads the priors persisted at startup (see
+    :mod:`birdscanner.detector.geo_priors`) and, together with the classifier's
+    ``idx_to_class`` map, precomputes the reweighting matrix. Returns ``None`` —
+    disabling the geomodel correction so classification is unchanged — when the
+    classifier has no class-index map or no priors are stored (no location
+    configured, or the startup rebuild was skipped/failed).
+
+    Args:
+        classifier: The species classifier (for its ``idx_to_class`` output map).
+        session_factory: Zero-argument callable returning a ``Session`` context
+            manager (to read the stored priors).
+
+    Returns:
+        A ready :class:`GeoPriorAdjuster`, or ``None`` when unavailable.
+    """
+    idx_to_class = getattr(classifier, "idx_to_class", None)
+    if idx_to_class is None:
+        return None
+    priors = load_geo_priors(session_factory)
+    if not priors:
+        logger.info("Geomodel correction disabled: no stored geo priors.")
+        return None
+    logger.info("Geomodel correction enabled for %d species.", len(priors))
+    return GeoPriorAdjuster(priors, idx_to_class)
+
+
 def build_manager(
-    classifier: Any, gating: Gating, detection_writer: DetectionWriter
+    classifier: Any,
+    gating: Gating,
+    detection_writer: DetectionWriter,
+    geo_adjuster: Optional[GeoPriorAdjuster] = None,
 ) -> ClassificationManager:
     """Assemble the :class:`ClassificationManager` and its pipeline context.
 
@@ -112,6 +149,8 @@ def build_manager(
         classifier: The species classifier.
         gating: The stable-track gating bundle.
         detection_writer: The background DB writer.
+        geo_adjuster: Optional geomodel Bayesian-update adjuster (see
+            :func:`build_geo_adjuster`); ``None`` leaves classification unchanged.
 
     Returns:
         A ready manager with its results lock installed.
@@ -124,6 +163,7 @@ def build_manager(
         best_frame_selector=gating.best_frame_selector,
         record_fn=recorder.trigger if recorder is not None else None,
         video_frame_fn=recorder.add_frame if recorder is not None else None,
+        geo_adjuster=geo_adjuster,
     )
     manager = ClassificationManager(
         context,

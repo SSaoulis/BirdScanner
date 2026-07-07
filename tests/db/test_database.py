@@ -37,6 +37,9 @@ _EXPECTED_COLUMNS = {
     "box_y",
     "box_w",
     "box_h",
+    "classifier_species",
+    "classifier_confidence",
+    "geo_scores",
 }
 
 

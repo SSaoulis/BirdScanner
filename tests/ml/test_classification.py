@@ -12,7 +12,6 @@ from birdscanner.ml.classification import (
     build_preprocessing,
 )
 
-
 # REAL MODEL PATH (this file lives at tests/ml/, so the repo root is two parents up).
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 MODEL_PATH = _REPO_ROOT / "assets/models/convnext_v2_tiny_int8.onnx"

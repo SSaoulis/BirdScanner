@@ -128,6 +128,34 @@ def replace_geo_priors(
     return len(rows)
 
 
+def load_geo_priors(session_factory: SessionFactory) -> dict[str, list[float]]:
+    """Load the stored geo prior as ``{species: [prob_week_1..NUM_WEEKS]}``.
+
+    Reads every :class:`GeoPrior` row, groups them by species, and orders each
+    species' probabilities by week. This is the inverse of
+    :func:`replace_geo_priors`; the detector calls it once at startup to build the
+    in-memory runtime adjuster (see
+    :class:`birdscanner.ml.geomodel.GeoPriorAdjuster`).
+
+    Args:
+        session_factory: Zero-argument callable returning a ``Session`` context
+            manager.
+
+    Returns:
+        ``{species: [weekly probabilities ordered by week]}``; empty when no
+        priors are stored.
+    """
+    grouped: dict[str, list[tuple[int, float]]] = {}
+    with session_factory() as session:
+        rows = session.exec(select(GeoPrior)).all()
+    for row in rows:
+        grouped.setdefault(row.species, []).append((row.week, row.probability))
+    return {
+        species: [prob for _, prob in sorted(weekly)]
+        for species, weekly in grouped.items()
+    }
+
+
 def has_geo_priors(session_factory: SessionFactory) -> bool:
     """Report whether any :class:`GeoPrior` rows are present.
 

@@ -8,6 +8,8 @@ labels so the two can be combined (see :func:`build_name_mapping`).
 import json
 import re
 import unicodedata
+from datetime import datetime
+from typing import NamedTuple
 
 import onnxruntime as ort
 import numpy as np
@@ -253,3 +255,196 @@ def bayesian_update(prior: np.ndarray, likelihood: np.ndarray) -> np.ndarray:
     unnormalized_posterior = prior * likelihood
     posterior = unnormalized_posterior / np.sum(unnormalized_posterior)
     return posterior
+
+
+# Floor applied to each geomodel occurrence prior before the Bayesian update. A
+# species the geomodel deems absent (probability ~0) is thereby made *unlikely*
+# after the update, not *impossible*: a hard 0 would zero out that class' posterior
+# irrecoverably, so a genuine out-of-range vagrant could never be reported.
+DEFAULT_PRIOR_FLOOR = 1e-4
+
+# Prior assigned to classifier classes with no geomodel counterpart (e.g. the
+# non-bird ``Unknown`` sentinel, or any class the crosswalk could not map). 1.0 is
+# neutral — it leaves the classifier's probability for that class unchanged.
+DEFAULT_UNMAPPED_PRIOR = 1.0
+
+# Number of highest pre-normalised scores retained per detection for debugging.
+DEFAULT_TOP_K = 10
+
+
+def week_of_year(when: datetime) -> int:
+    """Map a date to a geomodel week index in ``1..NUM_WEEKS``.
+
+    The geomodel's temporal axis is 48 "weeks" — four per month — so this splits
+    each month into quarters (days 1-7 -> 1, 8-14 -> 2, 15-21 -> 3, 22+ -> 4) and
+    offsets by the month. It approximates the geomodel's own binning (the exact
+    day-of-year boundaries are not published) but lands in the correct
+    month-quarter, which is all the coarse spatio-temporal prior needs.
+
+    Parameters
+    - when: the date/datetime to bin.
+
+    Returns
+    - a week index in ``[1, NUM_WEEKS]``.
+    """
+    quarter = min(4, (when.day - 1) // 7 + 1)
+    return (when.month - 1) * 4 + quarter
+
+
+def build_prior_matrix(
+    priors: dict[str, list[float]],
+    idx_to_class: dict[int, str],
+    *,
+    floor: float = DEFAULT_PRIOR_FLOOR,
+    unmapped_prior: float = DEFAULT_UNMAPPED_PRIOR,
+) -> np.ndarray:
+    """Align the per-species weekly priors to the classifier's output order.
+
+    Produces a ``(NUM_WEEKS, n_classes)`` matrix whose column ``i`` is the 48-week
+    occurrence prior for the classifier class at index ``i``. Each stored
+    probability is floored at ``floor`` (absent species made unlikely, not
+    impossible). Classes missing from ``priors`` — the ``Unknown`` sentinel, or any
+    class the crosswalk could not map — get a constant ``unmapped_prior`` so the
+    Bayesian update leaves them untouched. Rows whose weekly vector is not
+    ``NUM_WEEKS`` long are ignored (defensive against a malformed store).
+
+    Parameters
+    - priors: ``{classifier_label: [NUM_WEEKS probabilities]}`` from the geo store.
+    - idx_to_class: the classifier's ``{index: label}`` map (its output order).
+    - floor: minimum prior applied to every stored probability.
+    - unmapped_prior: prior for classes absent from ``priors``.
+
+    Returns
+    - a ``(NUM_WEEKS, n_classes)`` float64 array in classifier-index column order.
+    """
+    n_classes = len(idx_to_class)
+    matrix = np.full((NUM_WEEKS, n_classes), unmapped_prior, dtype=np.float64)
+    class_to_idx = {label: idx for idx, label in idx_to_class.items()}
+    for label, weekly in priors.items():
+        idx = class_to_idx.get(label)
+        if idx is None or len(weekly) != NUM_WEEKS:
+            continue
+        matrix[:, idx] = np.maximum(np.asarray(weekly, dtype=np.float64), floor)
+    return matrix
+
+
+def geomodel_posterior(
+    classifier_probs: np.ndarray, prior: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    """Combine a classifier distribution with a geomodel prior (Bayesian update).
+
+    Computes ``p(y | x, c) = p(y | x) p(y | c) / sum_y' p(y' | x) p(y' | c)`` where
+    ``x`` is the classifier softmax (``classifier_probs``) and ``c`` the geomodel
+    occurrence prior (``prior``). Returns both the normalised posterior and the
+    *pre-normalised* product ``p(y | x) p(y | c)`` — the latter is persisted per
+    detection for later inspection.
+
+    Parameters
+    - classifier_probs: the classifier's softmax vector, shape ``(n_classes,)``.
+    - prior: the geomodel prior vector for the week, shape ``(n_classes,)``.
+
+    Returns
+    - ``(posterior, unnormalized)``; ``posterior`` sums to 1. When the product sums
+      to 0 (only reachable with a zero floor) the classifier probabilities are
+      returned unchanged so a detection is never lost.
+    """
+    unnormalized = classifier_probs * prior
+    total = float(unnormalized.sum())
+    if total <= 0.0:
+        return classifier_probs.astype(np.float64), unnormalized
+    return unnormalized / total, unnormalized
+
+
+class GeoAdjustment(NamedTuple):
+    """Result of applying the geomodel prior to one classifier distribution.
+
+    Attributes:
+        species: The geomodel-corrected prediction (posterior argmax).
+        confidence: The posterior probability of ``species``, in ``[0, 1]``.
+        classifier_species: The classifier's own top class (pre-adjustment).
+        classifier_confidence: The classifier's softmax probability for its top
+            class, in ``[0, 1]``.
+        top_scores: The highest pre-normalised ``(species, score)`` pairs
+            (descending), for debugging what the update boosted/suppressed.
+    """
+
+    species: str
+    confidence: float
+    classifier_species: str
+    classifier_confidence: float
+    top_scores: list[tuple[str, float]]
+
+
+class GeoPriorAdjuster:
+    """Applies the stored geomodel prior to a classifier distribution at runtime.
+
+    Built once at detector startup from the priors persisted in the DB and the
+    classifier's ``idx_to_class`` map; it precomputes the aligned
+    ``(NUM_WEEKS, n_classes)`` prior matrix so each detection is a cheap row slice
+    plus multiply. :meth:`adjust` returns the geomodel-corrected prediction (the
+    posterior argmax), the classifier's own top class, and the top-K pre-normalised
+    scores for debugging.
+    """
+
+    def __init__(
+        self,
+        priors: dict[str, list[float]],
+        idx_to_class: dict[int, str],
+        *,
+        floor: float = DEFAULT_PRIOR_FLOOR,
+        unmapped_prior: float = DEFAULT_UNMAPPED_PRIOR,
+        top_k: int = DEFAULT_TOP_K,
+    ) -> None:
+        """Precompute the classifier-aligned prior matrix.
+
+        Args:
+            priors: ``{classifier_label: [NUM_WEEKS probabilities]}`` from the store.
+            idx_to_class: the classifier's ``{index: label}`` output map.
+            floor: minimum prior applied to every stored probability.
+            unmapped_prior: prior for classes absent from ``priors``.
+            top_k: how many highest pre-normalised scores to retain per detection.
+        """
+        self._idx_to_class = idx_to_class
+        self._matrix = build_prior_matrix(
+            priors, idx_to_class, floor=floor, unmapped_prior=unmapped_prior
+        )
+        self._top_k = top_k
+
+    def adjust(self, classifier_probs: np.ndarray, week: int) -> GeoAdjustment:
+        """Apply the week's geomodel prior to a classifier softmax vector.
+
+        Args:
+            classifier_probs: the classifier's softmax vector, shape ``(n_classes,)``.
+            week: the geomodel week index (``1..NUM_WEEKS``; see :func:`week_of_year`).
+
+        Returns:
+            The :class:`GeoAdjustment` with the corrected + original predictions.
+        """
+        probs = np.asarray(classifier_probs, dtype=np.float64).reshape(-1)
+        prior = self._matrix[self._week_index(week)]
+        posterior, unnormalized = geomodel_posterior(probs, prior)
+
+        post_idx = int(np.argmax(posterior))
+        clf_idx = int(np.argmax(probs))
+        return GeoAdjustment(
+            species=self._label(post_idx),
+            confidence=float(posterior[post_idx]),
+            classifier_species=self._label(clf_idx),
+            classifier_confidence=float(probs[clf_idx]),
+            top_scores=self._top_scores(unnormalized),
+        )
+
+    @staticmethod
+    def _week_index(week: int) -> int:
+        """Clamp a 1-based week to a valid 0-based matrix row."""
+        return min(max(week, 1), NUM_WEEKS) - 1
+
+    def _label(self, idx: int) -> str:
+        """Return the class label for an index (a placeholder if out of range)."""
+        return self._idx_to_class.get(idx, f"<unknown:{idx}>")
+
+    def _top_scores(self, unnormalized: np.ndarray) -> list[tuple[str, float]]:
+        """Return the top-K ``(label, score)`` pairs of the pre-normalised vector."""
+        k = min(self._top_k, unnormalized.shape[0])
+        top_idx = np.argsort(unnormalized)[::-1][:k]
+        return [(self._label(int(i)), float(unnormalized[i])) for i in top_idx]
