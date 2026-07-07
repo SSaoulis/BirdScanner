@@ -52,6 +52,7 @@ from birdscanner.detector.paths import (
 from birdscanner.db.database import make_engine, init_db, make_session_factory
 from birdscanner.db.writer import DetectionWriter
 from birdscanner.db.deleter import delete_detection
+from birdscanner.db.corrector import correct_detection_species
 
 logger = logging.getLogger("tracking")
 
@@ -77,35 +78,49 @@ def _schedule_restart() -> None:
 
 
 def _start_control_server(
-    camera: Camera, engine: Any, settings_controller: SettingsController
+    camera: Camera,
+    engine: Any,
+    settings_controller: SettingsController,
+    species_labels: list[str],
 ) -> Optional[Any]:
     """Start the auxiliary control server (snapshots + crop + deletes + settings).
 
     The read-only API proxies here to surface a live test image, the crop editor,
-    detection deletes, and the Settings page (the detector owns the camera +
-    read-write data volume exclusively). If the port is already in use, log a
-    warning and continue without it rather than killing the detection pipeline.
+    detection deletes, species corrections, and the Settings page (the detector
+    owns the camera + read-write data volume exclusively). If the port is already
+    in use, log a warning and continue without it rather than killing the
+    detection pipeline.
 
     Args:
         camera: The started camera bundle.
-        engine: The database engine (for the delete handler).
+        engine: The database engine (for the delete + correction handlers).
         settings_controller: Applies + persists runtime settings changes.
+        species_labels: The classifier vocabulary served at ``GET /labels`` and
+            used to validate species corrections.
 
     Returns:
         The running server, or ``None`` when the port could not be bound.
     """
     image_root = Path(classification_pipeline.IMAGE_DIR)
-    delete_session_factory = make_session_factory(engine)
+    control_session_factory = make_session_factory(engine)
 
     def handle_delete(detection_id: int) -> bool:
         """Delete a detection by id; returns True if a record existed."""
-        return delete_detection(delete_session_factory, image_root, detection_id)
+        return delete_detection(control_session_factory, image_root, detection_id)
+
+    def handle_correct(detection_id: int, new_species: str) -> Optional[dict]:
+        """Reassign a detection's species; returns the updated row or None."""
+        return correct_detection_species(
+            control_session_factory, image_root, detection_id, new_species
+        )
 
     deps = ControlServerDeps(
         crop_controller=camera.crop_controller,
         delete_detection=handle_delete,
         settings_controller=settings_controller,
         restart=_schedule_restart,
+        correct_species=handle_correct,
+        species_labels=species_labels,
     )
     snapshot_port = camera_server_port()
     try:
@@ -198,6 +213,13 @@ def main() -> None:
     classifier = setup_classifier(
         str(classifier_model_path()), str(class_to_idx_path())
     )
+    # The correction picker offers every real species (the "Unknown" non-bird
+    # sentinel is not a valid re-identification target).
+    species_labels = sorted(
+        label
+        for label in (classifier.idx_to_class or {}).values()
+        if label != "Unknown"
+    )
     gating = build_gating(intrinsics)
 
     # The detector owns all DB writes; the API mounts the same database read-only.
@@ -208,7 +230,9 @@ def main() -> None:
     settings_controller = SettingsController(settings_path, settings, manager.context)
 
     camera = build_camera(imx500, intrinsics)
-    control_server = _start_control_server(camera, engine, settings_controller)
+    control_server = _start_control_server(
+        camera, engine, settings_controller, species_labels
+    )
 
     try:
         _run_capture_loop(camera, manager, gating)

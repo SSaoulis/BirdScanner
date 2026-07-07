@@ -30,6 +30,7 @@ interface DetectionCardProps {
  */
 export function DetectionCard({ detection, onSelect, selected, onOpenLightbox }: DetectionCardProps) {
   const { id, species, confidence, detection_confidence, timestamp } = detection;
+  const corrected = detection.corrected === true;
   const thumbnailUrl = api.images.thumbnailUrl(id);
   const confidencePct = (confidence * 100).toFixed(0);
   const detectionPct =
@@ -110,10 +111,19 @@ export function DetectionCard({ detection, onSelect, selected, onOpenLightbox }:
         </p>
         <div className="mt-1 flex items-center justify-between text-xs">
           <span className="flex items-center gap-1.5">
-            <span className="tnum font-medium text-gold-deep" title="Species-classification confidence">
-              {confidencePct}% match
-            </span>
-            {detectionPct !== null && (
+            {corrected ? (
+              <span
+                className="font-display text-[0.72rem] italic text-gold-deep"
+                title="Species set by you"
+              >
+                ✎ Corrected
+              </span>
+            ) : (
+              <span className="tnum font-medium text-gold-deep" title="Species-classification confidence">
+                {confidencePct}% match
+              </span>
+            )}
+            {!corrected && detectionPct !== null && (
               <span className="tnum text-bark" title="Object-detection confidence (YOLO)">
                 · {detectionPct}% spotted
               </span>

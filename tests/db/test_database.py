@@ -37,6 +37,8 @@ _EXPECTED_COLUMNS = {
     "box_y",
     "box_w",
     "box_h",
+    "corrected",
+    "original_species",
 }
 
 
@@ -51,7 +53,7 @@ def test_init_db_creates_table_with_expected_columns(engine):
 
 
 def test_init_db_backfills_added_columns_on_legacy_table():
-    """init_db adds detection_confidence + video_path + no_video_reason + box_* to a table."""
+    """init_db backfills detection_confidence + video_path + box_* + correction columns."""
     engine = create_engine(
         "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
     )
@@ -76,6 +78,8 @@ def test_init_db_backfills_added_columns_on_legacy_table():
         "box_y",
         "box_w",
         "box_h",
+        "corrected",
+        "original_species",
     } <= col_names
 
 

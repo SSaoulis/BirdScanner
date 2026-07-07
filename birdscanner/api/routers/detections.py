@@ -2,23 +2,35 @@
 
 import os
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
+from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from birdscanner.db.models import DetectionRecord
 from birdscanner.api.dependencies import get_session
+from birdscanner.api.detector_proxy import detector_error_detail
 
 router = APIRouter(prefix="/api/detections", tags=["detections"])
 
-# The API mounts the database and images read-only, so it cannot delete them
-# itself.  Deletes are proxied to the detector's control server (it owns the
-# data volume read-write), mirroring the camera-snapshot proxy.
+# The API mounts the database and images read-only, so it cannot mutate them
+# itself.  Deletes and species corrections are proxied to the detector's control
+# server (it owns the data volume read-write), mirroring the camera-snapshot proxy.
 _DEFAULT_DETECTOR_URL = "http://detector:8000"
-_DELETE_TIMEOUT_SEC = 10.0
+_DETECTOR_TIMEOUT_SEC = 10.0
+
+
+class SpeciesCorrection(BaseModel):
+    """Request body for correcting a detection's classified species.
+
+    Attributes:
+        species: The user-chosen species label to assign to the detection.
+    """
+
+    species: str
 
 
 class DetectionFilters:
@@ -158,7 +170,7 @@ def delete_detection(detection_id: int) -> Response:
     base_url = os.environ.get("DETECTOR_URL", _DEFAULT_DETECTOR_URL).rstrip("/")
     delete_url = f"{base_url}/detections/{detection_id}"
     try:
-        resp = httpx.delete(delete_url, timeout=_DELETE_TIMEOUT_SEC)
+        resp = httpx.delete(delete_url, timeout=_DETECTOR_TIMEOUT_SEC)
     except httpx.HTTPError as exc:
         raise HTTPException(
             status_code=503, detail=f"Detector unavailable: {exc}"
@@ -171,3 +183,49 @@ def delete_detection(detection_id: int) -> Response:
             detail=f"Detector failed to delete detection ({resp.status_code})",
         )
     return Response(status_code=204)
+
+
+@router.patch("/{detection_id}")
+def correct_detection(
+    detection_id: int, correction: SpeciesCorrection
+) -> Dict[str, Any]:
+    """Correct a detection's species by proxying to the detector's control server.
+
+    The API cannot write the database or move image files (it mounts both
+    read-only); the detector owns them (see ``birdscanner/db/corrector.py``).
+    This endpoint forwards the correction and relays the detector's updated record
+    JSON verbatim (like the settings/crop proxies), so the browser gets the moved
+    image paths and the ``corrected`` flag without a re-serialization round-trip.
+
+    Args:
+        detection_id: Primary key of the detection to correct.
+        correction: The new species to assign.
+
+    Returns:
+        The updated detection record as a JSON object (with ``corrected`` set and
+        the moved image paths).
+
+    Raises:
+        HTTPException: 400 (relaying the detector's message) for an unknown
+            species, 404 if the detection does not exist, 503 if the detector is
+            unreachable.
+    """
+    base_url = os.environ.get("DETECTOR_URL", _DEFAULT_DETECTOR_URL).rstrip("/")
+    patch_url = f"{base_url}/detections/{detection_id}"
+    try:
+        resp = httpx.patch(
+            patch_url,
+            json={"species": correction.species},
+            timeout=_DETECTOR_TIMEOUT_SEC,
+        )
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=503, detail=f"Detector unavailable: {exc}"
+        ) from exc
+    if resp.status_code == 404:
+        raise HTTPException(status_code=404, detail="Detection not found")
+    if resp.status_code >= 400:
+        raise HTTPException(
+            status_code=resp.status_code, detail=detector_error_detail(resp)
+        )
+    return resp.json()

@@ -430,3 +430,123 @@ def test_restart_absent_without_callback(running_server) -> None:
     with pytest.raises(urllib.error.HTTPError) as exc_info:
         urllib.request.urlopen(request, timeout=5)
     assert exc_info.value.code == 404
+
+
+# ---------------------------------------------------------------------------
+# Species correction (PATCH /detections/{id}) + vocabulary (GET /labels)
+# ---------------------------------------------------------------------------
+
+_TEST_LABELS = ["Robin", "Sparrow", "Wren"]
+
+
+def _patch_json(url: str, payload: dict):
+    """PATCH a JSON body and return the parsed response (raises on HTTP error)."""
+    data = json.dumps(payload).encode("utf-8")
+    request = urllib.request.Request(
+        url, data=data, headers={"Content-Type": "application/json"}, method="PATCH"
+    )
+    with urllib.request.urlopen(request, timeout=5) as resp:
+        return resp.status, json.loads(resp.read())
+
+
+@pytest.fixture()
+def correcting_server():
+    """Start the control server with a correction callback + vocabulary.
+
+    The callback returns an updated-record dict, except for id ``0`` which stands
+    in for a missing detection (returns ``None``).  ``calls`` records the
+    ``(id, species)`` pairs it receives.
+    """
+    calls: list[tuple] = []
+
+    def _correct_callback(detection_id: int, species: str):
+        calls.append((detection_id, species))
+        if detection_id == 0:
+            return None
+        return {
+            "id": detection_id,
+            "species": species,
+            "corrected": True,
+            "original_species": "Robin",
+        }
+
+    server = start_camera_server(
+        _FakeCamera(_solid_frame()),
+        port=0,
+        deps=ControlServerDeps(
+            correct_species=_correct_callback, species_labels=list(_TEST_LABELS)
+        ),
+    )
+    port = server.server_address[1]
+    try:
+        yield f"http://127.0.0.1:{port}", calls
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_patch_corrects_species_returns_200(correcting_server) -> None:
+    base_url, calls = correcting_server
+    status, body = _patch_json(f"{base_url}/detections/5", {"species": "Sparrow"})
+    assert status == 200
+    assert body["species"] == "Sparrow"
+    assert body["corrected"] is True
+    assert calls == [(5, "Sparrow")]
+
+
+def test_patch_unknown_species_returns_400_json(correcting_server) -> None:
+    base_url, calls = correcting_server
+    with pytest.raises(urllib.error.HTTPError) as exc_info:
+        _patch_json(f"{base_url}/detections/5", {"species": "Dodo"})
+    assert exc_info.value.code == 400
+    body = json.loads(exc_info.value.read())
+    assert "Unknown species" in body["error"]
+    # A rejected species never reaches the callback.
+    assert calls == []
+
+
+def test_patch_missing_species_returns_400(correcting_server) -> None:
+    base_url, _ = correcting_server
+    with pytest.raises(urllib.error.HTTPError) as exc_info:
+        _patch_json(f"{base_url}/detections/5", {})
+    assert exc_info.value.code == 400
+
+
+def test_patch_detection_not_found_returns_404(correcting_server) -> None:
+    base_url, calls = correcting_server
+    with pytest.raises(urllib.error.HTTPError) as exc_info:
+        _patch_json(f"{base_url}/detections/0", {"species": "Sparrow"})
+    assert exc_info.value.code == 404
+    assert calls == [(0, "Sparrow")]
+
+
+def test_patch_non_integer_id_returns_404(correcting_server) -> None:
+    base_url, calls = correcting_server
+    with pytest.raises(urllib.error.HTTPError) as exc_info:
+        _patch_json(f"{base_url}/detections/abc", {"species": "Sparrow"})
+    assert exc_info.value.code == 404
+    assert calls == []
+
+
+@pytest.mark.parametrize("running_server", [_FakeCamera(_solid_frame())], indirect=True)
+def test_patch_without_callback_returns_404(running_server) -> None:
+    base_url, _ = running_server
+    with pytest.raises(urllib.error.HTTPError) as exc_info:
+        _patch_json(f"{base_url}/detections/1", {"species": "Robin"})
+    assert exc_info.value.code == 404
+
+
+def test_get_labels_returns_vocabulary(correcting_server) -> None:
+    base_url, _ = correcting_server
+    with urllib.request.urlopen(f"{base_url}/labels", timeout=5) as resp:
+        assert resp.status == 200
+        body = json.loads(resp.read())
+    assert body["species"] == _TEST_LABELS
+
+
+@pytest.mark.parametrize("running_server", [_FakeCamera(_solid_frame())], indirect=True)
+def test_labels_absent_without_vocabulary(running_server) -> None:
+    base_url, _ = running_server
+    with pytest.raises(urllib.error.HTTPError) as exc_info:
+        urllib.request.urlopen(f"{base_url}/labels", timeout=5)
+    assert exc_info.value.code == 404

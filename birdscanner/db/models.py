@@ -36,6 +36,14 @@ class DetectionRecord(SQLModel, table=True):
         box_y: Detection box top edge as a fraction [0, 1] of the saved image height.
         box_w: Detection box width as a fraction [0, 1] of the saved image width.
         box_h: Detection box height as a fraction [0, 1] of the saved image height.
+        corrected: ``True`` when a user manually overrode the classifier's species
+            (see ``birdscanner/db/corrector.py``). NULL/``False`` means the species
+            is the model's own top prediction. When set, ``species`` is the
+            human-chosen label and ``original_species`` holds the model's guess.
+        original_species: The classifier's original top-1 species, preserved when a
+            user corrects the detection so the model-vs-human disagreement stays on
+            record (retraining ground truth). ``confidence`` is that guess's score.
+            NULL when the detection was never corrected.
     """
 
     __tablename__ = "detections"  # type: ignore[assignment]
@@ -57,6 +65,8 @@ class DetectionRecord(SQLModel, table=True):
     box_y: Optional[float] = Field(default=None, nullable=True)
     box_w: Optional[float] = Field(default=None, nullable=True)
     box_h: Optional[float] = Field(default=None, nullable=True)
+    corrected: Optional[bool] = Field(default=None, nullable=True)
+    original_species: Optional[str] = Field(default=None, nullable=True)
 
 
 class GeoPrior(SQLModel, table=True):

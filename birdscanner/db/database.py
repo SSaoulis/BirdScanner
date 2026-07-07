@@ -78,6 +78,8 @@ _DETECTIONS_ADDED_COLUMNS: dict[str, str] = {
     "box_y": "FLOAT",
     "box_w": "FLOAT",
     "box_h": "FLOAT",
+    "corrected": "BOOLEAN",
+    "original_species": "TEXT",
 }
 
 
