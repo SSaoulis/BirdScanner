@@ -244,9 +244,14 @@ export function Lightbox({
         className="relative flex items-start"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* ── Captured detection image (with the Reference tab on its edge) ── */}
-        <div className="flex flex-col gap-3">
-          <div className="relative">
+        {/* ── Captured detection image (with the Field-guide tab on its edge) ──
+            The column and its caption are locked to the image's exact rendered
+            width (`imgSize.w`), and the image plate is `w-fit`, so every overlay
+            — the top control bar, the box, and the Field-guide tab — anchors to
+            the image itself. Nothing below can be wider than the image, so the
+            plate is never pushed aside and the tab sits flush on its edge. */}
+        <div className="flex flex-col items-start gap-3">
+          <div className="relative w-fit">
             {mode === "video" && hasVideo ? (
               <video
                 src={videoUrl}
@@ -283,21 +288,84 @@ export function Lightbox({
               />
             )}
 
-            {/* Close button */}
-            <button
-              className="absolute top-2 right-2 z-10 p-1.5 rounded-full bg-card/90 hover:bg-card text-ink text-lg leading-none shadow-plate"
-              onClick={onClose}
-              aria-label="Close"
-            >
-              ✕
-            </button>
+            {/* ── On-image control bar ──
+                The view controls (media + box) live *on* the image because they
+                change what it shows; Close shares the bar. Grouped at the top
+                under a soft scrim so the bird's usual lower-third stays clear and
+                nothing collides with the native <video> control bar at the
+                bottom. The scrim is click-through; only the controls take pointer
+                events. */}
+            <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-start justify-between gap-2 rounded-t-lg bg-gradient-to-b from-ink/80 via-ink/35 to-transparent px-2.5 pb-12 pt-2.5">
+              <div className="pointer-events-auto flex items-center gap-2">
+                {/* Media (Photo / Video) — swaps the still for the clip */}
+                <div
+                  className="flex rounded-full bg-ink/55 p-0.5 ring-1 ring-paper/25 backdrop-blur"
+                  role="group"
+                  aria-label="Choose media"
+                >
+                  {(["photo", "video"] as const).map((m) => {
+                    // The Video button stays visible even without a clip, but is
+                    // disabled and explains why on hover. aria-disabled (not the
+                    // native `disabled` attribute) keeps the title tooltip firing
+                    // — browsers suppress hover events on natively-disabled
+                    // buttons.
+                    const unavailable = m === "video" && !hasVideo;
+                    return (
+                      <button
+                        key={m}
+                        className={`rounded-full px-3 py-1 text-xs font-medium capitalize transition-colors ${
+                          mode === m ? "bg-gold text-ink" : "text-paper/85 hover:text-paper"
+                        } ${unavailable ? "cursor-not-allowed opacity-40 hover:text-paper/85" : ""}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (!unavailable) setMode(m);
+                        }}
+                        aria-pressed={mode === m}
+                        aria-disabled={unavailable}
+                        title={
+                          unavailable
+                            ? noVideoReasonText(detection.no_video_reason)
+                            : undefined
+                        }
+                      >
+                        {m}
+                      </button>
+                    );
+                  })}
+                </div>
 
-            {/* Vertical Reference tab on the right edge of the image */}
+                {/* Box on / off — only meaningful on the still */}
+                {mode === "photo" && hasBox && (
+                  <button
+                    className={`rounded-full px-3 py-1.5 text-xs font-medium ring-1 backdrop-blur transition-colors ${
+                      showBox
+                        ? "bg-gold text-ink ring-gold"
+                        : "bg-ink/55 text-paper ring-paper/25 hover:bg-ink/70"
+                    }`}
+                    onClick={(e) => { e.stopPropagation(); setShowBox((v) => !v); }}
+                    aria-pressed={showBox}
+                  >
+                    {showBox ? "Box on" : "Box off"}
+                  </button>
+                )}
+              </div>
+
+              {/* Close */}
+              <button
+                className="pointer-events-auto rounded-full bg-ink/55 p-1.5 text-lg leading-none text-paper ring-1 ring-paper/25 backdrop-blur transition-colors hover:bg-ink/70"
+                onClick={onClose}
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Vertical Field-guide tab on the right edge of the image */}
             <button
-              className={`absolute top-1/2 left-full -translate-y-1/2 px-1.5 py-3 rounded-r-lg text-xs font-semibold uppercase tracking-wide [writing-mode:vertical-rl] transition-colors ${
+              className={`absolute left-full top-1/2 z-10 -translate-y-1/2 rounded-r-lg px-2 py-3.5 text-[11px] font-semibold uppercase tracking-[0.15em] shadow-plate [writing-mode:vertical-rl] transition-colors ${
                 showReference
-                  ? "bg-gold text-card"
-                  : "bg-card/90 text-ink hover:bg-card"
+                  ? "bg-gold text-ink"
+                  : "bg-card/95 text-ink ring-1 ring-line hover:bg-card"
               }`}
               onClick={() => setShowReference((v) => !v)}
               aria-pressed={showReference}
@@ -307,137 +375,107 @@ export function Lightbox({
             </button>
           </div>
 
-          {/* Caption bar */}
-          <div className="flex flex-wrap items-center gap-3 rounded-xl border border-line bg-card/95 px-3 py-2 text-sm">
-            {/* Species + the margin-correction affordance (the picker opens above) */}
-            <div className="relative flex items-center gap-2">
-              <span className="font-display text-base font-medium text-ink">{species}</span>
-              <button
-                className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium text-bark transition-colors hover:bg-paper hover:text-ink"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setCorrecting((v) => !v);
-                  setCorrectError(null);
-                }}
-                aria-expanded={correcting}
-                aria-label="Correct the species"
-                title="Wrong bird? Set the record straight."
-              >
-                <span aria-hidden="true">✎</span>
-                Correct ID
-              </button>
-              {correcting && (
-                <div className="absolute bottom-full left-0 z-20 mb-2">
-                  <SpeciesPicker
-                    current={species}
-                    onConfirm={handleCorrect}
-                    onCancel={() => {
-                      setCorrecting(false);
-                      setCorrectError(null);
-                    }}
-                    busy={correctBusy}
-                    errorMessage={correctError}
-                  />
-                </div>
-              )}
-            </div>
-            {corrected ? (
-              <span
-                className="flex items-baseline gap-1.5"
-                title="Species set by you"
-              >
-                <span className="font-display text-sm italic text-gold-deep">
-                  ✎ Corrected by you
-                </span>
-                {originalSpecies && (
-                  <span className="text-[11px] text-bark">
-                    · model saw <span className="tnum">{confidencePct}%</span> {originalSpecies}
+          {/* ── Specimen label ──
+              A compact caption card, locked to the image's exact width so it can
+              never widen the plate. Reads like a guide's label: the species name
+              and the margin-correction affordance up top, the readings on a quiet
+              tabular line beneath, and the record actions (download / delete) on
+              the right. */}
+          <div
+            className="rounded-xl border border-line bg-card/95 px-4 py-3 shadow-plate"
+            style={{ width: imgSize ? imgSize.w : undefined }}
+          >
+            <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
+              <div className="min-w-0">
+                {/* Species + the margin-correction affordance (picker opens above) */}
+                <div className="relative flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <span className="font-display text-lg font-medium leading-tight text-ink">
+                    {species}
                   </span>
-                )}
-              </span>
-            ) : (
-              <span
-                className="tnum font-medium text-gold-deep"
-                title="Species-classification confidence"
-              >
-                {confidencePct}% match
-              </span>
-            )}
-            {detectionPct !== null && (
-              <span className="tnum text-bark" title="Object-detection confidence (YOLO)">
-                {detectionPct}% spotted
-              </span>
-            )}
-            <span className="text-bark">{timeAgo(timestamp)}</span>
-            <div
-              className="flex overflow-hidden rounded-md border border-line"
-              role="group"
-              aria-label="Choose media"
-            >
-              {(["photo", "video"] as const).map((m) => {
-                // The Video button stays visible even without a clip, but is
-                // disabled and explains why on hover. aria-disabled (not the
-                // native `disabled` attribute) keeps the title tooltip firing —
-                // browsers suppress hover events on natively-disabled buttons.
-                const unavailable = m === "video" && !hasVideo;
-                return (
                   <button
-                    key={m}
-                    className={`px-3 py-1.5 text-xs font-medium capitalize transition-colors ${
-                      mode === m
-                        ? "bg-gold text-card"
-                        : "bg-paper text-ink hover:bg-card"
-                    } ${unavailable ? "cursor-not-allowed opacity-40 hover:bg-paper" : ""}`}
+                    className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium text-bark transition-colors hover:bg-paper hover:text-ink"
                     onClick={(e) => {
                       e.stopPropagation();
-                      if (!unavailable) setMode(m);
+                      setCorrecting((v) => !v);
+                      setCorrectError(null);
                     }}
-                    aria-pressed={mode === m}
-                    aria-disabled={unavailable}
-                    title={
-                      unavailable
-                        ? noVideoReasonText(detection.no_video_reason)
-                        : undefined
-                    }
+                    aria-expanded={correcting}
+                    aria-label="Correct the species"
+                    title="Wrong bird? Set the record straight."
                   >
-                    {m}
+                    <span aria-hidden="true">✎</span>
+                    Correct ID
                   </button>
-                );
-              })}
+                  {correcting && (
+                    <div className="absolute bottom-full left-0 z-20 mb-2">
+                      <SpeciesPicker
+                        current={species}
+                        onConfirm={handleCorrect}
+                        onCancel={() => {
+                          setCorrecting(false);
+                          setCorrectError(null);
+                        }}
+                        busy={correctBusy}
+                        errorMessage={correctError}
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* Readings */}
+                <div className="mt-1 flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5 text-xs">
+                  {corrected ? (
+                    <span className="flex items-baseline gap-1.5" title="Species set by you">
+                      <span className="font-display text-sm italic text-gold-deep">
+                        ✎ Corrected by you
+                      </span>
+                      {originalSpecies && (
+                        <span className="text-[11px] text-bark">
+                          model saw <span className="tnum">{confidencePct}%</span>{" "}
+                          {originalSpecies}
+                        </span>
+                      )}
+                    </span>
+                  ) : (
+                    <span
+                      className="tnum font-medium text-gold-deep"
+                      title="Species-classification confidence"
+                    >
+                      {confidencePct}% match
+                    </span>
+                  )}
+                  {detectionPct !== null && (
+                    <span
+                      className="tnum text-bark"
+                      title="Object-detection confidence (YOLO)"
+                    >
+                      {detectionPct}% spotted
+                    </span>
+                  )}
+                  <span className="text-bark">{timeAgo(timestamp)}</span>
+                </div>
+              </div>
+
+              {/* Record actions */}
+              <div className="flex shrink-0 items-center gap-2">
+                <a
+                  href={mode === "video" && hasVideo ? videoUrl : fullUrl}
+                  download
+                  className="rounded-md border border-line bg-paper px-3 py-1.5 text-xs font-medium text-ink transition-colors hover:bg-card"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  Download
+                </a>
+                <button
+                  className="rounded-md bg-rust px-3 py-1.5 text-xs font-medium text-card transition-colors hover:brightness-110 disabled:opacity-50"
+                  onClick={(e) => { e.stopPropagation(); handleDelete(); }}
+                  disabled={deleting}
+                >
+                  {deleting ? "Deleting…" : "Delete"}
+                </button>
+              </div>
             </div>
-            {mode === "photo" && hasBox && (
-              <button
-                className={`ml-auto rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
-                  showBox
-                    ? "border-gold bg-gold text-card hover:brightness-110"
-                    : "border-line bg-paper text-ink hover:bg-card"
-                }`}
-                onClick={(e) => { e.stopPropagation(); setShowBox((v) => !v); }}
-                aria-pressed={showBox}
-              >
-                {showBox ? "Box on" : "Box off"}
-              </button>
-            )}
-            <a
-              href={mode === "video" && hasVideo ? videoUrl : fullUrl}
-              download
-              className={`rounded-md border border-line bg-paper px-3 py-1.5 text-xs font-medium text-ink transition-colors hover:bg-card${
-                mode === "photo" && hasBox ? "" : " ml-auto"
-              }`}
-              onClick={(e) => e.stopPropagation()}
-            >
-              Download
-            </a>
-            <button
-              className="rounded-md bg-rust px-3 py-1.5 text-xs font-medium text-card transition-colors hover:brightness-110 disabled:opacity-50"
-              onClick={(e) => { e.stopPropagation(); handleDelete(); }}
-              disabled={deleting}
-            >
-              {deleting ? "Deleting…" : "Delete"}
-            </button>
-            {deleteError && (
-              <span className="w-full text-xs text-rust">{deleteError}</span>
-            )}
+            {deleteError && <p className="mt-2 text-xs text-rust">{deleteError}</p>}
           </div>
         </div>
 
