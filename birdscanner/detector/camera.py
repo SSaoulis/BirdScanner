@@ -22,9 +22,11 @@ from dataclasses import dataclass
 from typing import Any
 
 import libcamera
+import picamera2.formats as picamera2_formats  # type: ignore
 from picamera2 import Picamera2  # type: ignore
 from picamera2.devices import IMX500  # type: ignore
 from picamera2.devices.imx500 import NetworkIntrinsics  # type: ignore
+from picamera2.sensor_format import SensorFormat  # type: ignore
 
 from birdscanner.detector.config import config as app_config
 from birdscanner.detector.crop import (
@@ -50,22 +52,43 @@ def _full_fov_raw_stream(picam2: Picamera2) -> dict:
     uncropped field of view; see :mod:`birdscanner.detector.raw_frame`). The
     spec requests the *unpacked* format of the full-FOV binned mode so
     ``request.make_array("raw")`` yields a directly-demosaicable integer array
-    (the native packed ``*_CSI2P`` format would need bespoke unpacking). Falls
-    back to just the size (letting picamera2 pick a format) if the mode is not
-    found, in which case the pipeline degrades to the cropped ``main`` frame.
+    (the native packed ``*_CSI2P`` format would need bespoke unpacking).
+
+    The unpacked format is resolved via libcamera's lightweight
+    ``generate_configuration`` enumeration (the non-allocating part of
+    picamera2's ``sensor_modes``) rather than reading ``picam2.sensor_modes``
+    directly: that property lazily calls ``configure()`` — allocating
+    full-resolution DMA buffers — for *every* sensor mode, which exhausts the
+    container's host-global CMA pool and crashes bring-up with
+    ``OSError: [Errno 12] Cannot allocate memory`` before ``picam2.start()`` is
+    even reached. Passing an explicit size AND format also means ``configure()``
+    never needs ``sensor_modes`` at ``start()``. On any failure this falls back
+    to a size-only spec (the clip pipeline then degrades gracefully to the
+    cropped ``main`` frame — see :mod:`birdscanner.detector.raw_frame` — rather
+    than crashing).
 
     Args:
-        picam2: The ``Picamera2`` instance whose sensor modes are inspected.
+        picam2: The ``Picamera2`` instance whose sensor formats are enumerated.
 
     Returns:
         A ``raw`` stream configuration dict for ``create_preview_configuration``.
     """
-    for mode in picam2.sensor_modes:
-        if tuple(mode.get("size", ())) == FULL_FOV_RAW_SIZE:
-            unpacked = mode.get("unpacked")
-            if unpacked:
+    try:
+        raw_config = picam2.camera.generate_configuration([libcamera.StreamRole.Raw])
+        raw_formats = raw_config.at(0).formats
+        for pix in raw_formats.pixel_formats:
+            name = str(pix)
+            if not picamera2_formats.is_raw(name):
+                continue
+            sizes = {(size.width, size.height) for size in raw_formats.sizes(pix)}
+            if FULL_FOV_RAW_SIZE in sizes:
+                unpacked = SensorFormat(name).unpacked
                 return {"size": FULL_FOV_RAW_SIZE, "format": str(unpacked)}
-            break
+    except Exception:
+        logger.exception(
+            "Could not resolve full-FOV raw format via generate_configuration; "
+            "falling back to size-only raw spec"
+        )
     return {"size": FULL_FOV_RAW_SIZE}
 
 
@@ -176,9 +199,12 @@ def build_camera(imx500: IMX500, intrinsics: Any) -> Camera:
         crop_config_path(), default_crop_region(SENSOR_W, SENSOR_H)
     )
     initial_main_size = main_stream_size_for_crop(crop_region.w, crop_region.h)
-    # The full-FOV raw stream feeds the (uncropped) video clip. Computed once and
-    # reused across reconfigures — it does not depend on the crop or main size.
-    raw_stream = _full_fov_raw_stream(picam2)
+    # The full-FOV raw stream feeds the (uncropped) video clip, but only when the
+    # full-FOV clip mode is enabled. By default the clip records the cropped
+    # `main` frame (matching the still), so we skip the explicit raw request and
+    # its unpacked-format CMA premium (~+14 MB). Computed once and reused across
+    # reconfigures — it does not depend on the crop or main size.
+    raw_stream = _full_fov_raw_stream(picam2) if app_config.video.full_fov else None
 
     def build_camera_config(
         main_size: tuple[int, int], scaler_crop: tuple[int, int, int, int]
@@ -196,6 +222,12 @@ def build_camera(imx500: IMX500, intrinsics: Any) -> Camera:
         Returns:
             A picamera2 preview configuration object.
         """
+        # The raw stream is the full sensor field of view (ScalerCrop only affects
+        # the processed `main` stream), used to record the uncropped video clip
+        # when full-FOV mode is on; it is already allocated, so requesting it
+        # explicitly only makes it accessible in the per-frame callback. Omitted
+        # (``raw_stream is None``) in the default cropped-clip mode.
+        raw_kwargs = {"raw": raw_stream} if raw_stream is not None else {}
         return picam2.create_preview_configuration(
             # picamera2's "888" format names are byte-reversed vs. the numpy
             # array they yield: "BGR888" delivers an [R, G, B]-ordered array. The
@@ -204,11 +236,7 @@ def build_camera(imx500: IMX500, intrinsics: Any) -> Camera:
             # get RGB. Using "RGB888" here yields BGR and swaps red<->blue
             # everywhere downstream.
             main={"size": main_size, "format": "BGR888"},
-            # The raw stream is the full sensor field of view (ScalerCrop only
-            # affects the processed `main` stream), used to record the uncropped
-            # video clip; it is already allocated, so requesting it explicitly
-            # only makes it accessible in the per-frame callback.
-            raw=raw_stream,
+            **raw_kwargs,
             controls={
                 "FrameRate": intrinsics.inference_rate,
                 "ScalerCrop": scaler_crop,

@@ -13,6 +13,7 @@ platform-independent ``ml/`` pipeline triggers it through an injected callable.
 """
 
 import logging
+import os
 import threading
 import time
 from collections import deque
@@ -21,6 +22,16 @@ from typing import Deque, List, Optional, Tuple
 
 import cv2
 import numpy as np
+
+# Raise the H.264 quality of the clips. OpenCV's FFmpeg videoio backend otherwise
+# encodes at a low default bitrate, which looks heavily compressed/blocky. This
+# passes a constant-rate-factor (CRF) to the encoder (lower = higher quality;
+# ~18-23 is visually high quality) so clips are far cleaner at a modest size cost.
+# The FFmpeg backend reads this variable when a VideoWriter opens (not at import),
+# so setting it at module load is sufficient; ``setdefault`` lets an operator
+# override it, and a build whose FFmpeg ignores the option simply falls back to its
+# default bitrate — no failure.
+os.environ.setdefault("OPENCV_FFMPEG_WRITER_OPTIONS", "crf;20")
 
 logger = logging.getLogger("tracking")
 

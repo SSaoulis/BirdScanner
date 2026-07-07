@@ -70,8 +70,15 @@ MIN_CROP_PX = 200
 
 # Long edge of the ISP ``main`` output stream.  The crop is scaled to fit a
 # rectangle whose longer side is this many pixels, preserving the crop's aspect
-# ratio.  640 matches the historical square stream's edge length.
-DEFAULT_LONG_SIDE = 640
+# ratio.  This sizes the saved still, the classifier ROI, *and* (in the default
+# cropped-clip mode) the recorded video clip, so it is the single lever for their
+# shared resolution.  1280 gives a sharp still/clip; the real detail is still
+# bounded by the crop region's own size in sensor pixels (the default feeder crop
+# is 900 px, so a larger crop yields proportionally more detail).  Raising this
+# grows the ISP ``main`` DMA buffers (~4x vs the historical 640) — if the detector
+# ever fails to start with ``OSError: [Errno 12] Cannot allocate memory``, lower
+# this back toward 640 or raise the host CMA pool (see the deployment notes).
+DEFAULT_LONG_SIDE = 1280
 
 # Pixel alignment for ISP output dimensions (libcamera prefers even sizes).
 SIZE_ALIGN = 2
