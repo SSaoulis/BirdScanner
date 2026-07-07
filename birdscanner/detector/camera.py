@@ -38,8 +38,35 @@ from birdscanner.detector.crop import (
 )
 from birdscanner.detector.crop_controller import CropController, CropControllerConfig
 from birdscanner.detector.paths import coco_labels_path
+from birdscanner.detector.raw_frame import FULL_FOV_RAW_SIZE
 
 logger = logging.getLogger("tracking")
+
+
+def _full_fov_raw_stream(picam2: Picamera2) -> dict:
+    """Return the ``raw`` stream spec for the full-FOV sensor mode.
+
+    The video clip is fed from the ``raw`` stream (the only source of the
+    uncropped field of view; see :mod:`birdscanner.detector.raw_frame`). The
+    spec requests the *unpacked* format of the full-FOV binned mode so
+    ``request.make_array("raw")`` yields a directly-demosaicable integer array
+    (the native packed ``*_CSI2P`` format would need bespoke unpacking). Falls
+    back to just the size (letting picamera2 pick a format) if the mode is not
+    found, in which case the pipeline degrades to the cropped ``main`` frame.
+
+    Args:
+        picam2: The ``Picamera2`` instance whose sensor modes are inspected.
+
+    Returns:
+        A ``raw`` stream configuration dict for ``create_preview_configuration``.
+    """
+    for mode in picam2.sensor_modes:
+        if tuple(mode.get("size", ())) == FULL_FOV_RAW_SIZE:
+            unpacked = mode.get("unpacked")
+            if unpacked:
+                return {"size": FULL_FOV_RAW_SIZE, "format": str(unpacked)}
+            break
+    return {"size": FULL_FOV_RAW_SIZE}
 
 
 @dataclass
@@ -149,6 +176,9 @@ def build_camera(imx500: IMX500, intrinsics: Any) -> Camera:
         crop_config_path(), default_crop_region(SENSOR_W, SENSOR_H)
     )
     initial_main_size = main_stream_size_for_crop(crop_region.w, crop_region.h)
+    # The full-FOV raw stream feeds the (uncropped) video clip. Computed once and
+    # reused across reconfigures — it does not depend on the crop or main size.
+    raw_stream = _full_fov_raw_stream(picam2)
 
     def build_camera_config(
         main_size: tuple[int, int], scaler_crop: tuple[int, int, int, int]
@@ -174,6 +204,11 @@ def build_camera(imx500: IMX500, intrinsics: Any) -> Camera:
             # get RGB. Using "RGB888" here yields BGR and swaps red<->blue
             # everywhere downstream.
             main={"size": main_size, "format": "BGR888"},
+            # The raw stream is the full sensor field of view (ScalerCrop only
+            # affects the processed `main` stream), used to record the uncropped
+            # video clip; it is already allocated, so requesting it explicitly
+            # only makes it accessible in the per-frame callback.
+            raw=raw_stream,
             controls={
                 "FrameRate": intrinsics.inference_rate,
                 "ScalerCrop": scaler_crop,
