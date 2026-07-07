@@ -8,6 +8,7 @@ tests drive ``process_single_detection_with_stable_tracks`` / ``process_detectio
 with the injected fakes from ``tests/ml/conftest.py`` — no camera, model, or DB.
 """
 
+import json
 import sys
 import threading
 import types
@@ -23,6 +24,7 @@ from birdscanner.ml.classification_pipeline import (
     ClassificationManager,
     PipelineContext,
 )
+from birdscanner.ml.geomodel import NUM_WEEKS, GeoPriorAdjuster
 from birdscanner.ml.tracking import should_run_bird_classification_for_detection
 
 
@@ -122,6 +124,10 @@ def test_stable_track_classifies_saves_and_writes(
     assert write.detection_confidence == pytest.approx(0.9)  # from det.conf
     assert write.video_path is None  # no record_fn supplied
     assert write.no_video_reason == cp.NO_VIDEO_DISABLED  # no recorder wired
+    # No geo_adjuster wired, so the geomodel debug fields stay unset.
+    assert write.classifier_species is None
+    assert write.classifier_confidence is None
+    assert write.geo_scores is None
 
     species_dir = tmp_path / "Robin"
     assert len(list(species_dir.glob("*.png"))) == 1
@@ -236,6 +242,57 @@ def test_stable_track_uses_best_frame(
     write = recording_writer.writes[0]
     assert write.box_x == pytest.approx(1 / 32)
     assert write.box_w == pytest.approx(10 / 32)
+
+
+def test_stable_track_applies_geomodel_adjustment(
+    tmp_path,
+    monkeypatch,
+    fake_detection,
+    recording_writer,
+    stable_tracker,
+    frame_factory,
+):
+    """With a geo_adjuster, the posterior is persisted as species and both picks are stored."""
+    monkeypatch.setattr(cp, "IMAGE_DIR", str(tmp_path))
+    det = fake_detection(box=(2, 2, 8, 8), conf=0.9, category=0)
+    tracker = stable_tracker(det)
+
+    class _Classifier:
+        """Fake classifier exposing the full-distribution API the geo path uses."""
+
+        idx_to_class = {0: "Vagrant", 1: "Local robin"}
+
+        def predict_proba(self, _roi):
+            # Narrowly prefers the out-of-range Vagrant before the geomodel prior.
+            return np.array([0.6, 0.4])
+
+    # Vagrant is essentially absent locally; the Local robin is common — so the
+    # posterior should flip to the robin.
+    adjuster = GeoPriorAdjuster(
+        {"Vagrant": [1e-3] * NUM_WEEKS, "Local robin": [0.9] * NUM_WEEKS},
+        {0: "Vagrant", 1: "Local robin"},
+        floor=1e-4,
+        top_k=2,
+    )
+
+    cp.process_single_detection_with_stable_tracks(
+        (frame_factory(120, (32, 32)), 0, det, ["bird"], "bird"),
+        PipelineContext(
+            classifier=cast(Classifier, _Classifier()),
+            tracker=tracker,
+            detection_writer=recording_writer,
+            geo_adjuster=adjuster,
+        ),
+    )
+
+    write = recording_writer.writes[0]
+    assert write.species == "Local robin"  # geomodel-corrected posterior argmax
+    assert write.confidence > 0.5
+    assert write.classifier_species == "Vagrant"  # classifier's own pick
+    assert write.classifier_confidence == pytest.approx(0.6)
+    scores = json.loads(write.geo_scores)
+    assert scores[0][0] == "Local robin"  # highest pre-normalised score
+    assert scores[0][1] == pytest.approx(0.4 * 0.9)
 
 
 def test_run_bird_classification_delegates_to_classifier():

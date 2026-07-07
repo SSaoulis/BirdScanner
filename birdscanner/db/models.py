@@ -36,6 +36,15 @@ class DetectionRecord(SQLModel, table=True):
         box_y: Detection box top edge as a fraction [0, 1] of the saved image height.
         box_w: Detection box width as a fraction [0, 1] of the saved image width.
         box_h: Detection box height as a fraction [0, 1] of the saved image height.
+        classifier_species: The classifier's own top class *before* the geomodel
+            Bayesian update, when the update ran. NULL when no geomodel prior was
+            applied (no location configured / prior unavailable) and for legacy
+            rows; in that case ``species`` is the classifier's unadjusted pick.
+        classifier_confidence: The classifier's softmax confidence for
+            ``classifier_species``, in [0, 1] (NULL under the same conditions).
+        geo_scores: JSON array of the top pre-normalised ``[species, score]`` pairs
+            (``p(y|x)·p(y|c)`` before renormalising) from the geomodel update, kept
+            for debugging/inspection. NULL when the update did not run / legacy rows.
         corrected: ``True`` when a user manually overrode the classifier's species
             (see ``birdscanner/db/corrector.py``). NULL/``False`` means the species
             is the model's own top prediction. When set, ``species`` is the
@@ -65,6 +74,9 @@ class DetectionRecord(SQLModel, table=True):
     box_y: Optional[float] = Field(default=None, nullable=True)
     box_w: Optional[float] = Field(default=None, nullable=True)
     box_h: Optional[float] = Field(default=None, nullable=True)
+    classifier_species: Optional[str] = Field(default=None, nullable=True)
+    classifier_confidence: Optional[float] = Field(default=None, nullable=True)
+    geo_scores: Optional[str] = Field(default=None, nullable=True)
     corrected: Optional[bool] = Field(default=None, nullable=True)
     original_species: Optional[str] = Field(default=None, nullable=True)
 

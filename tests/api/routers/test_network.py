@@ -10,7 +10,6 @@ import pytest
 from birdscanner.api.routers import network
 from birdscanner.api.routers.network import SpeedTestResult
 
-
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------

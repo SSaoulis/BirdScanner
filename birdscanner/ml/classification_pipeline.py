@@ -10,6 +10,7 @@ best-frame selector, video callables) are bundled into a single
 parameter list.
 """
 
+import json
 import logging
 import os
 import threading
@@ -35,6 +36,7 @@ from birdscanner.ml.detection_utils import (
     preprocess_roi,
     save_thumbnail,
 )
+from birdscanner.ml.geomodel import week_of_year
 from birdscanner.ml.tracking import (
     StableDetectionTracker,
     should_run_bird_classification_for_detection,
@@ -45,6 +47,7 @@ if TYPE_CHECKING:
     from queue import Queue
 
     from birdscanner.db.writer import DetectionWriter
+    from birdscanner.ml.geomodel import GeoPriorAdjuster
 
 # Root directory for saved images; overridable via IMAGE_DIR environment variable.
 IMAGE_DIR = os.environ.get("IMAGE_DIR", "/home/stefan/Pictures/bird_detections")
@@ -80,13 +83,28 @@ class Still(NamedTuple):
 class Classification(NamedTuple):
     """A species-classification result.
 
+    When the geomodel Bayesian update ran, ``species``/``confidence`` hold the
+    *posterior* (geomodel-corrected) prediction, and the extra fields carry the
+    classifier's own pick plus the pre-normalised scores for debugging. When it did
+    not run they are ``None`` and ``species``/``confidence`` are the classifier's
+    unadjusted output.
+
     Attributes:
-        species: The predicted species name.
+        species: The predicted species name (posterior argmax when adjusted).
         confidence: The prediction confidence in ``[0, 1]``.
+        classifier_species: The classifier's own top class before the update, or
+            ``None`` when the geomodel update did not run.
+        classifier_confidence: The classifier's confidence for
+            ``classifier_species``, or ``None``.
+        geo_scores: JSON of the top pre-normalised ``[species, score]`` pairs, or
+            ``None`` when the update did not run.
     """
 
     species: str
     confidence: float
+    classifier_species: Optional[str] = None
+    classifier_confidence: Optional[float] = None
+    geo_scores: Optional[str] = None
 
 
 def setup_classifier(model_path: str, class_to_idx_path: str) -> Classifier:
@@ -153,6 +171,11 @@ class PipelineContext:
             detection is saved/persisted (mutated live by the Settings page).
         ignore_species: Species (lower-cased) that are never saved even when
             classified (mutated live by the Settings page).
+        geo_adjuster: Optional geomodel Bayesian-update adjuster. When set, the
+            classifier's distribution is reweighted by the location's occurrence
+            prior and the posterior argmax becomes the prediction; when ``None``
+            (no location configured / prior unavailable) classification is
+            unchanged.
     """
 
     classifier: Classifier
@@ -164,6 +187,7 @@ class PipelineContext:
     video_frame_fn: Optional[Callable[[np.ndarray], None]] = None
     save_confidence_threshold: float = DEFAULT_SAVE_CONFIDENCE_THRESHOLD
     ignore_species: set[str] = field(default_factory=set)
+    geo_adjuster: Optional["GeoPriorAdjuster"] = None
 
     def __post_init__(self) -> None:
         """Fill in the module-level defaults for the tracker and classify callable."""
@@ -219,10 +243,41 @@ def _classify_track(
             still.box,
         )
         return None
-    species, confidence = context.classify_fn(context.classifier, roi)
+    result = _predict_species(context, roi)
     if track is not None:
-        context.tracker.mark_classified(track.track_id, species=species)
-    return Classification(species, confidence)
+        context.tracker.mark_classified(track.track_id, species=result.species)
+    return result
+
+
+def _predict_species(context: PipelineContext, roi: np.ndarray) -> Classification:
+    """Classify an ROI, applying the geomodel Bayesian update when configured.
+
+    Without a ``geo_adjuster`` this is the classifier's own top class (via the
+    injectable ``classify_fn``). With one, the classifier's full distribution is
+    reweighted by the location's occurrence prior for the current week: the
+    posterior argmax becomes the prediction, the classifier's original pick and the
+    top pre-normalised scores are retained for debugging.
+
+    Args:
+        context: Pipeline dependencies (classifier + classify callable + adjuster).
+        roi: The preprocessed ROI to classify.
+
+    Returns:
+        The :class:`Classification` (with geomodel fields populated iff adjusted).
+    """
+    if context.geo_adjuster is None:
+        species, confidence = context.classify_fn(context.classifier, roi)
+        return Classification(species, confidence)
+
+    probs = context.classifier.predict_proba(roi)
+    adjustment = context.geo_adjuster.adjust(probs, week_of_year(datetime.now()))
+    return Classification(
+        species=adjustment.species,
+        confidence=adjustment.confidence,
+        classifier_species=adjustment.classifier_species,
+        classifier_confidence=adjustment.classifier_confidence,
+        geo_scores=json.dumps(adjustment.top_scores),
+    )
 
 
 def _save_still_and_thumbnail(species_dir: Path, stem: str, still: Still) -> None:
@@ -325,6 +380,9 @@ def _persist_detection(
             box_y=norm[1],
             box_w=norm[2],
             box_h=norm[3],
+            classifier_species=result.classifier_species,
+            classifier_confidence=result.classifier_confidence,
+            geo_scores=result.geo_scores,
         )
     )
 

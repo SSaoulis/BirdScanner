@@ -78,6 +78,9 @@ _DETECTIONS_ADDED_COLUMNS: dict[str, str] = {
     "box_y": "FLOAT",
     "box_w": "FLOAT",
     "box_h": "FLOAT",
+    "classifier_species": "TEXT",
+    "classifier_confidence": "FLOAT",
+    "geo_scores": "TEXT",
     "corrected": "BOOLEAN",
     "original_species": "TEXT",
 }
