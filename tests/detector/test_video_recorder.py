@@ -9,7 +9,24 @@ backend produced one.
 
 import threading
 
-from birdscanner.detector.video_recorder import VideoRecorder
+from birdscanner.detector import video_recorder as vr
+from birdscanner.detector.video_recorder import VideoRecorder, _open_writer
+
+
+class _FakeWriter:
+    """Stand-in for ``cv2.VideoWriter`` that reports a preset ``isOpened``."""
+
+    def __init__(self, opened):
+        self._opened = opened
+        self.released = False
+
+    def isOpened(self):  # pylint: disable=invalid-name  # mirrors cv2's method
+        """Return the preset open state."""
+        return self._opened
+
+    def release(self):
+        """Record that the writer was released."""
+        self.released = True
 
 
 def test_pre_roll_buffer_is_bounded(frame_factory):
@@ -89,4 +106,64 @@ def test_encode_with_no_frames_is_a_noop(tmp_path):
     rec = VideoRecorder(fps=5, pre_roll_seconds=0.4, post_roll_seconds=0.0)
     dest = tmp_path / "empty.mp4"
     rec._encode([], str(dest))  # pylint: disable=protected-access
+    assert not dest.exists()
+
+
+def test_open_writer_prefers_h264(monkeypatch):
+    """avc1 is tried first and used when it opens; mp4v is never reached."""
+    codecs = []
+
+    def _factory(_dest, fourcc, _fps, _size):
+        codecs.append(fourcc)
+        return _FakeWriter(opened=True)  # first codec (avc1) opens
+
+    monkeypatch.setattr(vr.cv2, "VideoWriter", _factory)
+    monkeypatch.setattr(vr.cv2, "VideoWriter_fourcc", lambda *chars: "".join(chars))
+
+    writer = _open_writer("/tmp/clip.mp4", 10.0, (4, 4))
+    assert writer is not None
+    assert codecs == ["avc1"]  # stopped at the first working codec
+
+
+def test_open_writer_falls_back_to_mp4v(monkeypatch):
+    """When avc1 will not open, the helper falls through to mp4v."""
+    codecs = []
+
+    def _factory(_dest, fourcc, _fps, _size):
+        codecs.append(fourcc)
+        return _FakeWriter(opened=(fourcc == "mp4v"))
+
+    monkeypatch.setattr(vr.cv2, "VideoWriter", _factory)
+    monkeypatch.setattr(vr.cv2, "VideoWriter_fourcc", lambda *chars: "".join(chars))
+
+    writer = _open_writer("/tmp/clip.mp4", 10.0, (4, 4))
+    assert writer is not None
+    assert writer.isOpened()
+    assert codecs == ["avc1", "mp4v"]  # avc1 tried and rejected, mp4v accepted
+
+
+def test_open_writer_returns_none_when_no_codec_opens(monkeypatch):
+    """No working codec yields None (and every attempted writer is released)."""
+    attempted = []
+
+    def _factory(_dest, fourcc, _fps, _size):
+        writer = _FakeWriter(opened=False)
+        attempted.append(writer)
+        return writer
+
+    monkeypatch.setattr(vr.cv2, "VideoWriter", _factory)
+    monkeypatch.setattr(vr.cv2, "VideoWriter_fourcc", lambda *chars: "".join(chars))
+
+    assert _open_writer("/tmp/clip.mp4", 10.0, (4, 4)) is None
+    assert all(w.released for w in attempted)  # no leaked writers
+
+
+def test_encode_returns_when_no_codec_opens(monkeypatch, tmp_path, frame_factory):
+    """_encode logs and returns (no crash) when no writer can be opened."""
+    monkeypatch.setattr(vr, "_open_writer", lambda *args, **kwargs: None)
+    rec = VideoRecorder(fps=5, pre_roll_seconds=0.4, post_roll_seconds=0.0)
+    dest = tmp_path / "clip.mp4"
+    rec._encode(  # pylint: disable=protected-access
+        [frame_factory(0, (4, 4))], str(dest)
+    )
     assert not dest.exists()
