@@ -67,16 +67,53 @@ export function Lightbox({
   onDelete,
   onUpdate,
 }: LightboxProps) {
-  const { id, species, confidence, detection_confidence, timestamp } = detection;
-  const corrected = detection.corrected === true;
-  const originalSpecies = detection.original_species;
+  // The detection whose plate is *currently on screen*. Decoupled from the
+  // incoming `detection` prop so that on prev/next we hold the current plate —
+  // image, box overlay and caption, all mutually consistent — until the next
+  // full-res image has decoded, then swap them together. Otherwise the box and
+  // caption jump to the next sighting a beat before its (network-fetched) image
+  // catches up, which reads as clunky. Everything below is derived from `shown`.
+  const [shown, setShown] = useState<Detection>(detection);
+  // True while the next sighting's full image is preloading off-screen.
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    // Same record (e.g. an in-place species correction): the image bytes are
+    // unchanged, so apply the update immediately — there is nothing to wait for.
+    if (detection.id === shown.id) {
+      setShown(detection);
+      return;
+    }
+    // A different sighting: preload its full image off-screen and only swap the
+    // visible plate once the bytes have decoded, so image + box + caption all
+    // appear together. Falls through on error so a broken image still swaps
+    // (showing its own broken state) instead of trapping the loader.
+    let cancelled = false;
+    setLoading(true);
+    const preload = new Image();
+    const settle = () => {
+      if (cancelled) return;
+      setShown(detection);
+      setLoading(false);
+    };
+    preload.onload = settle;
+    preload.onerror = settle;
+    preload.src = api.images.fullUrl(detection.id);
+    return () => {
+      cancelled = true;
+    };
+  }, [detection, shown.id]);
+
+  const { id, species, confidence, detection_confidence, timestamp } = shown;
+  const corrected = shown.corrected === true;
+  const originalSpecies = shown.original_species;
   const fullUrl = api.images.fullUrl(id);
   const thumbUrl = api.images.thumbnailUrl(id);
   const videoUrl = api.images.videoUrl(id);
   // A clip exists once video_path is set; legacy/disabled/still-encoding rows are
   // null. The Photo/Video toggle is always shown, but the Video button is
   // disabled (with a reason tooltip) when no clip is available.
-  const hasVideo = detection.video_path !== null;
+  const hasVideo = shown.video_path !== null;
   // Which media the main pane shows. Reset to the still whenever the detection
   // changes so navigating to a clip-less sighting never lands on a blank player.
   const [mode, setMode] = useState<"photo" | "video">("photo");
@@ -100,10 +137,10 @@ export function Lightbox({
   // box on the otherwise-clean saved image. Legacy rows predate this and have
   // null coordinates, so the toggle/overlay are hidden for them.
   const hasBox =
-    detection.box_x !== null &&
-    detection.box_y !== null &&
-    detection.box_w !== null &&
-    detection.box_h !== null;
+    shown.box_x !== null &&
+    shown.box_y !== null &&
+    shown.box_w !== null &&
+    shown.box_h !== null;
   // Visible by default — toggled off to inspect the clean image.
   const [showBox, setShowBox] = useState(true);
 
@@ -264,11 +301,34 @@ export function Lightbox({
               />
             ) : (
               <img
+                // Keyed on the shown id so a fresh element mounts on every swap
+                // and the develop-in animation replays. The bytes are already
+                // cached (preloaded before the swap), so it resolves from a soft
+                // blur straight into the sharp plate.
+                key={id}
                 ref={imgRef}
                 src={fullUrl}
                 alt={`Captured ${species}`}
-                className="block max-h-[80vh] max-w-[44vw] rounded-lg bg-ink shadow-plate-lift"
+                className="block max-h-[80vh] max-w-[44vw] animate-plate-develop rounded-lg bg-ink shadow-plate-lift"
               />
+            )}
+
+            {/* ── Developing veil ──
+                While the next sighting's full image preloads off-screen, the
+                current plate is held on screen and dimmed under a warm scrim
+                while a soft goldfinch light sweeps down it — like a naturalist
+                reading a photographic plate. It sits below the on-image controls
+                (z-10) so they stay bright and clickable, and is click-through. */}
+            {mode === "photo" && loading && (
+              <div
+                className="pointer-events-none absolute inset-0 z-[5] overflow-hidden rounded-lg"
+                role="status"
+                aria-live="polite"
+              >
+                <div className="absolute inset-0 bg-ink/40" />
+                <div className="absolute inset-x-0 top-0 h-2/5 -translate-y-full animate-plate-scan bg-gradient-to-b from-transparent via-gold/45 to-transparent" />
+                <span className="sr-only">Developing the next plate…</span>
+              </div>
             )}
 
             {/* Detection box overlay — positioned in normalized [0,1] space over
@@ -279,10 +339,10 @@ export function Lightbox({
               <div
                 className="pointer-events-none absolute rounded-sm border-2 border-gold shadow-[0_0_0_1px_rgba(0,0,0,0.45)]"
                 style={{
-                  left: `${detection.box_x! * 100}%`,
-                  top: `${detection.box_y! * 100}%`,
-                  width: `${detection.box_w! * 100}%`,
-                  height: `${detection.box_h! * 100}%`,
+                  left: `${shown.box_x! * 100}%`,
+                  top: `${shown.box_y! * 100}%`,
+                  width: `${shown.box_w! * 100}%`,
+                  height: `${shown.box_h! * 100}%`,
                 }}
                 aria-hidden="true"
               />
@@ -324,7 +384,7 @@ export function Lightbox({
                         aria-disabled={unavailable}
                         title={
                           unavailable
-                            ? noVideoReasonText(detection.no_video_reason)
+                            ? noVideoReasonText(shown.no_video_reason)
                             : undefined
                         }
                       >
