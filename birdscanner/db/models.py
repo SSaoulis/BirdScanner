@@ -45,6 +45,14 @@ class DetectionRecord(SQLModel, table=True):
         geo_scores: JSON array of the top pre-normalised ``[species, score]`` pairs
             (``p(y|x)·p(y|c)`` before renormalising) from the geomodel update, kept
             for debugging/inspection. NULL when the update did not run / legacy rows.
+        corrected: ``True`` when a user manually overrode the classifier's species
+            (see ``birdscanner/db/corrector.py``). NULL/``False`` means the species
+            is the model's own top prediction. When set, ``species`` is the
+            human-chosen label and ``original_species`` holds the model's guess.
+        original_species: The classifier's original top-1 species, preserved when a
+            user corrects the detection so the model-vs-human disagreement stays on
+            record (retraining ground truth). ``confidence`` is that guess's score.
+            NULL when the detection was never corrected.
     """
 
     __tablename__ = "detections"  # type: ignore[assignment]
@@ -69,6 +77,8 @@ class DetectionRecord(SQLModel, table=True):
     classifier_species: Optional[str] = Field(default=None, nullable=True)
     classifier_confidence: Optional[float] = Field(default=None, nullable=True)
     geo_scores: Optional[str] = Field(default=None, nullable=True)
+    corrected: Optional[bool] = Field(default=None, nullable=True)
+    original_species: Optional[str] = Field(default=None, nullable=True)
 
 
 class GeoPrior(SQLModel, table=True):

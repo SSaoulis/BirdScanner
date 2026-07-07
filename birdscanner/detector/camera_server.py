@@ -10,6 +10,9 @@ detector and the API proxies browser requests through to it:
 * ``GET /crop`` / ``POST /crop`` — read / update the detection crop region.
 * ``DELETE /detections/{id}`` — delete a detection row + its image files (see
   ``birdscanner/api/routers/detections.py``).
+* ``PATCH /detections/{id}`` — correct a detection's species (moves its files to
+  the corrected species folder; see ``birdscanner/db/corrector.py``).
+* ``GET /labels`` — the classifier's species vocabulary (for the correction picker).
 
 The port is read from the ``CAMERA_SERVER_PORT`` environment variable and
 defaults to :data:`DEFAULT_CAMERA_SERVER_PORT`.
@@ -43,6 +46,11 @@ _MAX_BODY_BYTES = 4096
 # record existed (False otherwise).  See :func:`db.deleter.delete_detection`.
 DeleteCallback = Callable[[int], bool]
 
+# A callable that reassigns a detection's species and returns the updated record
+# as a JSON-serialisable dict (or None if no such detection exists).  See
+# :func:`db.corrector.correct_detection_species`.
+CorrectCallback = Callable[[int, str], Optional[dict]]
+
 # A callable that asks the detector to restart (typically by scheduling process
 # exit so Docker's restart policy relaunches it).
 RestartCallback = Callable[[], None]
@@ -64,12 +72,17 @@ class ControlServerDeps:
         delete_detection: Enables ``DELETE /detections/{id}``.
         settings_controller: Enables ``GET``/``POST /settings``.
         restart: Enables ``POST /restart``.
+        correct_species: Enables ``PATCH /detections/{id}`` (species correction).
+        species_labels: The classifier vocabulary; enables ``GET /labels`` and
+            gates species corrections to a known label.
     """
 
     crop_controller: Optional[Any] = None
     delete_detection: Optional[DeleteCallback] = None
     settings_controller: Optional[Any] = None
     restart: Optional[RestartCallback] = None
+    correct_species: Optional[CorrectCallback] = None
+    species_labels: Optional[list[str]] = None
 
 
 def encode_jpeg(frame: np.ndarray) -> bytes:
@@ -203,6 +216,8 @@ class CameraRequestHandler(BaseHTTPRequestHandler):
             self._handle_get_crop()
         elif path == "/settings":
             self._handle_get_settings()
+        elif path == "/labels":
+            self._handle_get_labels()
         else:
             self.send_error(404, "Not Found")
 
@@ -239,6 +254,47 @@ class CameraRequestHandler(BaseHTTPRequestHandler):
             return
         self.send_response(204)
         self.end_headers()
+
+    # do_PATCH is the stdlib-mandated handler name; the broad except turns any
+    # correction failure into a clean 500.
+    def do_PATCH(self) -> None:  # pylint: disable=invalid-name
+        """Handle ``PATCH /detections/{id}``: correct a detection's species."""
+        self._handle_correct_species()
+
+    def _handle_correct_species(self) -> None:
+        """Reassign a detection's species from a JSON body ``{"species": ...}``.
+
+        The species must be a non-empty string present in the classifier
+        vocabulary, otherwise a 400 JSON ``{"error": ...}`` is returned (the shape
+        that survives the API proxy).  Returns the updated record as JSON on
+        success, or 404 when the detection does not exist.
+        """
+        correct_species = self._control.deps.correct_species
+        detection_id = _parse_detection_id(self.path)
+        if correct_species is None or detection_id is None:
+            self.send_error(404, "Not Found")
+            return
+        payload = self._read_json_body()
+        if payload is None:
+            return
+        species = payload.get("species")
+        if not isinstance(species, str) or not species.strip():
+            self._send_json(400, {"error": "Missing or invalid 'species'"})
+            return
+        labels = self._control.deps.species_labels
+        if labels is not None and species not in labels:
+            self._send_json(400, {"error": f"Unknown species '{species}'"})
+            return
+        try:
+            record = correct_species(detection_id, species)
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            logger.warning("Species correction failed: %s", exc)
+            self.send_error(500, "Correction failed")
+            return
+        if record is None:
+            self.send_error(404, "Detection not found")
+            return
+        self._send_json(200, record)
 
     def _handle_capture(self) -> None:
         """Capture and return a JPEG of the current (cropped) feed."""
@@ -328,6 +384,14 @@ class CameraRequestHandler(BaseHTTPRequestHandler):
             self.send_error(503, "Failed to apply crop")
             return
         self._send_json(200, state)
+
+    def _handle_get_labels(self) -> None:
+        """Return the classifier's species vocabulary as ``{"species": [...]}``."""
+        labels = self._control.deps.species_labels
+        if labels is None:
+            self.send_error(404, "Labels not available")
+            return
+        self._send_json(200, {"species": labels})
 
     def _handle_get_settings(self) -> None:
         """Return the current runtime settings + restart metadata as JSON."""

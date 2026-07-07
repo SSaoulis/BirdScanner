@@ -137,3 +137,89 @@ class TestDeleteDetection:
         monkeypatch.setattr(detections.httpx, "delete", _fake_delete)
         resp = client.delete("/api/detections/123")
         assert resp.status_code == 503
+
+
+# A full DetectionRecord-shaped body the correction proxy relays back (the
+# response_model validates it, so every required column must be present).
+_CORRECTED_BODY = {
+    "id": 123,
+    "timestamp": "2024-06-01T12:00:00",
+    "species": "Sparrow",
+    "confidence": 0.42,
+    "detection_confidence": 0.8,
+    "image_path": "Sparrow/x.png",
+    "thumbnail_path": "Sparrow/x_thumb.jpg",
+    "video_path": None,
+    "no_video_reason": None,
+    "track_id": 1,
+    "stable_frames": 5,
+    "duration_sec": 1.2,
+    "uploaded_at": None,
+    "box_x": None,
+    "box_y": None,
+    "box_w": None,
+    "box_h": None,
+    "corrected": True,
+    "original_species": "Robin",
+}
+
+
+class TestCorrectDetection:
+    def test_proxies_correction_to_detector(
+        self, client, monkeypatch, fake_httpx_response
+    ):
+        from birdscanner.api.routers import detections
+
+        captured = {}
+
+        def _fake_patch(url, json, timeout):
+            captured["url"] = url
+            captured["json"] = json
+            return fake_httpx_response(status_code=200, json_body=_CORRECTED_BODY)
+
+        monkeypatch.setattr(detections.httpx, "patch", _fake_patch)
+        resp = client.patch("/api/detections/123", json={"species": "Sparrow"})
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["species"] == "Sparrow"
+        assert body["corrected"] is True
+        assert body["original_species"] == "Robin"
+        assert captured["url"].endswith("/detections/123")
+        assert captured["json"] == {"species": "Sparrow"}
+
+    def test_relays_400_unknown_species(self, client, monkeypatch, fake_httpx_response):
+        from birdscanner.api.routers import detections
+
+        monkeypatch.setattr(
+            detections.httpx,
+            "patch",
+            lambda url, json, timeout: fake_httpx_response(
+                status_code=400, json_body={"error": "Unknown species 'Dodo'"}
+            ),
+        )
+        resp = client.patch("/api/detections/123", json={"species": "Dodo"})
+        assert resp.status_code == 400
+        assert "Unknown species" in resp.json()["detail"]
+
+    def test_relays_404_from_detector(self, client, monkeypatch, fake_httpx_response):
+        from birdscanner.api.routers import detections
+
+        monkeypatch.setattr(
+            detections.httpx,
+            "patch",
+            lambda url, json, timeout: fake_httpx_response(status_code=404),
+        )
+        resp = client.patch("/api/detections/123", json={"species": "Sparrow"})
+        assert resp.status_code == 404
+
+    def test_returns_503_when_detector_unreachable(self, client, monkeypatch):
+        import httpx
+
+        from birdscanner.api.routers import detections
+
+        def _fake_patch(url, json, timeout):
+            raise httpx.ConnectError("connection refused")
+
+        monkeypatch.setattr(detections.httpx, "patch", _fake_patch)
+        resp = client.patch("/api/detections/123", json={"species": "Sparrow"})
+        assert resp.status_code == 503

@@ -29,6 +29,8 @@ interface GalleryProps {
   onCloseLightbox: () => void;
   /** Called with a detection id after it has been deleted from the lightbox. */
   onDeleteDetection: (id: number) => void;
+  /** Called with the updated detection after its species is corrected. */
+  onUpdateDetection: (updated: Detection) => void;
   /** Called with the deleted ids after a bulk delete of the selection. */
   onDeleteSelected: (ids: number[]) => void;
 }
@@ -54,6 +56,7 @@ export function Gallery({
   onOpenLightbox,
   onCloseLightbox,
   onDeleteDetection,
+  onUpdateDetection,
   onDeleteSelected,
 }: GalleryProps) {
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -103,6 +106,7 @@ export function Gallery({
               : null
           }
           onDelete={onDeleteDetection}
+          onUpdate={onUpdateDetection}
         />
       )}
 

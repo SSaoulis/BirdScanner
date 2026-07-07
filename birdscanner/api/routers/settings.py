@@ -22,6 +22,8 @@ from typing import Any, Dict
 import httpx
 from fastapi import APIRouter, Body, HTTPException
 
+from birdscanner.api.detector_proxy import detector_error_detail
+
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
 _DEFAULT_DETECTOR_URL = "http://detector:8000"
@@ -35,27 +37,6 @@ def _detector_base() -> str:
         The detector base URL from ``DETECTOR_URL`` or the default.
     """
     return os.environ.get("DETECTOR_URL", _DEFAULT_DETECTOR_URL).rstrip("/")
-
-
-def _error_detail(resp: httpx.Response) -> str:
-    """Extract a human-readable error message from a detector error response.
-
-    The detector returns validation errors as ``{"error": "..."}`` JSON; fall
-    back to the raw body when it is not that shape.
-
-    Args:
-        resp: The detector's error response.
-
-    Returns:
-        The extracted message, suitable for the relayed ``HTTPException`` detail.
-    """
-    try:
-        body = resp.json()
-    except ValueError:
-        return resp.text
-    if isinstance(body, dict) and isinstance(body.get("error"), str):
-        return body["error"]
-    return resp.text
 
 
 @router.get("")
@@ -101,7 +82,9 @@ def update_settings(payload: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
             status_code=503, detail=f"Detector unavailable: {exc}"
         ) from exc
     if resp.status_code >= 400:
-        raise HTTPException(status_code=resp.status_code, detail=_error_detail(resp))
+        raise HTTPException(
+            status_code=resp.status_code, detail=detector_error_detail(resp)
+        )
     return resp.json()
 
 

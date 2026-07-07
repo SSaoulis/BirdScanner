@@ -31,6 +31,14 @@ export interface Detection {
   box_w: number | null;
   /** Detection box height as a fraction [0, 1] of image height (null for legacy rows). */
   box_h: number | null;
+  /** True when a user manually overrode the classifier's species; null/false otherwise. */
+  corrected: boolean | null;
+  /**
+   * The classifier's original top-1 species, preserved when a user corrects the
+   * detection so the model's guess stays on record. `confidence` is that guess's
+   * score. Null when the detection was never corrected.
+   */
+  original_species: string | null;
 }
 
 export interface SystemStatus {
@@ -207,6 +215,28 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+async function patchJson<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(path, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    // Surface the API's error detail (e.g. "Unknown species 'X'") when present.
+    // FastAPI wraps it as {"detail": "..."}.
+    const raw = await res.text().catch(() => "");
+    let message = raw;
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed.detail === "string") message = parsed.detail;
+    } catch {
+      /* not JSON — keep the raw body */
+    }
+    throw new ApiError(res.status, message || `API ${path} → ${res.status} ${res.statusText}`);
+  }
+  return res.json() as Promise<T>;
+}
+
 async function apiDelete(path: string): Promise<void> {
   const res = await fetch(path, { method: "DELETE" });
   if (!res.ok) throw new Error(`API ${path} → ${res.status} ${res.statusText}`);
@@ -223,6 +253,15 @@ export const api = {
     /** Permanently delete a detection (its DB row + image files). */
     delete: (id: number): Promise<void> =>
       apiDelete(`/api/detections/${id}`),
+
+    /**
+     * Correct a detection's species. Returns the updated detection (with
+     * `corrected` set and image paths moved to the new species folder). Rejects
+     * with an ApiError(400) carrying the message for an unknown species, or 503
+     * when the detector is unreachable.
+     */
+    correct: (id: number, species: string): Promise<Detection> =>
+      patchJson<Detection>(`/api/detections/${id}`, { species }),
   },
 
   images: {
@@ -248,6 +287,13 @@ export const api = {
 
   species: {
     list: (): Promise<SpeciesSummary[]> => apiFetch<SpeciesSummary[]>("/api/species"),
+
+    /**
+     * Fetch the classifier's full species vocabulary (every label the model can
+     * predict), used to populate the correction picker. Rejects with an
+     * ApiError(503) when the detector is unreachable.
+     */
+    vocabulary: (): Promise<string[]> => apiFetch<string[]>("/api/species/vocabulary"),
 
     /**
      * Fetch reference data (images + species info) for a species by its

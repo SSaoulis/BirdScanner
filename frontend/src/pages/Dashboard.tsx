@@ -87,6 +87,13 @@ export function Dashboard() {
     setLightbox(null);
   };
 
+  // Replace the corrected detection in place in both strips, keeping the
+  // lightbox open on it so its species/reference refresh live.
+  const updateDetection = (updated: Detection): void => {
+    setToday((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
+    setRecent((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
+  };
+
   /** Render one horizontal strip of detection cards (or its empty/loading state). */
   const renderStrip = (section: Section, list: Detection[], emptyLabel: string) => {
     if (loading) {
@@ -136,6 +143,7 @@ export function Dashboard() {
               : null
           }
           onDelete={removeDetection}
+          onUpdate={updateDetection}
         />
       )}
 

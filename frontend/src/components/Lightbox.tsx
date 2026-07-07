@@ -6,6 +6,7 @@ import {
   type Detection,
   type SpeciesReference,
 } from "../api";
+import { SpeciesPicker } from "./SpeciesPicker";
 
 interface LightboxProps {
   /** The detection currently displayed in the panel. */
@@ -18,6 +19,8 @@ interface LightboxProps {
   onNext: (() => void) | null;
   /** Called with the detection id after it has been successfully deleted. */
   onDelete: (id: number) => void;
+  /** Called with the updated detection after its species is corrected. */
+  onUpdate: (updated: Detection) => void;
 }
 
 /**
@@ -56,8 +59,17 @@ type ReferenceState =
  * prev/next changes the detection — and therefore its species — so the
  * reference is refetched whenever the displayed species changes.
  */
-export function Lightbox({ detection, onClose, onPrev, onNext, onDelete }: LightboxProps) {
+export function Lightbox({
+  detection,
+  onClose,
+  onPrev,
+  onNext,
+  onDelete,
+  onUpdate,
+}: LightboxProps) {
   const { id, species, confidence, detection_confidence, timestamp } = detection;
+  const corrected = detection.corrected === true;
+  const originalSpecies = detection.original_species;
   const fullUrl = api.images.fullUrl(id);
   const thumbUrl = api.images.thumbnailUrl(id);
   const videoUrl = api.images.videoUrl(id);
@@ -68,8 +80,17 @@ export function Lightbox({ detection, onClose, onPrev, onNext, onDelete }: Light
   // Which media the main pane shows. Reset to the still whenever the detection
   // changes so navigating to a clip-less sighting never lands on a blank player.
   const [mode, setMode] = useState<"photo" | "video">("photo");
+  // Whether the species-correction picker is open, plus its in-flight/error state.
+  const [correcting, setCorrecting] = useState(false);
+  const [correctBusy, setCorrectBusy] = useState(false);
+  const [correctError, setCorrectError] = useState<string | null>(null);
   useEffect(() => {
     setMode("photo");
+    // Navigating to another sighting closes the picker so it never lingers over
+    // the wrong record.
+    setCorrecting(false);
+    setCorrectBusy(false);
+    setCorrectError(null);
   }, [id]);
   const confidencePct = (confidence * 100).toFixed(1);
   const detectionPct =
@@ -115,6 +136,22 @@ export function Lightbox({ detection, onClose, onPrev, onNext, onDelete }: Light
     return () => observer.disconnect();
   }, [fullUrl]);
 
+  /** Correct the detection's species via the API, then notify the parent. */
+  async function handleCorrect(chosen: string) {
+    if (correctBusy) return;
+    setCorrectBusy(true);
+    setCorrectError(null);
+    try {
+      const updated = await api.detections.correct(id, chosen);
+      onUpdate(updated);
+      setCorrecting(false);
+    } catch (e) {
+      setCorrectError(e instanceof Error ? e.message : "Correction failed");
+    } finally {
+      setCorrectBusy(false);
+    }
+  }
+
   /** Confirm, delete the detection via the API, then notify the parent. */
   async function handleDelete() {
     if (deleting) return;
@@ -132,16 +169,19 @@ export function Lightbox({ detection, onClose, onPrev, onNext, onDelete }: Light
     }
   }
 
-  // Keyboard navigation
+  // Keyboard navigation. While the correction picker is open it owns the
+  // keyboard (its own Esc cancels it, ↑/↓ move the list), so the lightbox's
+  // Esc-to-close / arrow-to-navigate are suppressed to avoid double-handling.
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
+      if (correcting) return;
       if (e.key === "Escape") onClose();
       if (e.key === "ArrowLeft" && onPrev) onPrev();
       if (e.key === "ArrowRight" && onNext) onNext();
     }
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [onClose, onPrev, onNext]);
+  }, [onClose, onPrev, onNext, correcting]);
 
   // Prevent body scroll while open
   useEffect(() => {
@@ -269,10 +309,60 @@ export function Lightbox({ detection, onClose, onPrev, onNext, onDelete }: Light
 
           {/* Caption bar */}
           <div className="flex flex-wrap items-center gap-3 rounded-xl border border-line bg-card/95 px-3 py-2 text-sm">
-            <span className="font-display text-base font-medium text-ink">{species}</span>
-            <span className="tnum font-medium text-gold-deep" title="Species-classification confidence">
-              {confidencePct}% match
-            </span>
+            {/* Species + the margin-correction affordance (the picker opens above) */}
+            <div className="relative flex items-center gap-2">
+              <span className="font-display text-base font-medium text-ink">{species}</span>
+              <button
+                className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium text-bark transition-colors hover:bg-paper hover:text-ink"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setCorrecting((v) => !v);
+                  setCorrectError(null);
+                }}
+                aria-expanded={correcting}
+                aria-label="Correct the species"
+                title="Wrong bird? Set the record straight."
+              >
+                <span aria-hidden="true">✎</span>
+                Correct ID
+              </button>
+              {correcting && (
+                <div className="absolute bottom-full left-0 z-20 mb-2">
+                  <SpeciesPicker
+                    current={species}
+                    onConfirm={handleCorrect}
+                    onCancel={() => {
+                      setCorrecting(false);
+                      setCorrectError(null);
+                    }}
+                    busy={correctBusy}
+                    errorMessage={correctError}
+                  />
+                </div>
+              )}
+            </div>
+            {corrected ? (
+              <span
+                className="flex items-baseline gap-1.5"
+                title="Species set by you"
+              >
+                <span className="font-display text-sm italic text-gold-deep">
+                  ✎ Corrected by you
+                </span>
+                {originalSpecies && (
+                  <span className="text-[11px] text-bark">
+                    · model saw <span className="tnum">{confidencePct}%</span> {originalSpecies}
+                  </span>
+                )}
+              </span>
+            ) : (
+              <span
+                className="tnum font-medium text-gold-deep"
+                title="Species-classification confidence"
+              >
+                {confidencePct}% match
+              </span>
+            )}
             {detectionPct !== null && (
               <span className="tnum text-bark" title="Object-detection confidence (YOLO)">
                 {detectionPct}% spotted

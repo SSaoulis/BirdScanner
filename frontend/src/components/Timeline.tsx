@@ -24,6 +24,8 @@ interface TimelineProps {
   onCloseLightbox: () => void;
   /** Called with a detection id after it has been deleted from the lightbox. */
   onDeleteDetection: (id: number) => void;
+  /** Called with the updated detection after its species is corrected. */
+  onUpdateDetection: (updated: Detection) => void;
 }
 
 /**
@@ -44,6 +46,7 @@ export function Timeline({
   onOpenLightbox,
   onCloseLightbox,
   onDeleteDetection,
+  onUpdateDetection,
 }: TimelineProps) {
   const sentinelRef = useRef<HTMLDivElement>(null);
 
@@ -82,6 +85,7 @@ export function Timeline({
               : null
           }
           onDelete={onDeleteDetection}
+          onUpdate={onUpdateDetection}
         />
       )}
 

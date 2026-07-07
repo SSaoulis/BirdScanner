@@ -152,6 +152,15 @@ export function History() {
     [removeDetections]
   );
 
+  /**
+   * Replace a corrected detection in place so its new species shows in the
+   * Timeline/Gallery immediately (the API call happens in the Lightbox). Unlike
+   * a delete, this leaves the offset, selection, and lightbox index untouched.
+   */
+  const handleUpdateDetection = useCallback((updated: Detection) => {
+    setDetections((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
+  }, []);
+
   const fieldLabel = "text-xs font-semibold text-sage-deep";
   const fieldInput =
     "bg-paper text-ink text-sm rounded-lg px-3 py-2 border border-line focus:outline-none focus:ring-2 focus:ring-gold focus:border-gold";
@@ -287,6 +296,7 @@ export function History() {
             onOpenLightbox={handleOpenLightbox}
             onCloseLightbox={handleCloseLightbox}
             onDeleteDetection={handleDeleteDetection}
+            onUpdateDetection={handleUpdateDetection}
           />
         ) : (
           <Gallery
@@ -302,6 +312,7 @@ export function History() {
             onOpenLightbox={handleOpenLightbox}
             onCloseLightbox={handleCloseLightbox}
             onDeleteDetection={handleDeleteDetection}
+            onUpdateDetection={handleUpdateDetection}
             onDeleteSelected={removeDetections}
           />
         )}
