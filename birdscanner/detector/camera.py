@@ -22,9 +22,11 @@ from dataclasses import dataclass
 from typing import Any
 
 import libcamera
+import picamera2.formats as picamera2_formats  # type: ignore
 from picamera2 import Picamera2  # type: ignore
 from picamera2.devices import IMX500  # type: ignore
 from picamera2.devices.imx500 import NetworkIntrinsics  # type: ignore
+from picamera2.sensor_format import SensorFormat  # type: ignore
 
 from birdscanner.detector.config import config as app_config
 from birdscanner.detector.crop import (
@@ -50,22 +52,43 @@ def _full_fov_raw_stream(picam2: Picamera2) -> dict:
     uncropped field of view; see :mod:`birdscanner.detector.raw_frame`). The
     spec requests the *unpacked* format of the full-FOV binned mode so
     ``request.make_array("raw")`` yields a directly-demosaicable integer array
-    (the native packed ``*_CSI2P`` format would need bespoke unpacking). Falls
-    back to just the size (letting picamera2 pick a format) if the mode is not
-    found, in which case the pipeline degrades to the cropped ``main`` frame.
+    (the native packed ``*_CSI2P`` format would need bespoke unpacking).
+
+    The unpacked format is resolved via libcamera's lightweight
+    ``generate_configuration`` enumeration (the non-allocating part of
+    picamera2's ``sensor_modes``) rather than reading ``picam2.sensor_modes``
+    directly: that property lazily calls ``configure()`` — allocating
+    full-resolution DMA buffers — for *every* sensor mode, which exhausts the
+    container's host-global CMA pool and crashes bring-up with
+    ``OSError: [Errno 12] Cannot allocate memory`` before ``picam2.start()`` is
+    even reached. Passing an explicit size AND format also means ``configure()``
+    never needs ``sensor_modes`` at ``start()``. On any failure this falls back
+    to a size-only spec (the clip pipeline then degrades gracefully to the
+    cropped ``main`` frame — see :mod:`birdscanner.detector.raw_frame` — rather
+    than crashing).
 
     Args:
-        picam2: The ``Picamera2`` instance whose sensor modes are inspected.
+        picam2: The ``Picamera2`` instance whose sensor formats are enumerated.
 
     Returns:
         A ``raw`` stream configuration dict for ``create_preview_configuration``.
     """
-    for mode in picam2.sensor_modes:
-        if tuple(mode.get("size", ())) == FULL_FOV_RAW_SIZE:
-            unpacked = mode.get("unpacked")
-            if unpacked:
+    try:
+        raw_config = picam2.camera.generate_configuration([libcamera.StreamRole.Raw])
+        raw_formats = raw_config.at(0).formats
+        for pix in raw_formats.pixel_formats:
+            name = str(pix)
+            if not picamera2_formats.is_raw(name):
+                continue
+            sizes = {(size.width, size.height) for size in raw_formats.sizes(pix)}
+            if FULL_FOV_RAW_SIZE in sizes:
+                unpacked = SensorFormat(name).unpacked
                 return {"size": FULL_FOV_RAW_SIZE, "format": str(unpacked)}
-            break
+    except Exception:
+        logger.exception(
+            "Could not resolve full-FOV raw format via generate_configuration; "
+            "falling back to size-only raw spec"
+        )
     return {"size": FULL_FOV_RAW_SIZE}
 
 
