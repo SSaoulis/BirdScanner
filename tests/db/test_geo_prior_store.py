@@ -11,6 +11,7 @@ from sqlmodel import select
 
 from birdscanner.db.geo_prior_store import (
     has_geo_priors,
+    load_geo_priors,
     location_matches,
     read_meta,
     replace_geo_priors,
@@ -65,6 +66,19 @@ def test_replace_geo_priors_replaces_previous_rows(session_factory):
     meta = read_meta(session_factory)
     assert meta is not None
     assert (meta.latitude, meta.longitude) == (40.0, -3.7)
+
+
+def test_load_geo_priors_roundtrips_by_species_and_week(session_factory):
+    """load_geo_priors returns {species: [weekly probs in week order]} — inverse of replace."""
+    priors = {"Robin": [0.1, 0.2, 0.3], "Blackbird": [0.4, 0.5, 0.6]}
+    replace_geo_priors(session_factory, 51.5, -0.12, priors)
+
+    assert load_geo_priors(session_factory) == priors
+
+
+def test_load_geo_priors_empty_when_nothing_stored(session_factory):
+    """No stored priors yields an empty mapping (geomodel correction stays disabled)."""
+    assert load_geo_priors(session_factory) == {}
 
 
 def test_location_matches_within_tolerance():

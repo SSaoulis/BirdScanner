@@ -1,15 +1,21 @@
 """Unit tests for the geomodel <-> classifier label crosswalk (pure functions)."""
 
 import json
+from datetime import datetime
 
 import numpy as np
 import pytest
 
 from birdscanner.ml.geomodel import (
+    NUM_WEEKS,
+    GeoPriorAdjuster,
     build_name_mapping,
+    build_prior_matrix,
+    geomodel_posterior,
     load_name_mapping,
     normalize_common_name,
     project_to_classifier,
+    week_of_year,
 )
 
 
@@ -147,3 +153,93 @@ def test_project_to_classifier_first_geomodel_row_wins_on_duplicate_common_name(
 
     assert set(priors) == {"Barn owl"}
     assert priors["Barn owl"] == pytest.approx([0.6])
+
+
+# ---------------------------------------------------------------------------
+# Runtime Bayesian update: week_of_year / build_prior_matrix /
+# geomodel_posterior / GeoPriorAdjuster
+# ---------------------------------------------------------------------------
+
+
+def test_week_of_year_bins_into_month_quarters():
+    """Each month splits into 4 weeks; the index stays within 1..NUM_WEEKS."""
+    assert week_of_year(datetime(2026, 1, 1)) == 1  # first quarter of January
+    assert week_of_year(datetime(2026, 1, 8)) == 2  # second quarter
+    assert week_of_year(datetime(2026, 1, 31)) == 4  # capped at the 4th quarter
+    assert week_of_year(datetime(2026, 2, 1)) == 5  # rolls into February
+    assert week_of_year(datetime(2026, 12, 31)) == NUM_WEEKS  # last week of the year
+
+
+def _weekly(value: float) -> list[float]:
+    """A constant 48-week prior vector (the store always writes NUM_WEEKS weeks)."""
+    return [value] * NUM_WEEKS
+
+
+def test_build_prior_matrix_aligns_floors_and_fills_unmapped():
+    """Mapped species land in their class column (floored); unmapped get the neutral prior."""
+    idx_to_class = {0: "Robin", 1: "Blackbird", 2: "Unknown"}
+    priors = {"Robin": _weekly(0.6), "Blackbird": _weekly(0.0)}
+
+    matrix = build_prior_matrix(priors, idx_to_class, floor=1e-3, unmapped_prior=1.0)
+
+    assert matrix.shape == (NUM_WEEKS, 3)
+    assert matrix[:, 0] == pytest.approx([0.6] * NUM_WEEKS)  # mapped
+    assert matrix[:, 1] == pytest.approx([1e-3] * NUM_WEEKS)  # floored up from 0.0
+    assert matrix[:, 2] == pytest.approx([1.0] * NUM_WEEKS)  # unmapped -> neutral
+
+
+def test_build_prior_matrix_ignores_wrong_length_vectors():
+    """A weekly vector that is not NUM_WEEKS long is skipped (left at the neutral prior)."""
+    idx_to_class = {0: "Robin"}
+    matrix = build_prior_matrix({"Robin": [0.5, 0.5]}, idx_to_class, unmapped_prior=1.0)
+    assert matrix[:, 0] == pytest.approx([1.0] * NUM_WEEKS)
+
+
+def test_geomodel_posterior_matches_the_formula():
+    """Posterior = normalized product; unnormalized is the raw product."""
+    probs = np.array([0.6, 0.4])
+    prior = np.array([0.1, 0.9])
+
+    posterior, unnormalized = geomodel_posterior(probs, prior)
+
+    assert unnormalized == pytest.approx([0.06, 0.36])
+    assert posterior == pytest.approx([0.06 / 0.42, 0.36 / 0.42])
+    assert float(posterior.sum()) == pytest.approx(1.0)
+
+
+def test_geomodel_posterior_zero_product_falls_back_to_classifier():
+    """When the product sums to 0 the classifier probabilities are returned unchanged."""
+    probs = np.array([0.7, 0.3])
+    prior = np.array([0.0, 0.0])
+
+    posterior, unnormalized = geomodel_posterior(probs, prior)
+
+    assert posterior == pytest.approx([0.7, 0.3])
+    assert unnormalized == pytest.approx([0.0, 0.0])
+
+
+def test_geo_prior_adjuster_flips_prediction_towards_the_likely_species():
+    """A strong prior for a runner-up class flips the prediction and records both picks."""
+    idx_to_class = {0: "Vagrant", 1: "Local robin"}
+    # Classifier narrowly prefers the out-of-range Vagrant; the geo prior for it is
+    # tiny while the Local robin is common, so the posterior should flip.
+    priors = {"Vagrant": _weekly(0.001), "Local robin": _weekly(0.9)}
+    adjuster = GeoPriorAdjuster(priors, idx_to_class, floor=1e-4, top_k=2)
+
+    result = adjuster.adjust(np.array([0.55, 0.45]), week=1)
+
+    assert result.classifier_species == "Vagrant"  # classifier's own pick
+    assert result.classifier_confidence == pytest.approx(0.55)
+    assert result.species == "Local robin"  # geomodel-corrected pick
+    assert result.confidence > 0.5
+    # top_scores are the pre-normalised product, descending.
+    assert [name for name, _ in result.top_scores] == ["Local robin", "Vagrant"]
+    assert result.top_scores[0][1] == pytest.approx(0.45 * 0.9)
+
+
+def test_geo_prior_adjuster_clamps_out_of_range_week():
+    """A week beyond NUM_WEEKS is clamped rather than indexing past the matrix."""
+    adjuster = GeoPriorAdjuster({"Robin": _weekly(0.5)}, {0: "Robin"})
+    # Must not raise; returns a valid prediction for the last week's row.
+    result = adjuster.adjust(np.array([1.0]), week=NUM_WEEKS + 5)
+    assert result.species == "Robin"

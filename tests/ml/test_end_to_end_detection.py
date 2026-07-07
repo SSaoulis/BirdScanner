@@ -19,7 +19,6 @@ skip the module when the ONNX model or the JPEG fixtures are absent; the DB and
 ``image_dir`` fixtures come from the top-level ``tests/conftest.py``.
 """
 
-import threading
 from typing import List
 
 import pytest
@@ -72,8 +71,7 @@ def _run_detection(image, box, classifier, writer) -> StableDetectionTracker:
     context = PipelineContext(
         classifier=classifier, tracker=tracker, detection_writer=writer
     )
-    manager = ClassificationManager(context, use_stable_track_gating=True)
-    manager.set_results_lock(threading.Lock())
+    manager = ClassificationManager(context, use_multithreading=False)
     # The object-detection class is "bird" (what the .rpk reports) so species
     # classification is gated in for the stable track.
     manager.process((image, 0, detection, ["bird"], "bird"))

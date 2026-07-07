@@ -36,7 +36,12 @@ from birdscanner.detector.camera_server import (
     start_camera_server,
 )
 from birdscanner.detector.config import config as app_config
-from birdscanner.detector.gating import Gating, build_gating, build_manager
+from birdscanner.detector.gating import (
+    Gating,
+    build_gating,
+    build_geo_adjuster,
+    build_manager,
+)
 from birdscanner.detector.geo_priors import refresh_geo_priors
 from birdscanner.detector.settings import load_settings, settings_config_path
 from birdscanner.detector.settings_controller import (
@@ -202,7 +207,11 @@ def main() -> None:
 
     # The detector owns all DB writes; the API mounts the same database read-only.
     detection_writer = DetectionWriter(make_session_factory(engine))
-    manager = build_manager(classifier, gating, detection_writer)
+    # Build the geomodel Bayesian-update adjuster from the priors refreshed above
+    # (None when no location is configured / no priors stored — classification
+    # then runs unadjusted).
+    geo_adjuster = build_geo_adjuster(classifier, make_session_factory(engine))
+    manager = build_manager(classifier, gating, detection_writer, geo_adjuster)
     # The save-side classification settings live on the pipeline context.
     apply_settings_to_context(settings, manager.context)
     settings_controller = SettingsController(settings_path, settings, manager.context)

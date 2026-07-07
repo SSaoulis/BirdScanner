@@ -105,6 +105,23 @@ class Classifier:
             predictions = exp_preds / np.sum(exp_preds, axis=1, keepdims=True)
         return predictions
 
+    def predict_proba(self, data) -> np.ndarray:
+        """Return the softmax probability vector for a single sample.
+
+        Runs :meth:`predict` (applying preprocessing + softmax) and returns the
+        first sample's ``(num_classes,)`` distribution, for callers that need the
+        full distribution rather than just the top class — e.g. the geomodel
+        Bayesian update, which reweights every class by its occurrence prior.
+
+        Expected input
+        - Same as :meth:`predict`: preprocessed NCHW float32, or raw input when a
+          preprocessing callable was provided.
+
+        Returns
+        - numpy.ndarray of shape ``(num_classes,)`` — the first sample's softmax.
+        """
+        return self.predict(data)[0]
+
     def classify(self, data) -> tuple[str, float]:
         """
         Classify a single sample and return the predicted class name and confidence.
