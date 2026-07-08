@@ -108,9 +108,9 @@ mypy birdscanner tools tests --check-untyped-defs
 
 `mypy.ini` silences missing-import noise for the Pi-only native bindings (`libcamera`,
 `picamera2`) and the untyped third-party libs (`onnxruntime`, `psutil`, `paramiko`, `PIL`
-— Pillow ships no `py.typed` marker, plus `onnx` and `matplotlib` which are used only by
-the dev-only scripts under `tools/`), so mypy reports only genuine type errors in our own
-code.
+— Pillow ships no `py.typed` marker, `cv2` — OpenCV ships none either, plus `onnx` and
+`matplotlib` which are used only by the dev-only scripts under `tools/`), so mypy reports
+only genuine type errors in our own code.
 
 ### Linting (pylint, black)
 
@@ -238,7 +238,8 @@ birdscanner/
 assets/       labels/ (coco_labels.txt, geomodel labels + geomodel_classifier_map.json),
               models/ (classifier ONNX + class map), species_reference/ (data bank)
 tools/        dev / offline tooling — NOT runtime (build_species_reference,
-              build_geomodel_map, quantize, camera_smoke*)
+              build_geomodel_map, quantize, camera_smoke* — the latter's
+              matplotlib/paramiko deps live in requirements.dev.txt, off-Pi only)
 ```
 
 Import direction is one-way: `detector → ml → db` and `api → db`. `ml/` must never import
