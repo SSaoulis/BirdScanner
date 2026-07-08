@@ -85,6 +85,25 @@ export interface SpeedTestResult {
   ran_at: number;
 }
 
+/** One species the geomodel expects near the feeder for the current week. */
+export interface ExpectedSpecies {
+  species: string;
+  /** Raw geomodel occurrence likelihood in [0, 1] (not a "chance seen today"). */
+  score: number;
+}
+
+/** The species ranked most likely to be around this time of year. */
+export interface ExpectedThisWeek {
+  /** Geomodel week index (1–48) the ranking is for. */
+  week: number;
+  /** Latitude the priors were built for; null when no location is set. */
+  latitude: number | null;
+  /** Longitude the priors were built for; null when no location is set. */
+  longitude: number | null;
+  /** Expected species ordered by score descending; empty when no priors exist. */
+  species: ExpectedSpecies[];
+}
+
 export interface SpeciesReferenceImage {
   /** Ready-to-use API path for the reference image; render directly in <img src>. */
   url: string;
@@ -302,6 +321,22 @@ export const api = {
      */
     reference: (name: string): Promise<SpeciesReference> =>
       apiFetch<SpeciesReference>(`/api/species/${encodeURIComponent(name)}/reference`),
+
+    /**
+     * URL for a cached reference image of a species; render directly in <img src>.
+     * 404s when the reference bank has no image for the species — callers should
+     * fall back on the image's error event.
+     */
+    referenceImageUrl: (name: string, index = 0): string =>
+      `/api/species/${encodeURIComponent(name)}/reference/images/${index}`,
+
+    /**
+     * Fetch the species the geomodel expects near the feeder for the current
+     * week, ordered most-likely first. Always resolves (200); an empty
+     * `species` list with null location means no location is configured yet.
+     */
+    expected: (limit?: number): Promise<ExpectedThisWeek> =>
+      apiFetch<ExpectedThisWeek>("/api/species/expected", { limit }),
   },
 
   camera: {

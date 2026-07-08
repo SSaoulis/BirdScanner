@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, type Detection } from "../api";
 import { DetectionCard } from "../components/DetectionCard";
+import { ExpectedThisWeek } from "../components/ExpectedThisWeek";
 import { Lightbox } from "../components/Lightbox";
 
 // "Recent Predictions" shows this many of the most recent detections from
@@ -154,6 +155,9 @@ export function Dashboard() {
         </h1>
         <p className="mt-1 text-sm text-bark">{todayLabel}</p>
       </header>
+
+      {/* What the geomodel expects around the feeder this time of year. */}
+      <ExpectedThisWeek />
 
       {/* Minimum confidence slider applies to both strips below. */}
       <div className="flex items-center justify-end gap-3">
