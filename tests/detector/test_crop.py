@@ -72,9 +72,9 @@ def test_clamped_keeps_region_inside_sensor() -> None:
 @pytest.mark.parametrize(
     "crop_w,crop_h,expected",
     [
-        (900, 900, (640, 640)),
-        (1200, 600, (640, 320)),
-        (600, 1200, (320, 640)),
+        (900, 900, (1280, 1280)),
+        (1200, 600, (1280, 640)),
+        (600, 1200, (640, 1280)),
     ],
 )
 def test_main_stream_size_matches_crop_aspect(crop_w, crop_h, expected) -> None:
@@ -89,7 +89,7 @@ def test_main_stream_size_is_even_aligned() -> None:
 @pytest.mark.parametrize("crop_w,crop_h", [(0, 900), (900, 0), (0, 0), (-5, 100)])
 def test_main_stream_size_degenerate_crop_falls_back_to_square(crop_w, crop_h) -> None:
     """A non-positive crop dimension yields the square long-side fallback (no divide-by-zero)."""
-    assert main_stream_size_for_crop(crop_w, crop_h) == (640, 640)
+    assert main_stream_size_for_crop(crop_w, crop_h) == (1280, 1280)
 
 
 def test_save_then_load_round_trips(tmp_path) -> None:

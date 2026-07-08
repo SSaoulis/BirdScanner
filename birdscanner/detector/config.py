@@ -55,11 +55,21 @@ class VideoConfig:
         pre_roll_seconds: Seconds of buffered footage to prepend to a clip.
         post_roll_seconds: Seconds of footage to keep recording after the
             detection triggers a clip.
+        full_fov: Record the whole, uncropped field of view from the camera's
+            raw sensor stream. ``False`` (the default) records the cropped,
+            ISP-processed ``main`` stream instead — the clip then matches the
+            saved still exactly (same crop, same image quality). ``True`` reverts
+            to the full-scene clip, which is debayered from the raw stream with no
+            ISP processing, so it is softer/noisier and 4:3 (see
+            :mod:`birdscanner.detector.raw_frame`); it also costs extra CMA to
+            request the raw stream in an unpacked format (see
+            :func:`birdscanner.detector.camera.build_camera`).
     """
 
     save: bool = True
     pre_roll_seconds: float = 3.0
     post_roll_seconds: float = 4.0
+    full_fov: bool = False
 
 
 @dataclass

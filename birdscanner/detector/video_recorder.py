@@ -13,16 +13,70 @@ platform-independent ``ml/`` pipeline triggers it through an injected callable.
 """
 
 import logging
+import os
 import threading
 import time
 from collections import deque
 from pathlib import Path
-from typing import Deque, List, Optional
+from typing import Deque, List, Optional, Tuple
 
 import cv2
 import numpy as np
 
+# Raise the H.264 quality of the clips. OpenCV's FFmpeg videoio backend otherwise
+# encodes at a low default bitrate, which looks heavily compressed/blocky. This
+# passes a constant-rate-factor (CRF) to the encoder (lower = higher quality;
+# ~18-23 is visually high quality) so clips are far cleaner at a modest size cost.
+# The FFmpeg backend reads this variable when a VideoWriter opens (not at import),
+# so setting it at module load is sufficient; ``setdefault`` lets an operator
+# override it, and a build whose FFmpeg ignores the option simply falls back to its
+# default bitrate — no failure.
+os.environ.setdefault("OPENCV_FFMPEG_WRITER_OPTIONS", "crf;20")
+
 logger = logging.getLogger("tracking")
+
+# Codecs tried in order when opening the mp4 writer. ``avc1`` (H.264) is what
+# browser ``<video>`` elements can decode; ``mp4v`` (MPEG-4 Part 2) is *not*
+# browser-playable and is only a last-resort fallback so a build without an H.264
+# encoder still produces a downloadable clip rather than none at all.
+_CODEC_PREFERENCE = ("avc1", "mp4v")
+
+
+def _open_writer(
+    dest_path: str, fps: float, size: Tuple[int, int]
+) -> Optional["cv2.VideoWriter"]:
+    """Open a ``cv2.VideoWriter`` using the first codec that succeeds.
+
+    Tries the codecs in :data:`_CODEC_PREFERENCE` order and returns the first
+    writer that reports ``isOpened()``. H.264 (``avc1``) is preferred because it
+    is the only codec browser ``<video>`` players can decode; ``mp4v`` is a
+    fallback for FFmpeg builds without an H.264 encoder.
+
+    Args:
+        dest_path: Absolute output path for the ``.mp4`` file.
+        fps: Frame rate to record the clip at.
+        size: Output ``(width, height)`` in pixels.
+
+    Returns:
+        An opened writer, or ``None`` when no candidate codec could be opened.
+    """
+    for codec in _CODEC_PREFERENCE:
+        # cv2's members are populated dynamically, so mypy can't see this one.
+        fourcc = cv2.VideoWriter_fourcc(*codec)  # type: ignore[attr-defined]
+        writer = cv2.VideoWriter(dest_path, fourcc, fps, size)
+        if writer.isOpened():
+            if codec != _CODEC_PREFERENCE[0]:
+                logger.warning(
+                    "VideoRecorder: H.264 (avc1) unavailable; falling back to "
+                    "'%s' (clip may not play in the browser) for %s",
+                    codec,
+                    dest_path,
+                )
+            else:
+                logger.info("VideoRecorder: encoding %s with '%s'", dest_path, codec)
+            return writer
+        writer.release()
+    return None
 
 
 class VideoRecorder:
@@ -141,13 +195,12 @@ class VideoRecorder:
 
         height, width = frames[0].shape[:2]
         Path(dest_path).parent.mkdir(parents=True, exist_ok=True)
-        # mp4v is available via the apt python3-opencv FFmpeg backend and yields a
-        # browser-playable MP4; frames are RGB, OpenCV expects BGR (same
-        # convention as the still writes in the classification pipeline).
-        # cv2's members are populated dynamically, so mypy can't see this one.
-        fourcc = cv2.VideoWriter_fourcc(*"mp4v")  # type: ignore[attr-defined]
-        writer = cv2.VideoWriter(dest_path, fourcc, self.fps, (width, height))
-        if not writer.isOpened():
+        # Prefer H.264 (avc1) so the clip plays in the browser <video> element;
+        # fall back to mp4v only if no H.264 encoder is available (see
+        # _open_writer). Frames are RGB, OpenCV expects BGR (same convention as
+        # the still writes in the classification pipeline).
+        writer = _open_writer(dest_path, self.fps, (width, height))
+        if writer is None:
             logger.error("VideoRecorder: failed to open writer for %s", dest_path)
             return
         try:
