@@ -51,7 +51,7 @@ def add_custom_species(session_factory: SessionFactory, name: str) -> str:
         session_factory: Zero-argument callable returning a ``Session`` context
             manager.
         name: The species label to add. Must be non-empty after trimming (callers
-            validate/​bound length upstream — e.g. the control-server handler).
+            validate and bound its length upstream — e.g. the control handler).
 
     Returns:
         The canonical stored label (the pre-existing one on a case-insensitive

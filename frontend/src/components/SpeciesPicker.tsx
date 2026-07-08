@@ -220,7 +220,7 @@ export function SpeciesPicker({
                       i === active ? "bg-gold/15 text-ink" : "text-ink hover:bg-paper"
                     } ${isCurrent ? "cursor-default text-bark" : ""}`}
                     onMouseEnter={() => setActive(i)}
-                    onClick={() => commit(species)}
+                    onClick={() => commit(species, false)}
                     disabled={busy || isCurrent}
                   >
                     <span>{species}</span>
