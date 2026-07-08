@@ -293,7 +293,15 @@ export function Lightbox({
                 autoPlay
                 loop
                 muted
-                className="block max-h-[80vh] max-w-[44vw] rounded-lg bg-ink shadow-plate-lift"
+                // Lock the player to the still's already-measured rendered size.
+                // A bare <video> collapses to its 300×150 intrinsic size until
+                // metadata loads, then jumps to the real aspect ratio — shifting
+                // the whole layout. The clip comes from the same main-stream frame
+                // as the still, so imgSize matches its aspect ratio: pinning it
+                // holds a stable footprint through loading and after. object-cover
+                // keeps the square poster filling the box (no stretch) meanwhile.
+                style={imgSize ? { width: imgSize.w, height: imgSize.h } : undefined}
+                className="block max-h-[80vh] max-w-[44vw] rounded-lg bg-ink object-cover shadow-plate-lift"
               />
             ) : (
               <img
