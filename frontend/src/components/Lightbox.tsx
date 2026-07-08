@@ -7,6 +7,7 @@ import {
   type SpeciesReference,
 } from "../api";
 import { SpeciesPicker } from "./SpeciesPicker";
+import { AdvancedStatsPane } from "./AdvancedStats";
 
 interface LightboxProps {
   /** The detection currently displayed in the panel. */
@@ -112,8 +113,12 @@ export function Lightbox({
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  // Whether the reference panel is open. Closed by default — opened via the tab.
+  // Whether the reference panel (right) is open. Closed by default — opened via
+  // its tab. The two side panels are mutually exclusive: each is locked to the
+  // image's width, so opening both would overflow the viewport (3×44vw).
   const [showReference, setShowReference] = useState(false);
+  // Whether the advanced-stats panel (left) is open. Closed by default.
+  const [showStats, setShowStats] = useState(false);
   // Live rendered size of the detection image; the reference panel is locked
   // to these exact pixel dimensions so it always matches the image.
   const imgRef = useRef<HTMLImageElement | null>(null);
@@ -244,6 +249,31 @@ export function Lightbox({
         className="relative flex items-start"
         onClick={(e) => e.stopPropagation()}
       >
+        {/* ── Advanced-stats panel (left) — mirrors the reference panel but folds
+            to the left (animates margin-right). Locked to the image's exact
+            rendered size, content scrolls internally. Mutually exclusive with the
+            reference panel. ── */}
+        {imgSize && (
+          <div
+            className="shrink-0 overflow-hidden transition-[width,margin-right,opacity] duration-300 ease-out motion-reduce:transition-none"
+            style={{
+              width: showStats ? imgSize.w : 0,
+              marginRight: showStats ? "2.5rem" : 0,
+              opacity: showStats ? 1 : 0,
+              pointerEvents: showStats ? "auto" : "none",
+            }}
+            aria-hidden={!showStats}
+          >
+            <div
+              className="overflow-y-auto rounded-lg border border-line bg-card shadow-plate-lift p-4"
+              style={{ width: imgSize.w, height: imgSize.h }}
+            >
+              <h3 className="eyebrow mb-3">Advanced stats</h3>
+              <AdvancedStatsPane detection={detection} />
+            </div>
+          </div>
+        )}
+
         {/* ── Captured detection image (with the Reference tab on its edge) ── */}
         <div className="flex flex-col gap-3">
           <div className="relative">
@@ -292,6 +322,25 @@ export function Lightbox({
               ✕
             </button>
 
+            {/* Vertical Advanced-stats tab on the LEFT edge of the image */}
+            <button
+              className={`absolute top-1/2 right-full -translate-y-1/2 px-1.5 py-3 rounded-l-lg text-xs font-semibold uppercase tracking-wide [writing-mode:vertical-rl] transition-colors ${
+                showStats
+                  ? "bg-gold text-card"
+                  : "bg-card/90 text-ink hover:bg-card"
+              }`}
+              onClick={() => {
+                setShowStats((v) => !v);
+                setShowReference(false);
+              }}
+              aria-pressed={showStats}
+              aria-label={
+                showStats ? "Hide advanced stats" : "Show advanced stats"
+              }
+            >
+              Advanced stats
+            </button>
+
             {/* Vertical Reference tab on the right edge of the image */}
             <button
               className={`absolute top-1/2 left-full -translate-y-1/2 px-1.5 py-3 rounded-r-lg text-xs font-semibold uppercase tracking-wide [writing-mode:vertical-rl] transition-colors ${
@@ -299,7 +348,10 @@ export function Lightbox({
                   ? "bg-gold text-card"
                   : "bg-card/90 text-ink hover:bg-card"
               }`}
-              onClick={() => setShowReference((v) => !v)}
+              onClick={() => {
+                setShowReference((v) => !v);
+                setShowStats(false);
+              }}
               aria-pressed={showReference}
               aria-label={showReference ? "Hide field guide" : "Show field guide"}
             >

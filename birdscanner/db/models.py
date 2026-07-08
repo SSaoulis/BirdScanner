@@ -45,6 +45,10 @@ class DetectionRecord(SQLModel, table=True):
         geo_scores: JSON array of the top pre-normalised ``[species, score]`` pairs
             (``p(y|x)·p(y|c)`` before renormalising) from the geomodel update, kept
             for debugging/inspection. NULL when the update did not run / legacy rows.
+        classifier_scores: JSON array of the classifier's own top-k ``[species,
+            probability]`` softmax pairs (the raw distribution *before* any geomodel
+            reweighting), kept for the Advanced-stats panel. NULL for legacy rows and
+            when the classifier could not produce a distribution (test fakes).
         corrected: ``True`` when a user manually overrode the classifier's species
             (see ``birdscanner/db/corrector.py``). NULL/``False`` means the species
             is the model's own top prediction. When set, ``species`` is the
@@ -77,6 +81,7 @@ class DetectionRecord(SQLModel, table=True):
     classifier_species: Optional[str] = Field(default=None, nullable=True)
     classifier_confidence: Optional[float] = Field(default=None, nullable=True)
     geo_scores: Optional[str] = Field(default=None, nullable=True)
+    classifier_scores: Optional[str] = Field(default=None, nullable=True)
     corrected: Optional[bool] = Field(default=None, nullable=True)
     original_species: Optional[str] = Field(default=None, nullable=True)
 

@@ -293,6 +293,51 @@ def test_stable_track_applies_geomodel_adjustment(
     scores = json.loads(write.geo_scores)
     assert scores[0][0] == "Local robin"  # highest pre-normalised score
     assert scores[0][1] == pytest.approx(0.4 * 0.9)
+    # The raw classifier top-k is persisted alongside the geomodel-adjusted scores.
+    clf_scores = json.loads(write.classifier_scores)
+    assert clf_scores[0][0] == "Vagrant"  # classifier's own pick, pre-adjustment
+    assert clf_scores[0][1] == pytest.approx(0.6)
+
+
+def test_stable_track_records_classifier_top_k_without_geomodel(
+    tmp_path,
+    monkeypatch,
+    fake_detection,
+    recording_writer,
+    stable_tracker,
+    frame_factory,
+):
+    """Without a geo_adjuster, a full-distribution classifier still records classifier_scores."""
+    monkeypatch.setattr(cp, "IMAGE_DIR", str(tmp_path))
+    det = fake_detection(box=(2, 2, 8, 8), conf=0.9, category=0)
+    tracker = stable_tracker(det)
+
+    class _Classifier:
+        """Fake classifier exposing predict_proba + idx_to_class (no geomodel)."""
+
+        idx_to_class = {0: "Robin", 1: "Sparrow"}
+
+        def predict_proba(self, _roi):
+            return np.array([0.7, 0.3])
+
+    cp.process_single_detection_with_stable_tracks(
+        (frame_factory(120, (32, 32)), 0, det, ["bird"], "bird"),
+        PipelineContext(
+            classifier=cast(Classifier, _Classifier()),
+            tracker=tracker,
+            detection_writer=recording_writer,
+        ),
+    )
+
+    write = recording_writer.writes[0]
+    assert write.species == "Robin"  # argmax of the softmax == classify()'s top-1
+    assert write.confidence == pytest.approx(0.7)
+    assert write.classifier_species is None  # no geomodel update ran
+    assert write.geo_scores is None
+    scores = json.loads(write.classifier_scores)
+    assert scores[0][0] == "Robin"
+    assert scores[0][1] == pytest.approx(0.7)
+    assert scores[1][0] == "Sparrow"
 
 
 def test_run_bird_classification_delegates_to_classifier():
