@@ -16,3 +16,10 @@ mypy>=2.0.0
 # 4.7.0.72 is a real published wheel (the old bare "4.7.0" pin resolved to
 # nothing) and is compatible with the numpy 1.24.x pinned in the detector reqs.
 opencv-python-headless==4.7.0.72
+
+# Used only by tools/camera_smoke_e2e.py (dev-only Pi SSH smoke test); never
+# installed on the Pi / in the Docker images. matplotlib >=3.7 needs only
+# numpy>=1.20, so it stays compatible with the numpy 1.24.2 pin above and does
+# not drag numpy 2.x in.
+matplotlib>=3.7
+paramiko>=3.0
