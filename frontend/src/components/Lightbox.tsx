@@ -137,12 +137,12 @@ export function Lightbox({
   }, [fullUrl]);
 
   /** Correct the detection's species via the API, then notify the parent. */
-  async function handleCorrect(chosen: string) {
+  async function handleCorrect(chosen: string, isNew: boolean) {
     if (correctBusy) return;
     setCorrectBusy(true);
     setCorrectError(null);
     try {
-      const updated = await api.detections.correct(id, chosen);
+      const updated = await api.detections.correct(id, chosen, isNew);
       onUpdate(updated);
       setCorrecting(false);
     } catch (e) {

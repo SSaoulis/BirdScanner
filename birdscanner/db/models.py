@@ -126,3 +126,28 @@ class GeoPriorMeta(SQLModel, table=True):
     latitude: float
     longitude: float
     generated_at: datetime
+
+
+class CustomSpecies(SQLModel, table=True):
+    """A user-added species label not present in the classifier's vocabulary.
+
+    When a bird the classifier was never trained on is seen, the user can add its
+    species as a manual correction from the Lightbox (see
+    :mod:`birdscanner.db.custom_species`). The label is stored here so it persists
+    across restarts and reappears in the correction picker: the detector serves
+    the union of the classifier's classes and these rows as the species vocabulary
+    (see the control server's ``GET /labels``). A custom-labelled detection is an
+    ordinary ``corrected`` row in :class:`DetectionRecord`; this table only records
+    the *label* so it can be offered again.
+
+    Columns:
+        name: The species label, stored exact-cased and used as the primary key
+            (so a label is stored at most once). Case-insensitive de-duplication is
+            enforced by :func:`birdscanner.db.custom_species.add_custom_species`.
+        created_at: Wall-clock time the label was first added.
+    """
+
+    __tablename__ = "custom_species"  # type: ignore[assignment]
+
+    name: str = Field(primary_key=True)
+    created_at: datetime

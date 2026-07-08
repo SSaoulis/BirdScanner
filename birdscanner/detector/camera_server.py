@@ -12,7 +12,8 @@ detector and the API proxies browser requests through to it:
   ``birdscanner/api/routers/detections.py``).
 * ``PATCH /detections/{id}`` — correct a detection's species (moves its files to
   the corrected species folder; see ``birdscanner/db/corrector.py``).
-* ``GET /labels`` — the classifier's species vocabulary (for the correction picker).
+* ``GET /labels`` — the species vocabulary (classifier classes plus user-added
+  custom labels) for the correction picker.
 
 The port is read from the ``CAMERA_SERVER_PORT`` environment variable and
 defaults to :data:`DEFAULT_CAMERA_SERVER_PORT`.
@@ -51,11 +52,24 @@ DeleteCallback = Callable[[int], bool]
 # :func:`db.corrector.correct_detection_species`.
 CorrectCallback = Callable[[int, str], Optional[dict]]
 
+# A callable returning the current custom (user-added) species labels, so the
+# served vocabulary reflects labels added while the detector runs.  See
+# :func:`db.custom_species.list_custom_species`.
+CustomSpeciesProvider = Callable[[], list[str]]
+
+# A callable that registers a new custom species label and returns the canonical
+# stored name.  See :func:`db.custom_species.add_custom_species`.
+RegisterSpeciesCallback = Callable[[str], str]
+
 # A callable that asks the detector to restart (typically by scheduling process
 # exit so Docker's restart policy relaunches it).
 RestartCallback = Callable[[], None]
 
 _DETECTIONS_PREFIX = "/detections/"
+
+# Upper bound on a user-added species label's length, guarding against a runaway
+# free-text field creating an absurd folder/label.
+_MAX_SPECIES_NAME_LEN = 100
 
 
 @dataclass
@@ -75,6 +89,12 @@ class ControlServerDeps:
         correct_species: Enables ``PATCH /detections/{id}`` (species correction).
         species_labels: The classifier vocabulary; enables ``GET /labels`` and
             gates species corrections to a known label.
+        list_custom_species: Returns the user-added species labels, unioned with
+            ``species_labels`` for ``GET /labels`` and correction validation so
+            labels added at runtime are recognised immediately.
+        register_species: Persists a new user-added species label (returning its
+            canonical form) — enables the ``allow_new`` branch of a correction so a
+            bird outside the classifier's vocabulary can be recorded.
     """
 
     crop_controller: Optional[Any] = None
@@ -83,6 +103,8 @@ class ControlServerDeps:
     restart: Optional[RestartCallback] = None
     correct_species: Optional[CorrectCallback] = None
     species_labels: Optional[list[str]] = None
+    list_custom_species: Optional[CustomSpeciesProvider] = None
+    register_species: Optional[RegisterSpeciesCallback] = None
 
 
 def encode_jpeg(frame: np.ndarray) -> bytes:
@@ -143,6 +165,25 @@ def _parse_detection_id(path: str) -> Optional[int]:
         return int(tail)
     except ValueError:
         return None
+
+
+def _canonical_known(name: str, known: set[str]) -> Optional[str]:
+    """Return the known label matching ``name`` case-insensitively, else ``None``.
+
+    Args:
+        name: A candidate species label (leading/trailing space is ignored).
+        known: The set of known species labels.
+
+    Returns:
+        The existing known label whose lower-cased form equals ``name``'s (so a
+        differently-cased spelling resolves to the canonical one), or ``None`` when
+        no such label exists.
+    """
+    lowered = name.strip().lower()
+    for label in known:
+        if label.lower() == lowered:
+            return label
+    return None
 
 
 class _ControlServer(ThreadingHTTPServer):
@@ -264,10 +305,13 @@ class CameraRequestHandler(BaseHTTPRequestHandler):
     def _handle_correct_species(self) -> None:
         """Reassign a detection's species from a JSON body ``{"species": ...}``.
 
-        The species must be a non-empty string present in the classifier
-        vocabulary, otherwise a 400 JSON ``{"error": ...}`` is returned (the shape
-        that survives the API proxy).  Returns the updated record as JSON on
-        success, or 404 when the detection does not exist.
+        The species must be a non-empty string. It is accepted when it is already a
+        known label (classifier vocabulary or a previously-added custom label);
+        otherwise it is rejected with a 400 JSON ``{"error": ...}`` (the shape that
+        survives the API proxy) — unless the body sets ``allow_new`` truthy, in
+        which case the label is registered as a new custom species and used. Returns
+        the updated record as JSON on success, or 404 when the detection does not
+        exist.
         """
         correct_species = self._control.deps.correct_species
         detection_id = _parse_detection_id(self.path)
@@ -281,10 +325,14 @@ class CameraRequestHandler(BaseHTTPRequestHandler):
         if not isinstance(species, str) or not species.strip():
             self._send_json(400, {"error": "Missing or invalid 'species'"})
             return
-        labels = self._control.deps.species_labels
-        if labels is not None and species not in labels:
-            self._send_json(400, {"error": f"Unknown species '{species}'"})
-            return
+        known = self._known_species()
+        if known is not None and species not in known:
+            resolved = self._resolve_new_species(
+                species, known, bool(payload.get("allow_new"))
+            )
+            if resolved is None:
+                return  # an error response has already been sent
+            species = resolved
         try:
             record = correct_species(detection_id, species)
         except Exception as exc:  # pylint: disable=broad-exception-caught
@@ -295,6 +343,61 @@ class CameraRequestHandler(BaseHTTPRequestHandler):
             self.send_error(404, "Detection not found")
             return
         self._send_json(200, record)
+
+    def _known_species(self) -> Optional[set[str]]:
+        """Return the set of known species labels, or ``None`` when ungated.
+
+        The set is the union of the classifier vocabulary (``species_labels``) and
+        the current custom labels (``list_custom_species``). When neither dependency
+        is configured, returns ``None`` to signal that corrections are not gated
+        (legacy snapshot-only mode), preserving the pre-existing behaviour.
+        """
+        labels = self._control.deps.species_labels
+        provider = self._control.deps.list_custom_species
+        if labels is None and provider is None:
+            return None
+        known: set[str] = set(labels or [])
+        if provider is not None:
+            known |= set(provider())
+        return known
+
+    def _resolve_new_species(
+        self, species: str, known: set[str], allow_new: bool
+    ) -> Optional[str]:
+        """Resolve a species not exactly present in ``known`` to a label to store.
+
+        A case-insensitive match against an existing known label is reused (so a
+        differently-cased spelling never creates a near-duplicate). Otherwise the
+        label is only accepted when ``allow_new`` is set and a
+        :attr:`ControlServerDeps.register_species` callback is available, in which
+        case it is registered as a new custom species and its canonical form
+        returned.
+
+        Args:
+            species: The (non-empty) requested species label.
+            known: The current set of known labels.
+            allow_new: Whether the request opted in to creating a new label.
+
+        Returns:
+            The canonical label to correct with, or ``None`` when the label was
+            rejected (in which case an error response has already been sent).
+        """
+        canonical = _canonical_known(species, known)
+        if canonical is not None:
+            return canonical
+        register_species = self._control.deps.register_species
+        if not allow_new or register_species is None:
+            self._send_json(400, {"error": f"Unknown species '{species}'"})
+            return None
+        candidate = species.strip()
+        if len(candidate) > _MAX_SPECIES_NAME_LEN:
+            self._send_json(400, {"error": "Species name too long"})
+            return None
+        try:
+            return register_species(candidate)
+        except ValueError as exc:
+            self._send_json(400, {"error": str(exc)})
+            return None
 
     def _handle_capture(self) -> None:
         """Capture and return a JPEG of the current (cropped) feed."""
@@ -386,12 +489,17 @@ class CameraRequestHandler(BaseHTTPRequestHandler):
         self._send_json(200, state)
 
     def _handle_get_labels(self) -> None:
-        """Return the classifier's species vocabulary as ``{"species": [...]}``."""
-        labels = self._control.deps.species_labels
-        if labels is None:
+        """Return the species vocabulary as ``{"species": [...]}``.
+
+        The list is the sorted union of the classifier vocabulary and the
+        user-added custom labels, so a label added at runtime appears in the picker
+        immediately.
+        """
+        known = self._known_species()
+        if known is None:
             self.send_error(404, "Labels not available")
             return
-        self._send_json(200, {"species": labels})
+        self._send_json(200, {"species": sorted(known)})
 
     def _handle_get_settings(self) -> None:
         """Return the current runtime settings + restart metadata as JSON."""

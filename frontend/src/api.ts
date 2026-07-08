@@ -259,9 +259,14 @@ export const api = {
      * `corrected` set and image paths moved to the new species folder). Rejects
      * with an ApiError(400) carrying the message for an unknown species, or 503
      * when the detector is unreachable.
+     *
+     * Pass `allowNew` true to record a brand-new species label the classifier does
+     * not know (e.g. an unlisted bird); the detector registers it as a custom
+     * species so it reappears in the picker. Without it, an unknown label is
+     * rejected.
      */
-    correct: (id: number, species: string): Promise<Detection> =>
-      patchJson<Detection>(`/api/detections/${id}`, { species }),
+    correct: (id: number, species: string, allowNew = false): Promise<Detection> =>
+      patchJson<Detection>(`/api/detections/${id}`, { species, allow_new: allowNew }),
   },
 
   images: {

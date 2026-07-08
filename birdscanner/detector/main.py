@@ -58,6 +58,7 @@ from birdscanner.db.database import make_engine, init_db, make_session_factory
 from birdscanner.db.writer import DetectionWriter
 from birdscanner.db.deleter import delete_detection
 from birdscanner.db.corrector import correct_detection_species
+from birdscanner.db.custom_species import add_custom_species, list_custom_species
 
 logger = logging.getLogger("tracking")
 
@@ -119,6 +120,14 @@ def _start_control_server(
             control_session_factory, image_root, detection_id, new_species
         )
 
+    def list_custom() -> list[str]:
+        """Return the user-added custom species labels."""
+        return list_custom_species(control_session_factory)
+
+    def register_custom(name: str) -> str:
+        """Persist a new custom species label; returns its canonical form."""
+        return add_custom_species(control_session_factory, name)
+
     deps = ControlServerDeps(
         crop_controller=camera.crop_controller,
         delete_detection=handle_delete,
@@ -126,6 +135,8 @@ def _start_control_server(
         restart=_schedule_restart,
         correct_species=handle_correct,
         species_labels=species_labels,
+        list_custom_species=list_custom,
+        register_species=register_custom,
     )
     snapshot_port = camera_server_port()
     try:
