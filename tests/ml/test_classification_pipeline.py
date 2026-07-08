@@ -411,6 +411,89 @@ def test_process_detections_feeds_video_observes_and_queues(
     assert dispatched == [1]  # bird detection queued for classification
 
 
+def _stub_mapped_array(monkeypatch):
+    """Install a picamera2.MappedArray stub returning the request's ``.array``."""
+    fake_picamera2 = types.ModuleType("picamera2")
+
+    class _MappedArray:
+        def __init__(self, request, _stream):
+            self._m = request
+
+        def __enter__(self):
+            return self._m
+
+        def __exit__(self, *exc):
+            return False
+
+    fake_picamera2.MappedArray = _MappedArray  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "picamera2", fake_picamera2)
+
+
+def test_process_detections_records_full_fov_source_frame(
+    monkeypatch, fake_detection, frame_factory, stable_tracker
+):
+    """When a video_frame_source is wired, the recorder gets its frame, not main."""
+    _stub_mapped_array(monkeypatch)
+    monkeypatch.setattr(
+        cp, "process_single_detection_with_stable_tracks", lambda *a, **k: None
+    )
+
+    det = fake_detection(box=(2, 2, 8, 8), conf=0.9, category=0)
+    tracker = stable_tracker(det)
+    fed: list = []
+    full_fov = frame_factory(50, (16, 24))  # distinct from the cropped main frame
+
+    manager = ClassificationManager(
+        PipelineContext(
+            classifier=cast(Classifier, object()),
+            tracker=tracker,
+            video_frame_fn=fed.append,
+            video_frame_source=lambda _request: full_fov,
+        ),
+        use_multithreading=False,
+    )
+
+    request = types.SimpleNamespace(array=frame_factory(100, (32, 32)))
+    cp.process_detections(request, "main", [det], manager, ["bird"])
+
+    assert len(fed) == 1
+    assert fed[0] is full_fov  # the uncropped source frame, not the main array
+
+
+def test_process_detections_falls_back_to_main_when_source_returns_none(
+    monkeypatch, fake_detection, frame_factory, stable_tracker
+):
+    """A source returning None leaves the recorder fed with the cropped main frame."""
+    _stub_mapped_array(monkeypatch)
+    monkeypatch.setattr(
+        cp, "process_single_detection_with_stable_tracks", lambda *a, **k: None
+    )
+
+    det = fake_detection(box=(2, 2, 8, 8), conf=0.9, category=0)
+    tracker = stable_tracker(det)
+    fed: list = []
+    main_frame = frame_factory(100, (32, 32))
+    # process_detections draws boxes onto request.array in place; snapshot the
+    # clean frame first, since the fed frame is the copy taken before drawing.
+    expected = main_frame.copy()
+
+    manager = ClassificationManager(
+        PipelineContext(
+            classifier=cast(Classifier, object()),
+            tracker=tracker,
+            video_frame_fn=fed.append,
+            video_frame_source=lambda _request: None,
+        ),
+        use_multithreading=False,
+    )
+
+    request = types.SimpleNamespace(array=main_frame)
+    cp.process_detections(request, "main", [det], manager, ["bird"])
+
+    assert len(fed) == 1
+    np.testing.assert_array_equal(fed[0], expected)  # fell back to the main frame
+
+
 def test_process_detections_none_results_is_noop(fake_detection):
     """A ``None`` results list returns immediately (no frame access needed)."""
     # No picamera2 stub required: the function returns before importing it.

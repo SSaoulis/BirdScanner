@@ -17,7 +17,7 @@ import threading
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, NamedTuple, Optional
+from typing import TYPE_CHECKING, Any, Callable, NamedTuple, Optional
 
 import cv2
 import numpy as np
@@ -177,6 +177,11 @@ class PipelineContext:
             recording actually began.
         video_frame_fn: Optional callable fed every clean frame for the pre-roll
             buffer.
+        video_frame_source: Optional callable that, given the camera ``request``,
+            returns the frame to record (the full-FOV, uncropped RGB frame from
+            the raw stream). When ``None`` — or when it returns ``None`` — the
+            recorder falls back to the cropped ``main`` frame. Injected by the
+            detector so ``ml/`` stays free of camera/raw-format knowledge.
         save_confidence_threshold: Minimum classification confidence before a
             detection is saved/persisted (mutated live by the Settings page).
         ignore_species: Species (lower-cased) that are never saved even when
@@ -195,6 +200,7 @@ class PipelineContext:
     best_frame_selector: Optional[BestFrameSelector] = None
     record_fn: Optional[Callable[[str], bool]] = None
     video_frame_fn: Optional[Callable[[np.ndarray], None]] = None
+    video_frame_source: Optional[Callable[[Any], Optional[np.ndarray]]] = None
     save_confidence_threshold: float = DEFAULT_SAVE_CONFIDENCE_THRESHOLD
     ignore_species: set[str] = field(default_factory=set)
     geo_adjuster: Optional["GeoPriorAdjuster"] = None
@@ -515,9 +521,17 @@ def process_detections(
         full_img = m.array.copy()
 
         # Feed every clean frame into the video ring buffer (cheap; no encoding
-        # while idle) so a triggered clip has pre-roll footage.
+        # while idle) so a triggered clip has pre-roll footage. The clip records
+        # the full, uncropped field of view (from the raw stream via
+        # ``video_frame_source``) rather than the cropped ``main`` frame; if no
+        # source is wired or it fails, fall back to the cropped frame.
         if context.video_frame_fn is not None:
-            context.video_frame_fn(full_img)
+            clip_frame = full_img
+            if context.video_frame_source is not None:
+                produced = context.video_frame_source(request)
+                if produced is not None:
+                    clip_frame = produced
+            context.video_frame_fn(clip_frame)
 
         for detection_id, detection in enumerate(last_results):
             classifier_class = label_for_category(labels, int(detection.category))

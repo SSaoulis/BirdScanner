@@ -55,6 +55,25 @@
   }
 }
 
+/* ── Lightbox: the next plate resolves into focus ──
+   When the viewer moves to the next sighting, the current image is held on
+   screen while the next one preloads off-screen, then swaps in and quietly
+   resolves out of a soft focus — a gentle cross-fade so the picture, its box
+   and its label all land together, with no scrim or moving highlight. */
+@keyframes plate-develop {
+  0% {
+    opacity: 0;
+    filter: blur(4px);
+  }
+  100% {
+    opacity: 1;
+    filter: blur(0);
+  }
+}
+.animate-plate-develop {
+  animation: plate-develop 0.4s ease-out both;
+}
+
 /* Warm, slim scrollbars so the horizontal strips don't show a cold grey bar. */
 ::-webkit-scrollbar {
   height: 10px;

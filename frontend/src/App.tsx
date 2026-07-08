@@ -1,9 +1,16 @@
+import { Suspense, lazy } from "react";
 import { BrowserRouter, Routes, Route, NavLink } from "react-router-dom";
 import { Dashboard } from "./pages/Dashboard";
 import { History } from "./pages/History";
 import { Camera } from "./pages/Camera";
 import { Hardware } from "./pages/Hardware";
 import { Settings } from "./pages/Settings";
+
+// Code-split the Statistics page: it pulls in Nivo (~400 kB), which no other
+// route needs, so it loads on demand rather than bloating the initial bundle.
+const Statistics = lazy(() =>
+  import("./pages/Statistics").then((m) => ({ default: m.Statistics }))
+);
 
 /** A simple naturalist's feather mark, drawn rather than emoji'd. */
 function FeatherMark() {
@@ -73,6 +80,9 @@ export function App() {
               <NavLink to="/history" className={navLinkClass}>
                 Sightings
               </NavLink>
+              <NavLink to="/stats" className={navLinkClass}>
+                Statistics
+              </NavLink>
               <NavLink to="/camera" className={navLinkClass}>
                 Camera
               </NavLink>
@@ -88,13 +98,22 @@ export function App() {
 
         {/* ── Page content ────────────────────────────────────────── */}
         <div className="flex-1">
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/history" element={<History />} />
-            <Route path="/camera" element={<Camera />} />
-            <Route path="/hardware" element={<Hardware />} />
-            <Route path="/settings" element={<Settings />} />
-          </Routes>
+          <Suspense
+            fallback={
+              <div className="flex h-64 items-center justify-center text-sm text-bark">
+                Loading…
+              </div>
+            }
+          >
+            <Routes>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/history" element={<History />} />
+              <Route path="/stats" element={<Statistics />} />
+              <Route path="/camera" element={<Camera />} />
+              <Route path="/hardware" element={<Hardware />} />
+              <Route path="/settings" element={<Settings />} />
+            </Routes>
+          </Suspense>
         </div>
       </div>
     </BrowserRouter>
