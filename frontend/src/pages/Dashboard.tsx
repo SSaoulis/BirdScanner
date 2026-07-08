@@ -4,14 +4,28 @@ import { DetectionCard } from "../components/DetectionCard";
 import { ExpectedThisWeek } from "../components/ExpectedThisWeek";
 import { Lightbox } from "../components/Lightbox";
 
-// "Recent Predictions" shows this many of the most recent detections from
-// before today. "Predictions Today" is capped higher so a busy day still
-// renders without an unbounded query.
-const RECENT_LIMIT = 16;
+// "Spotted today" is capped higher so a busy day still renders without an
+// unbounded query. The earlier sightings (this week / this month / older) share
+// a single fetch of detections from before today, capped here — it is larger
+// than the old single-row limit because the list is now split into a grid of
+// time-bucketed groups rather than one horizontal strip.
 const TODAY_LIMIT = 100;
+const EARLIER_LIMIT = 120;
 
 /** Which dashboard strip a lightbox selection belongs to. */
-type Section = "today" | "recent";
+type Section = "today" | "earlier";
+
+/** A time bucket of earlier sightings plus the cards it holds. */
+interface EarlierGroup {
+  /** Section heading, e.g. "This week". */
+  label: string;
+  /**
+   * Each card paired with its position in the flat `earlier` list, so the
+   * lightbox's prev/next (which index into that list) traverse seamlessly
+   * across group boundaries.
+   */
+  items: { detection: Detection; index: number }[];
+}
 
 /** Format a Date as a timezone-less ("naive") local ISO string.
  *
@@ -28,9 +42,48 @@ function toNaiveISO(d: Date): string {
   );
 }
 
+/**
+ * Partition earlier sightings (all strictly before today, already sorted
+ * newest-first by the API) into calendar buckets: "This week" (since the most
+ * recent Monday), "This month" (earlier this calendar month but before this
+ * week), and "Earlier" (anything older). Empty buckets are dropped so no
+ * heading renders without cards. Each item keeps its index in the input list
+ * for lightbox navigation.
+ */
+function buildEarlierGroups(list: Detection[]): EarlierGroup[] {
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  // Week starts on Monday; getDay() is 0=Sun..6=Sat.
+  const daysSinceMonday = (todayStart.getDay() + 6) % 7;
+  const weekStart = new Date(todayStart);
+  weekStart.setDate(todayStart.getDate() - daysSinceMonday);
+
+  const thisWeek: EarlierGroup["items"] = [];
+  const thisMonth: EarlierGroup["items"] = [];
+  const older: EarlierGroup["items"] = [];
+  list.forEach((detection, index) => {
+    // Naive-local ISO strings parse as local time, matching the boundaries.
+    const ts = new Date(detection.timestamp);
+    if (ts >= weekStart) {
+      thisWeek.push({ detection, index });
+    } else if (ts >= monthStart) {
+      thisMonth.push({ detection, index });
+    } else {
+      older.push({ detection, index });
+    }
+  });
+
+  return [
+    { label: "This week", items: thisWeek },
+    { label: "This month", items: thisMonth },
+    { label: "Earlier", items: older },
+  ].filter((group) => group.items.length > 0);
+}
+
 export function Dashboard() {
   const [today, setToday] = useState<Detection[]>([]);
-  const [recent, setRecent] = useState<Detection[]>([]);
+  const [earlier, setEarlier] = useState<Detection[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   // Minimum confidence as a 0–100 percentage; 0 means "show all".
@@ -45,8 +98,8 @@ export function Dashboard() {
 
   useEffect(() => {
     setLoading(true);
-    // Local midnight is the boundary between "today" and "recent". The two
-    // queries are disjoint: today is everything at/after midnight, recent is
+    // Local midnight is the boundary between "today" and "earlier". The two
+    // queries are disjoint: today is everything at/after midnight, earlier is
     // the latest rows strictly before it (one second before midnight as an
     // inclusive `to` bound).
     const now = new Date();
@@ -62,13 +115,13 @@ export function Dashboard() {
       }),
       api.detections.list({
         to: toNaiveISO(beforeToday),
-        limit: RECENT_LIMIT,
+        limit: EARLIER_LIMIT,
         min_confidence: minConf,
       }),
     ])
-      .then(([todayData, recentData]) => {
+      .then(([todayData, earlierData]) => {
         setToday(todayData);
-        setRecent(recentData);
+        setEarlier(earlierData);
         setError(null);
         setLoading(false);
         setLightbox(null);
@@ -79,12 +132,12 @@ export function Dashboard() {
       });
   }, [minConfidence]);
 
-  const activeList = lightbox?.section === "today" ? today : recent;
+  const activeList = lightbox?.section === "today" ? today : earlier;
   const currentDetection = lightbox !== null ? activeList[lightbox.index] ?? null : null;
 
   const removeDetection = (deletedId: number): void => {
     setToday((prev) => prev.filter((d) => d.id !== deletedId));
-    setRecent((prev) => prev.filter((d) => d.id !== deletedId));
+    setEarlier((prev) => prev.filter((d) => d.id !== deletedId));
     setLightbox(null);
   };
 
@@ -92,32 +145,70 @@ export function Dashboard() {
   // lightbox open on it so its species/reference refresh live.
   const updateDetection = (updated: Detection): void => {
     setToday((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
-    setRecent((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
+    setEarlier((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
   };
 
-  /** Render one horizontal strip of detection cards (or its empty/loading state). */
-  const renderStrip = (section: Section, list: Detection[], emptyLabel: string) => {
+  const noConfidenceSuffix =
+    minConfidence > 0 ? ` at ${minConfidence}% match or better` : "";
+
+  /** Render the "Spotted today" horizontal strip (or its empty/loading state). */
+  const renderTodayStrip = () => {
     if (loading) {
       return <p className="text-sm text-bark animate-pulse">Checking the feeder…</p>;
     }
-    if (list.length === 0) {
-      return <p className="text-sm text-bark">{emptyLabel}</p>;
+    if (today.length === 0) {
+      return <p className="text-sm text-bark">{`No birds spotted today${noConfidenceSuffix}.`}</p>;
     }
     return (
       <div className="flex gap-4 overflow-x-auto pb-3">
-        {list.map((d, i) => (
+        {today.map((d, i) => (
           <DetectionCard
             key={d.id}
             detection={d}
-            onOpenLightbox={() => setLightbox({ section, index: i })}
+            onOpenLightbox={() => setLightbox({ section: "today", index: i })}
           />
         ))}
       </div>
     );
   };
 
-  const noConfidenceSuffix =
-    minConfidence > 0 ? ` at ${minConfidence}% match or better` : "";
+  /**
+   * Render the earlier sightings as a grid, split into time-bucketed sections
+   * ("This week" / "This month" / "Earlier"). Falls back to a single titled
+   * loading/empty section before any cards exist.
+   */
+  const renderEarlierSections = () => {
+    if (loading) {
+      return (
+        <section className="space-y-4">
+          <h2 className="eyebrow">Earlier sightings</h2>
+          <p className="text-sm text-bark animate-pulse">Checking the feeder…</p>
+        </section>
+      );
+    }
+    if (earlier.length === 0) {
+      return (
+        <section className="space-y-4">
+          <h2 className="eyebrow">Earlier sightings</h2>
+          <p className="text-sm text-bark">{`Nothing earlier to show${noConfidenceSuffix}.`}</p>
+        </section>
+      );
+    }
+    return buildEarlierGroups(earlier).map((group) => (
+      <section key={group.label} className="space-y-4">
+        <h2 className="eyebrow">{group.label}</h2>
+        <div className="flex flex-wrap gap-4">
+          {group.items.map(({ detection, index }) => (
+            <DetectionCard
+              key={detection.id}
+              detection={detection}
+              onOpenLightbox={() => setLightbox({ section: "earlier", index })}
+            />
+          ))}
+        </div>
+      </section>
+    ));
+  };
 
   const todayDate = new Date();
   const todayLabel = todayDate.toLocaleDateString(undefined, {
@@ -159,7 +250,7 @@ export function Dashboard() {
       {/* What the geomodel expects around the feeder this time of year. */}
       <ExpectedThisWeek />
 
-      {/* Minimum confidence slider applies to both strips below. */}
+      {/* Minimum confidence slider applies to every strip below. */}
       <div className="flex items-center justify-end gap-3">
         <label
           className="text-xs font-semibold text-sage-deep whitespace-nowrap"
@@ -187,13 +278,10 @@ export function Dashboard() {
 
       <section className="space-y-4">
         <h2 className="eyebrow">Spotted today</h2>
-        {renderStrip("today", today, `No birds spotted today${noConfidenceSuffix}.`)}
+        {renderTodayStrip()}
       </section>
 
-      <section className="space-y-4">
-        <h2 className="eyebrow">Earlier sightings</h2>
-        {renderStrip("recent", recent, `Nothing earlier to show${noConfidenceSuffix}.`)}
-      </section>
+      {renderEarlierSections()}
     </div>
   );
 }

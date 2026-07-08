@@ -120,6 +120,97 @@ export interface SpeciesReference {
   images: SpeciesReferenceImage[];
 }
 
+/** Selectable time windows for the Statistics page (drives the `from` cutoff). */
+export type StatsRange = "7d" | "30d" | "90d" | "all";
+
+/** Bucketing interval for the sightings/diversity timelines. */
+export type StatsInterval = "day" | "week";
+
+/** Top-line totals for the Statistics header strip. */
+export interface StatsSummary {
+  total: number;
+  distinct_species: number;
+  first_detection: string | null;
+  last_detection: string | null;
+  corrected_count: number;
+}
+
+/** One time-of-day histogram bucket (client-smoothed into a density curve). */
+export interface TimeBin {
+  /** Start of the bucket in minutes since midnight (0–1439). */
+  minute: number;
+  count: number;
+}
+
+/** Time-of-day histogram response. */
+export interface TimeOfDay {
+  bin_minutes: number;
+  bins: TimeBin[];
+}
+
+/** One populated cell of the hour × day-of-week heatmap. */
+export interface ActivityCell {
+  /** Day of week, Monday=0 … Sunday=6. */
+  dow: number;
+  /** Hour of day, 0–23. */
+  hour: number;
+  count: number;
+}
+
+/** Sparse activity heatmap (only populated cells; the client fills the grid). */
+export interface ActivityResponse {
+  cells: ActivityCell[];
+}
+
+/** One interval of the sightings-over-time timeline. */
+export interface TimelinePoint {
+  /** Bucket label — `YYYY-MM-DD` for days, `YYYY-WW` for weeks. */
+  date: string;
+  total: number;
+  distinct_species: number;
+  /** Per-species counts (top-N species + an `"Other"` bucket). */
+  counts: Record<string, number>;
+}
+
+/** Timeline powering the stacked sightings chart and the diversity line. */
+export interface TimelineResponse {
+  interval: StatsInterval;
+  /** Top-N species names in stack order (most-common first). */
+  species: string[];
+  points: TimelinePoint[];
+}
+
+/** One day's earliest/latest detection window. */
+export interface DayWindow {
+  date: string;
+  /** Minutes since midnight of the earliest detection that day. */
+  first_minute: number;
+  /** Minutes since midnight of the latest detection that day. */
+  last_minute: number;
+  count: number;
+}
+
+/** Per-day activity-window response. */
+export interface DailyWindowResponse {
+  days: DayWindow[];
+}
+
+/** A species' first-ever sighting (for the new-species cumulative curve). */
+export interface FirstSighting {
+  species: string;
+  first_seen: string;
+}
+
+/** Query parameters accepted by the ranged stats endpoints. */
+export interface StatsParams {
+  from?: string;
+  to?: string;
+  species?: string;
+  bin_minutes?: number;
+  interval?: StatsInterval;
+  top?: number;
+}
+
 /** Error thrown by apiFetch carrying the HTTP status code, so callers can branch on 404. */
 export class ApiError extends Error {
   constructor(public readonly status: number, message: string) {
@@ -352,6 +443,32 @@ export const api = {
     /** Apply a new crop region (a normalized box, or `{ reset: true }`). */
     setCrop: (body: NormalizedBox | { reset: true }): Promise<CropState> =>
       postJson<CropState>("/api/camera/crop", body),
+  },
+
+  stats: {
+    /** Top-line totals for the header strip (respects the range). */
+    summary: (params?: StatsParams): Promise<StatsSummary> =>
+      apiFetch<StatsSummary>("/api/stats/summary", params as Record<string, string | number | undefined>),
+
+    /** Time-of-day histogram (client-smoothed into a density curve). */
+    timeOfDay: (params?: StatsParams): Promise<TimeOfDay> =>
+      apiFetch<TimeOfDay>("/api/stats/time-of-day", params as Record<string, string | number | undefined>),
+
+    /** Hour × day-of-week activity heatmap. */
+    activity: (params?: StatsParams): Promise<ActivityResponse> =>
+      apiFetch<ActivityResponse>("/api/stats/activity", params as Record<string, string | number | undefined>),
+
+    /** Per-interval counts split by top-N species (+ diversity per interval). */
+    timeline: (params?: StatsParams): Promise<TimelineResponse> =>
+      apiFetch<TimelineResponse>("/api/stats/timeline", params as Record<string, string | number | undefined>),
+
+    /** Earliest/latest detection time per day. */
+    dailyWindow: (params?: StatsParams): Promise<DailyWindowResponse> =>
+      apiFetch<DailyWindowResponse>("/api/stats/daily-window", params as Record<string, string | number | undefined>),
+
+    /** Each species' first-ever sighting (all-time; for the new-species curve). */
+    firstSightings: (): Promise<FirstSighting[]> =>
+      apiFetch<FirstSighting[]>("/api/stats/first-sightings"),
   },
 
   settings: {

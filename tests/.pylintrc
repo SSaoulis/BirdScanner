@@ -8,6 +8,9 @@
 # (protected-access).
 
 [MAIN]
+# OpenCV populates its members dynamically, so pylint can't see them (mirrors the
+# root .pylintrc); tests that exercise cv2 codes directly would otherwise no-member.
+generated-members=cv2.*
 ignored-modules=libcamera,
                 picamera2,
                 picamera2.devices,
