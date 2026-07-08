@@ -27,6 +27,7 @@ from birdscanner.api.routers import (
     reference,
     settings,
     species,
+    stats,
     system,
 )
 
@@ -84,6 +85,7 @@ app.include_router(images.router)
 app.include_router(system.router)
 app.include_router(network.router)
 app.include_router(species.router)
+app.include_router(stats.router)
 app.include_router(reference.router)
 app.include_router(camera.router)
 app.include_router(settings.router)
