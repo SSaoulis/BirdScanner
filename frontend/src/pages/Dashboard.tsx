@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, type Detection } from "../api";
 import { DetectionCard } from "../components/DetectionCard";
+import { ExpectedThisWeek } from "../components/ExpectedThisWeek";
 import { Lightbox } from "../components/Lightbox";
 
 // "Spotted today" is capped higher so a busy day still renders without an
@@ -245,6 +246,9 @@ export function Dashboard() {
         </h1>
         <p className="mt-1 text-sm text-bark">{todayLabel}</p>
       </header>
+
+      {/* What the geomodel expects around the feeder this time of year. */}
+      <ExpectedThisWeek />
 
       {/* Minimum confidence slider applies to every strip below. */}
       <div className="flex items-center justify-end gap-3">
