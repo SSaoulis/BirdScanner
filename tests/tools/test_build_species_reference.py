@@ -203,31 +203,47 @@ def test_build_manifest_incremental_skips_complete_entries(monkeypatch, tmp_path
     assert second["species"]["Arctic tern"] == first["species"]["Arctic tern"]
 
 
-def test_build_manifest_refetches_when_image_missing(monkeypatch, tmp_path):
-    """A complete entry whose image file is gone is refetched."""
+def test_build_manifest_image_only_refresh_when_image_missing(monkeypatch, tmp_path):
+    """A missing image is re-downloaded from the cache without any text refetch."""
     monkeypatch.setattr(builder, "OUTPUT_DIR", str(tmp_path))
     _patch_fetches(monkeypatch)
     first = builder.build_manifest(
         ["Arctic tern"], {}, {}, builder.BuildOptions(throttle=0)
     )
+    original_entry = dict(first["species"]["Arctic tern"])
 
     # Delete the downloaded image so the entry is now incomplete.
-    img_path = os.path.join(
-        str(tmp_path), first["species"]["Arctic tern"]["images"][0]["path"]
-    )
+    img_rel = first["species"]["Arctic tern"]["images"][0]["path"]
+    img_path = os.path.join(str(tmp_path), img_rel)
     os.remove(img_path)
 
+    # Track text refetches (must NOT happen) and image downloads (must happen).
     refetched = []
-    orig_summary = builder.fetch_wikipedia_summary
 
-    def tracking_summary(title):
-        refetched.append(title)
-        return orig_summary(title)
+    def _record_summary_call(title):
+        refetched.append(title)  # image-only path must never reach this
 
-    monkeypatch.setattr(builder, "fetch_wikipedia_summary", tracking_summary)
-    builder.build_manifest(["Arctic tern"], {}, first, builder.BuildOptions(throttle=0))
+    monkeypatch.setattr(builder, "fetch_wikipedia_summary", _record_summary_call)
+    downloaded = []
+    orig_download = builder.download_image
 
-    assert refetched == ["Arctic tern"]
+    def tracking_download(source_url, dest_path):
+        downloaded.append(source_url)
+        return orig_download(source_url, dest_path)
+
+    monkeypatch.setattr(builder, "download_image", tracking_download)
+
+    result = builder.build_manifest(
+        ["Arctic tern"], {}, first, builder.BuildOptions(throttle=0)
+    )
+
+    assert refetched == []  # no Wikipedia text refetch
+    assert downloaded == ["https://upload.wikimedia.org/Bird.jpg"]  # image re-fetched
+    assert os.path.exists(img_path)  # original restored on disk
+    # Text fields are unchanged; only the image was refreshed.
+    refreshed_entry = result["species"]["Arctic tern"]
+    for field in ("summary", "scientific_name", "behaviour", "wikipedia_url"):
+        assert refreshed_entry[field] == original_entry[field]
 
 
 def test_build_manifest_force_refetches_everything(monkeypatch, tmp_path):
