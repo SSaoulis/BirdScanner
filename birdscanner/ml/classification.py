@@ -147,6 +147,31 @@ class Classifier:
         return class_name, top_conf
 
 
+def top_k_predictions(
+    probs: np.ndarray, idx_to_class: Dict[int, str], k: int
+) -> list[tuple[str, float]]:
+    """Return the ``k`` highest ``(label, probability)`` pairs of a softmax vector.
+
+    A small pure helper (mirroring ``GeoPriorAdjuster._top_scores``) used to persist
+    the classifier's top-k distribution per detection for later inspection.
+
+    Args:
+        probs: A softmax probability vector of shape ``(num_classes,)``.
+        idx_to_class: The classifier's ``{index: label}`` map.
+        k: How many top pairs to return (clamped to the number of classes).
+
+    Returns:
+        Up to ``k`` ``(label, probability)`` pairs sorted by probability descending.
+    """
+    flat = np.asarray(probs, dtype=np.float64).reshape(-1)
+    k = min(k, flat.shape[0])
+    top_idx = np.argsort(flat)[::-1][:k]
+    return [
+        (idx_to_class.get(int(i), f"<unknown:{int(i)}>"), float(flat[i]))
+        for i in top_idx
+    ]
+
+
 # data preprocessing (pure PIL + numpy, no torch/torchvision)
 
 # Build a preprocessing callable from a configuration dict.

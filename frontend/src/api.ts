@@ -39,6 +39,26 @@ export interface Detection {
    * score. Null when the detection was never corrected.
    */
   original_species: string | null;
+  /**
+   * The classifier's own top class *before* the geomodel Bayesian update, when it
+   * ran; `species`/`confidence` then hold the corrected posterior. Null when no
+   * location prior was applied and for legacy rows.
+   */
+  classifier_species: string | null;
+  /** The classifier's softmax confidence for `classifier_species`, in [0, 1]; null under the same conditions. */
+  classifier_confidence: number | null;
+  /**
+   * JSON string of the top geomodel-weighted `[species, score]` pairs
+   * (`p(y|x)·p(y|c)` before renormalising). Null when no geomodel update ran /
+   * legacy rows. Parse with `JSON.parse` → `[string, number][]`.
+   */
+  geo_scores: string | null;
+  /**
+   * JSON string of the classifier's own top-k `[species, probability]` softmax
+   * pairs (the raw distribution before any geomodel reweighting). Null for legacy
+   * rows. Parse with `JSON.parse` → `[string, number][]`.
+   */
+  classifier_scores: string | null;
 }
 
 export interface SystemStatus {
