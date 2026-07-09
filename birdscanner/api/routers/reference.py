@@ -172,17 +172,67 @@ def get_species_reference(
     )
 
 
+def _resolve_reference_image(
+    reference_dir: Path, name: str, index: int, *, thumb: bool
+) -> Path:
+    """Resolve the on-disk file for one species reference image or its thumbnail.
+
+    Looks up the manifest image entry, applies the path-traversal guard, and
+    returns the file to serve. When ``thumb`` is set the small
+    ``thumbnail_path`` rendition is preferred, falling back to the
+    full-resolution ``path`` when the entry has no thumbnail or the thumbnail
+    file is missing — so a bank built before thumbnails existed still serves
+    images, just at full size.
+
+    Args:
+        reference_dir: Injected species-reference root directory.
+        name: Species common name (decoded from the URL).
+        index: Zero-based index into the species' image list.
+        thumb: Prefer the thumbnail rendition when one is available.
+
+    Returns:
+        The resolved, existing file path beneath ``reference_dir``.
+
+    Raises:
+        HTTPException: 404 if the species, index, or file is missing, or if the
+            resolved path escapes the reference directory.
+    """
+    entry = _get_species_entry(reference_dir, name)
+    raw_images = entry.get("images")
+    if not isinstance(raw_images, list) or not 0 <= index < len(raw_images):
+        raise HTTPException(status_code=404, detail="Reference image not found")
+    image = raw_images[index]
+    if not isinstance(image, dict):
+        raise HTTPException(status_code=404, detail="Reference image not found")
+
+    # Prefer the thumbnail (when requested and present), then the full image.
+    rel_candidates: List[str] = []
+    if thumb and isinstance(image.get("thumbnail_path"), str):
+        rel_candidates.append(image["thumbnail_path"])
+    if isinstance(image.get("path"), str):
+        rel_candidates.append(image["path"])
+
+    base = reference_dir.resolve()
+    for rel_path in rel_candidates:
+        if not rel_path:
+            continue
+        candidate = (base / rel_path).resolve()
+        try:
+            candidate.relative_to(base)
+        except ValueError:
+            continue  # Path escapes the bank — treat as absent.
+        if candidate.is_file():
+            return candidate
+    raise HTTPException(status_code=404, detail="Reference image not found")
+
+
 @router.get("/{name}/reference/images/{index}")
 def get_species_reference_image(
     name: str,
     index: int,
     reference_dir: Path = Depends(get_reference_dir),
 ) -> FileResponse:
-    """Serve the JPEG bytes for one reference image of a species.
-
-    The image path is read from the manifest and resolved beneath the
-    reference directory; any path that escapes the directory (traversal) is
-    rejected with a 404.
+    """Serve the full-resolution JPEG bytes for one reference image.
 
     Args:
         name: Species common name (decoded from the URL).
@@ -196,23 +246,33 @@ def get_species_reference_image(
         HTTPException: 404 if the species, index, or file is missing, or if the
             resolved path escapes the reference directory.
     """
-    entry = _get_species_entry(reference_dir, name)
-    raw_images = entry.get("images")
-    if not isinstance(raw_images, list) or not 0 <= index < len(raw_images):
-        raise HTTPException(status_code=404, detail="Reference image not found")
-    image = raw_images[index]
-    rel_path = image.get("path") if isinstance(image, dict) else None
-    if not isinstance(rel_path, str) or not rel_path:
-        raise HTTPException(status_code=404, detail="Reference image not found")
+    candidate = _resolve_reference_image(reference_dir, name, index, thumb=False)
+    return FileResponse(str(candidate), media_type="image/jpeg")
 
-    base = reference_dir.resolve()
-    candidate = (base / rel_path).resolve()
-    try:
-        candidate.relative_to(base)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=404, detail="Reference image not found"
-        ) from exc
-    if not candidate.is_file():
-        raise HTTPException(status_code=404, detail="Reference image not found")
+
+@router.get("/{name}/reference/images/{index}/thumbnail")
+def get_species_reference_thumbnail(
+    name: str,
+    index: int,
+    reference_dir: Path = Depends(get_reference_dir),
+) -> FileResponse:
+    """Serve the small square thumbnail for one reference image.
+
+    Falls back to the full-resolution image when the bank has no thumbnail for
+    this entry (e.g. it was built before thumbnails existed), so callers can use
+    this endpoint unconditionally.
+
+    Args:
+        name: Species common name (decoded from the URL).
+        index: Zero-based index into the species' image list.
+        reference_dir: Injected species-reference root directory.
+
+    Returns:
+        ``FileResponse`` serving the JPEG with ``image/jpeg`` media type.
+
+    Raises:
+        HTTPException: 404 if the species, index, or file is missing, or if the
+            resolved path escapes the reference directory.
+    """
+    candidate = _resolve_reference_image(reference_dir, name, index, thumb=True)
     return FileResponse(str(candidate), media_type="image/jpeg")

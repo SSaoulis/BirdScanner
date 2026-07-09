@@ -24,7 +24,9 @@ _DETECTOR_TIMEOUT_SEC = 10.0
 _GEO_META_ID = 1
 
 # Default / maximum number of expected species returned for the current week.
-_EXPECTED_DEFAULT_LIMIT = 12
+# The default is deliberately small so the Dashboard panel stays a compact,
+# glanceable band rather than a long list.
+_EXPECTED_DEFAULT_LIMIT = 6
 _EXPECTED_MAX_LIMIT = 24
 
 

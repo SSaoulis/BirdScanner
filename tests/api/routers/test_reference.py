@@ -17,15 +17,31 @@ from birdscanner.api.dependencies import get_reference_dir
 from birdscanner.api.routers import reference
 
 _SPECIES_NAME = "Eurasian Blue Tit"
+# A second species whose image has no cached thumbnail, to exercise the
+# thumbnail endpoint's fallback to the full-resolution image.
+_NO_THUMB_NAME = "Common Chaffinch"
 _FAKE_JPEG = b"\xff\xd8\xffFAKEJPEGDATA"
+_FAKE_THUMB = b"\xff\xd8\xffFAKETHUMBNAIL"
 
 
 def _write_manifest(reference_dir: Path) -> None:
-    """Write a fixture manifest plus a fake JPEG into ``reference_dir``."""
+    """Write a fixture manifest plus fake JPEGs into ``reference_dir``.
+
+    The blue tit entry carries both a full image and a cached ``thumbnail_path``;
+    the chaffinch entry has only a full image (no thumbnail) so tests can check
+    the thumbnail endpoint falls back to it.
+    """
     image_rel = "images/eurasian-blue-tit/0.jpg"
+    thumb_rel = "images/eurasian-blue-tit/0_thumb.jpg"
     image_path = reference_dir / image_rel
     image_path.parent.mkdir(parents=True, exist_ok=True)
     image_path.write_bytes(_FAKE_JPEG)
+    (reference_dir / thumb_rel).write_bytes(_FAKE_THUMB)
+
+    no_thumb_rel = "images/common-chaffinch/0.jpg"
+    no_thumb_path = reference_dir / no_thumb_rel
+    no_thumb_path.parent.mkdir(parents=True, exist_ok=True)
+    no_thumb_path.write_bytes(_FAKE_JPEG)
 
     manifest = {
         "version": 1,
@@ -41,12 +57,28 @@ def _write_manifest(reference_dir: Path) -> None:
                 "images": [
                     {
                         "path": image_rel,
+                        "thumbnail_path": thumb_rel,
                         "source_url": "https://example.com/original.jpg",
                         "attribution": "Photo by Someone",
                         "license": "CC BY-SA 4.0",
                     }
                 ],
-            }
+            },
+            _NO_THUMB_NAME: {
+                "common_name": _NO_THUMB_NAME,
+                "scientific_name": "Fringilla coelebs",
+                "summary": "A common finch.",
+                "behaviour": None,
+                "wikipedia_url": None,
+                "images": [
+                    {
+                        "path": no_thumb_rel,
+                        "source_url": "https://example.com/chaffinch.jpg",
+                        "attribution": "Photo by Someone Else",
+                        "license": None,
+                    }
+                ],
+            },
         },
     }
     (reference_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
@@ -161,6 +193,31 @@ class TestReferenceImage:
         reference.clear_manifest_cache()
 
         resp = client.get("/api/species/Evil/reference/images/0")
+        assert resp.status_code == 404
+
+
+class TestReferenceThumbnail:
+    def test_serves_thumbnail_when_present(self, client):
+        encoded = quote(_SPECIES_NAME, safe="")
+        resp = client.get(f"/api/species/{encoded}/reference/images/0/thumbnail")
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "image/jpeg"
+        assert resp.content == _FAKE_THUMB
+
+    def test_falls_back_to_full_image_when_no_thumbnail(self, client):
+        encoded = quote(_NO_THUMB_NAME, safe="")
+        resp = client.get(f"/api/species/{encoded}/reference/images/0/thumbnail")
+        assert resp.status_code == 200
+        # The entry has no thumbnail, so the full image is served instead.
+        assert resp.content == _FAKE_JPEG
+
+    def test_out_of_range_index_404(self, client):
+        encoded = quote(_SPECIES_NAME, safe="")
+        resp = client.get(f"/api/species/{encoded}/reference/images/5/thumbnail")
+        assert resp.status_code == 404
+
+    def test_unknown_species_404(self, client):
+        resp = client.get("/api/species/Dodo/reference/images/0/thumbnail")
         assert resp.status_code == 404
 
 
