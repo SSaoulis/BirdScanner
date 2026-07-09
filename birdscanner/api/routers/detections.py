@@ -28,9 +28,15 @@ class SpeciesCorrection(BaseModel):
 
     Attributes:
         species: The user-chosen species label to assign to the detection.
+        allow_new: When ``True``, permit ``species`` to be a brand-new label not in
+            the classifier vocabulary — the detector registers it as a custom
+            species (see ``birdscanner/db/custom_species.py``). When ``False`` (the
+            default), an unknown label is rejected, preserving the correction path's
+            typo safety.
     """
 
     species: str
+    allow_new: bool = False
 
 
 class DetectionFilters:
@@ -215,7 +221,7 @@ def correct_detection(
     try:
         resp = httpx.patch(
             patch_url,
-            json={"species": correction.species},
+            json={"species": correction.species, "allow_new": correction.allow_new},
             timeout=_DETECTOR_TIMEOUT_SEC,
         )
     except httpx.HTTPError as exc:

@@ -4,8 +4,12 @@ import { api, ApiError } from "../api";
 interface SpeciesPickerProps {
   /** The species currently on the record (marked "on record", not selectable). */
   current: string;
-  /** Called with the chosen species when the user commits a correction. */
-  onConfirm: (species: string) => void;
+  /**
+   * Called with the chosen species when the user commits a correction. `isNew` is
+   * true when the species is a brand-new label the user typed (not in the guide),
+   * which the caller must forward so the detector registers it as a custom species.
+   */
+  onConfirm: (species: string, isNew: boolean) => void;
   /** Called when the user backs out without correcting. */
   onCancel: () => void;
   /** True while a correction request is in flight (locks the list). */
@@ -30,10 +34,11 @@ let vocabCache: string[] | null = null;
  *
  * Reads like writing a correction in a field guide's margin: search the guide's
  * species list, pick the right one, and it replaces the printed ID. The list is
- * the classifier's own vocabulary (`api.species.vocabulary`), so a correction can
- * only ever be a species the model knows — which keeps the saved folders and
- * retraining buckets aligned. Fully keyboard-driven (type to filter, ↑/↓ to move,
- * Enter to choose, Esc to cancel).
+ * the served vocabulary (`api.species.vocabulary` — the classifier's classes plus
+ * any user-added custom labels). When a bird the guide doesn't list is seen, typing
+ * its name (no match) offers "Add … as a new species", which records a new custom
+ * label alongside the correction. Fully keyboard-driven (type to filter, ↑/↓ to
+ * move, Enter to choose/add, Esc to cancel).
  */
 export function SpeciesPicker({
   current,
@@ -104,13 +109,17 @@ export function SpeciesPicker({
     el?.scrollIntoView({ block: "nearest" });
   }, [active, matches]);
 
-  function commit(species: string) {
+  // The typed name offered as a new species when nothing in the guide matches.
+  const newCandidate =
+    vocab.kind === "ready" && matches.length === 0 ? query.trim() : "";
+
+  function commit(species: string, isNew: boolean) {
     if (busy) return;
     if (species === current) {
       onCancel();
       return;
     }
-    onConfirm(species);
+    onConfirm(species, isNew);
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
@@ -123,7 +132,11 @@ export function SpeciesPicker({
     } else if (e.key === "Enter") {
       e.preventDefault();
       const chosen = matches[active];
-      if (chosen) commit(chosen);
+      if (chosen) {
+        commit(chosen, false);
+      } else if (newCandidate) {
+        commit(newCandidate, true);
+      }
     } else if (e.key === "Escape") {
       e.preventDefault();
       onCancel();
@@ -173,9 +186,21 @@ export function SpeciesPicker({
           <p className="px-1 py-6 text-center text-sm text-rust">{vocab.message}</p>
         )}
 
-        {vocab.kind === "ready" && matches.length === 0 && (
+        {vocab.kind === "ready" && matches.length === 0 && newCandidate && (
+          <button
+            className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left font-display text-sm text-ink transition-colors hover:bg-gold/15 focus:bg-gold/15 focus:outline-none disabled:opacity-60"
+            onClick={() => commit(newCandidate, true)}
+            disabled={busy}
+          >
+            <span className="shrink-0 text-base leading-none text-gold-deep">＋</span>
+            <span>
+              Add “<span className="italic">{newCandidate}</span>” as a new species
+            </span>
+          </button>
+        )}
+        {vocab.kind === "ready" && matches.length === 0 && !newCandidate && (
           <p className="px-1 py-6 text-center text-sm text-bark">
-            No species matches “{query.trim()}”.
+            Search the guide, or type a species to add it.
           </p>
         )}
 
@@ -195,7 +220,7 @@ export function SpeciesPicker({
                       i === active ? "bg-gold/15 text-ink" : "text-ink hover:bg-paper"
                     } ${isCurrent ? "cursor-default text-bark" : ""}`}
                     onMouseEnter={() => setActive(i)}
-                    onClick={() => commit(species)}
+                    onClick={() => commit(species, false)}
                     disabled={busy || isCurrent}
                   >
                     <span>{species}</span>

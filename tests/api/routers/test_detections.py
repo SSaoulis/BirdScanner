@@ -185,7 +185,24 @@ class TestCorrectDetection:
         assert body["corrected"] is True
         assert body["original_species"] == "Robin"
         assert captured["url"].endswith("/detections/123")
-        assert captured["json"] == {"species": "Sparrow"}
+        # allow_new defaults to False and is always forwarded.
+        assert captured["json"] == {"species": "Sparrow", "allow_new": False}
+
+    def test_forwards_allow_new_flag(self, client, monkeypatch, fake_httpx_response):
+        from birdscanner.api.routers import detections
+
+        captured = {}
+
+        def _fake_patch(url, json, timeout):
+            captured["json"] = json
+            return fake_httpx_response(status_code=200, json_body=_CORRECTED_BODY)
+
+        monkeypatch.setattr(detections.httpx, "patch", _fake_patch)
+        resp = client.patch(
+            "/api/detections/123", json={"species": "Hoopoe", "allow_new": True}
+        )
+        assert resp.status_code == 200
+        assert captured["json"] == {"species": "Hoopoe", "allow_new": True}
 
     def test_relays_400_unknown_species(self, client, monkeypatch, fake_httpx_response):
         from birdscanner.api.routers import detections

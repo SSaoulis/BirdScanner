@@ -455,9 +455,13 @@ def correcting_server():
 
     The callback returns an updated-record dict, except for id ``0`` which stands
     in for a missing detection (returns ``None``).  ``calls`` records the
-    ``(id, species)`` pairs it receives.
+    ``(id, species)`` pairs it receives.  The server is also wired with an
+    (initially empty) in-memory custom-species store — ``register_species``
+    appends (case-insensitively de-duplicating) and ``list_custom_species`` reads
+    it — so the ``allow_new`` path and the union ``GET /labels`` can be exercised.
     """
     calls: list[tuple] = []
+    custom: list[str] = []
 
     def _correct_callback(detection_id: int, species: str):
         calls.append((detection_id, species))
@@ -470,11 +474,25 @@ def correcting_server():
             "original_species": "Robin",
         }
 
+    def _list_custom() -> list[str]:
+        return list(custom)
+
+    def _register(name: str) -> str:
+        canonical = name.strip()
+        for existing in custom:
+            if existing.lower() == canonical.lower():
+                return existing
+        custom.append(canonical)
+        return canonical
+
     server = start_camera_server(
         _FakeCamera(_solid_frame()),
         port=0,
         deps=ControlServerDeps(
-            correct_species=_correct_callback, species_labels=list(_TEST_LABELS)
+            correct_species=_correct_callback,
+            species_labels=list(_TEST_LABELS),
+            list_custom_species=_list_custom,
+            register_species=_register,
         ),
     )
     port = server.server_address[1]
@@ -483,6 +501,12 @@ def correcting_server():
     finally:
         server.shutdown()
         server.server_close()
+
+
+def _get_labels(base_url: str) -> list[str]:
+    """Fetch the served species vocabulary (``GET /labels``)."""
+    with urllib.request.urlopen(f"{base_url}/labels", timeout=5) as resp:
+        return json.loads(resp.read())["species"]
 
 
 def test_patch_corrects_species_returns_200(correcting_server) -> None:
@@ -502,6 +526,51 @@ def test_patch_unknown_species_returns_400_json(correcting_server) -> None:
     body = json.loads(exc_info.value.read())
     assert "Unknown species" in body["error"]
     # A rejected species never reaches the callback.
+    assert calls == []
+
+
+def test_patch_unknown_species_allow_new_false_still_rejected(
+    correcting_server,
+) -> None:
+    base_url, calls = correcting_server
+    with pytest.raises(urllib.error.HTTPError) as exc_info:
+        _patch_json(f"{base_url}/detections/5", {"species": "Dodo", "allow_new": False})
+    assert exc_info.value.code == 400
+    assert calls == []
+
+
+def test_patch_allow_new_registers_and_corrects(correcting_server) -> None:
+    base_url, calls = correcting_server
+    status, body = _patch_json(
+        f"{base_url}/detections/7", {"species": "Hoopoe", "allow_new": True}
+    )
+    assert status == 200
+    assert body["species"] == "Hoopoe"
+    assert calls == [(7, "Hoopoe")]
+    # The new label is registered and now appears in the served vocabulary.
+    assert _get_labels(base_url) == sorted(_TEST_LABELS + ["Hoopoe"])
+
+
+def test_patch_allow_new_reuses_case_insensitive_known(correcting_server) -> None:
+    base_url, calls = correcting_server
+    # "robin" differs only by case from the known "Robin": reuse the canonical
+    # label and register nothing new.
+    status, body = _patch_json(
+        f"{base_url}/detections/8", {"species": "robin", "allow_new": True}
+    )
+    assert status == 200
+    assert body["species"] == "Robin"
+    assert calls == [(8, "Robin")]
+    assert _get_labels(base_url) == _TEST_LABELS
+
+
+def test_patch_allow_new_too_long_rejected(correcting_server) -> None:
+    base_url, calls = correcting_server
+    with pytest.raises(urllib.error.HTTPError) as exc_info:
+        _patch_json(
+            f"{base_url}/detections/5", {"species": "x" * 101, "allow_new": True}
+        )
+    assert exc_info.value.code == 400
     assert calls == []
 
 
