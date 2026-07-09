@@ -28,6 +28,7 @@ from birdscanner.ml.classification import (
     Classifier,
     ONNXClassifier,
     build_preprocessing,
+    top_k_predictions,
 )
 from birdscanner.ml.detection_utils import (
     draw_boxes,
@@ -56,6 +57,10 @@ IMAGE_DIR = os.environ.get("IMAGE_DIR", "/home/stefan/Pictures/bird_detections")
 # the initial value of ``PipelineContext.save_confidence_threshold``; the Settings
 # page can override it live (see ``detector/settings_controller.py``).
 DEFAULT_SAVE_CONFIDENCE_THRESHOLD = 0.4
+
+# How many of the classifier's own top predictions to persist per detection
+# (``classifier_scores``), for the Advanced-stats panel.
+CLASSIFIER_TOP_K = 5
 
 # Reasons a detection ends up with no video clip (persisted as ``no_video_reason``
 # so the UI can explain the greyed-out Video control). ``None`` means a clip exists.
@@ -98,6 +103,10 @@ class Classification(NamedTuple):
             ``classifier_species``, or ``None``.
         geo_scores: JSON of the top pre-normalised ``[species, score]`` pairs, or
             ``None`` when the update did not run.
+        classifier_scores: JSON of the classifier's own top-k ``[species,
+            probability]`` softmax pairs (the raw distribution before any geomodel
+            reweighting), or ``None`` when the classifier could not produce a full
+            distribution (e.g. a test fake without ``predict_proba``).
     """
 
     species: str
@@ -105,6 +114,7 @@ class Classification(NamedTuple):
     classifier_species: Optional[str] = None
     classifier_confidence: Optional[float] = None
     geo_scores: Optional[str] = None
+    classifier_scores: Optional[str] = None
 
 
 def setup_classifier(model_path: str, class_to_idx_path: str) -> Classifier:
@@ -255,34 +265,76 @@ def _classify_track(
     return result
 
 
+def _classifier_probs(classifier: Classifier, roi: np.ndarray) -> Optional[np.ndarray]:
+    """Return the classifier's full softmax vector, or ``None`` when unsupported.
+
+    Real :class:`Classifier` instances expose ``predict_proba`` and an
+    ``idx_to_class`` map; the lightweight pipeline test fakes (a bare ``object`` with
+    an injected ``classify_fn``) do not. ``None`` signals the caller to fall back to
+    ``classify_fn`` for the top-1-only prediction.
+
+    Args:
+        classifier: The (possibly faked) classifier from the pipeline context.
+        roi: The preprocessed ROI to classify.
+
+    Returns:
+        The ``(num_classes,)`` softmax vector, or ``None`` when the classifier cannot
+        produce a full distribution.
+    """
+    if not hasattr(classifier, "predict_proba"):
+        return None
+    if getattr(classifier, "idx_to_class", None) is None:
+        return None
+    return classifier.predict_proba(roi)
+
+
 def _predict_species(context: PipelineContext, roi: np.ndarray) -> Classification:
     """Classify an ROI, applying the geomodel Bayesian update when configured.
 
-    Without a ``geo_adjuster`` this is the classifier's own top class (via the
-    injectable ``classify_fn``). With one, the classifier's full distribution is
-    reweighted by the location's occurrence prior for the current week: the
-    posterior argmax becomes the prediction, the classifier's original pick and the
-    top pre-normalised scores are retained for debugging.
+    When the classifier can produce a full distribution the softmax is computed once
+    and reused: its top-k pairs are persisted as ``classifier_scores`` and its argmax
+    is the top-1 prediction. With a ``geo_adjuster`` that same distribution is then
+    reweighted by the location's occurrence prior for the current week — the
+    posterior argmax becomes the prediction, and the classifier's original pick plus
+    the top pre-normalised scores are retained for debugging. For a test fake without
+    ``predict_proba`` this falls back to the injectable ``classify_fn`` (top-1 only,
+    no ``classifier_scores``).
 
     Args:
         context: Pipeline dependencies (classifier + classify callable + adjuster).
         roi: The preprocessed ROI to classify.
 
     Returns:
-        The :class:`Classification` (with geomodel fields populated iff adjusted).
+        The :class:`Classification` (with geomodel fields populated iff adjusted, and
+        ``classifier_scores`` populated whenever a full distribution was available).
     """
-    if context.geo_adjuster is None:
+    probs = _classifier_probs(context.classifier, roi)
+    if probs is None:
         species, confidence = context.classify_fn(context.classifier, roi)
         return Classification(species, confidence)
 
-    probs = context.classifier.predict_proba(roi)
-    adjustment = context.geo_adjuster.adjust(probs, week_of_year(datetime.now()))
+    idx_to_class = context.classifier.idx_to_class
+    assert idx_to_class is not None  # guaranteed by _classifier_probs
+    classifier_scores = json.dumps(
+        top_k_predictions(probs, idx_to_class, CLASSIFIER_TOP_K)
+    )
+
+    if context.geo_adjuster is not None:
+        adjustment = context.geo_adjuster.adjust(probs, week_of_year(datetime.now()))
+        return Classification(
+            species=adjustment.species,
+            confidence=adjustment.confidence,
+            classifier_species=adjustment.classifier_species,
+            classifier_confidence=adjustment.classifier_confidence,
+            geo_scores=json.dumps(adjustment.top_scores),
+            classifier_scores=classifier_scores,
+        )
+
+    top_idx = int(np.argmax(probs))
     return Classification(
-        species=adjustment.species,
-        confidence=adjustment.confidence,
-        classifier_species=adjustment.classifier_species,
-        classifier_confidence=adjustment.classifier_confidence,
-        geo_scores=json.dumps(adjustment.top_scores),
+        species=idx_to_class.get(top_idx, f"<unknown:{top_idx}>"),
+        confidence=float(probs[top_idx]),
+        classifier_scores=classifier_scores,
     )
 
 
@@ -389,6 +441,7 @@ def _persist_detection(
             classifier_species=result.classifier_species,
             classifier_confidence=result.classifier_confidence,
             geo_scores=result.geo_scores,
+            classifier_scores=result.classifier_scores,
         )
     )
 

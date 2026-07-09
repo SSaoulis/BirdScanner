@@ -40,6 +40,7 @@ _EXPECTED_COLUMNS = {
     "classifier_species",
     "classifier_confidence",
     "geo_scores",
+    "classifier_scores",
     "corrected",
     "original_species",
 }
@@ -81,6 +82,7 @@ def test_init_db_backfills_added_columns_on_legacy_table():
         "box_y",
         "box_w",
         "box_h",
+        "classifier_scores",
         "corrected",
         "original_species",
     } <= col_names

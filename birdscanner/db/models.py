@@ -45,6 +45,10 @@ class DetectionRecord(SQLModel, table=True):
         geo_scores: JSON array of the top pre-normalised ``[species, score]`` pairs
             (``p(y|x)·p(y|c)`` before renormalising) from the geomodel update, kept
             for debugging/inspection. NULL when the update did not run / legacy rows.
+        classifier_scores: JSON array of the classifier's own top-k ``[species,
+            probability]`` softmax pairs (the raw distribution *before* any geomodel
+            reweighting), kept for the Advanced-stats panel. NULL for legacy rows and
+            when the classifier could not produce a distribution (test fakes).
         corrected: ``True`` when a user manually overrode the classifier's species
             (see ``birdscanner/db/corrector.py``). NULL/``False`` means the species
             is the model's own top prediction. When set, ``species`` is the
@@ -77,6 +81,7 @@ class DetectionRecord(SQLModel, table=True):
     classifier_species: Optional[str] = Field(default=None, nullable=True)
     classifier_confidence: Optional[float] = Field(default=None, nullable=True)
     geo_scores: Optional[str] = Field(default=None, nullable=True)
+    classifier_scores: Optional[str] = Field(default=None, nullable=True)
     corrected: Optional[bool] = Field(default=None, nullable=True)
     original_species: Optional[str] = Field(default=None, nullable=True)
 
@@ -126,3 +131,28 @@ class GeoPriorMeta(SQLModel, table=True):
     latitude: float
     longitude: float
     generated_at: datetime
+
+
+class CustomSpecies(SQLModel, table=True):
+    """A user-added species label not present in the classifier's vocabulary.
+
+    When a bird the classifier was never trained on is seen, the user can add its
+    species as a manual correction from the Lightbox (see
+    :mod:`birdscanner.db.custom_species`). The label is stored here so it persists
+    across restarts and reappears in the correction picker: the detector serves
+    the union of the classifier's classes and these rows as the species vocabulary
+    (see the control server's ``GET /labels``). A custom-labelled detection is an
+    ordinary ``corrected`` row in :class:`DetectionRecord`; this table only records
+    the *label* so it can be offered again.
+
+    Columns:
+        name: The species label, stored exact-cased and used as the primary key
+            (so a label is stored at most once). Case-insensitive de-duplication is
+            enforced by :func:`birdscanner.db.custom_species.add_custom_species`.
+        created_at: Wall-clock time the label was first added.
+    """
+
+    __tablename__ = "custom_species"  # type: ignore[assignment]
+
+    name: str = Field(primary_key=True)
+    created_at: datetime
