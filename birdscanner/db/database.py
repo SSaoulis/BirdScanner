@@ -81,6 +81,7 @@ _DETECTIONS_ADDED_COLUMNS: dict[str, str] = {
     "classifier_species": "TEXT",
     "classifier_confidence": "FLOAT",
     "geo_scores": "TEXT",
+    "classifier_scores": "TEXT",
     "corrected": "BOOLEAN",
     "original_species": "TEXT",
 }

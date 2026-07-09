@@ -7,6 +7,7 @@ import {
   type SpeciesReference,
 } from "../api";
 import { SpeciesPicker } from "./SpeciesPicker";
+import { AdvancedStatsPane } from "./AdvancedStats";
 
 interface LightboxProps {
   /** The detection currently displayed in the panel. */
@@ -145,8 +146,12 @@ export function Lightbox({
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  // Whether the reference panel is open. Closed by default — opened via the tab.
+  // Whether the reference panel (right) is open. Closed by default — opened via
+  // its tab. The two side panels are mutually exclusive: each is locked to the
+  // image's width, so opening both would overflow the viewport (3×44vw).
   const [showReference, setShowReference] = useState(false);
+  // Whether the advanced-stats panel (left) is open. Closed by default.
+  const [showStats, setShowStats] = useState(false);
   // Live rendered size of the detection image; the reference panel is locked
   // to these exact pixel dimensions so it always matches the image.
   const imgRef = useRef<HTMLImageElement | null>(null);
@@ -277,6 +282,31 @@ export function Lightbox({
         className="relative flex items-start"
         onClick={(e) => e.stopPropagation()}
       >
+        {/* ── Advanced-stats panel (left) — mirrors the reference panel but folds
+            to the left (animates margin-right). Locked to the image's exact
+            rendered size, content scrolls internally. Mutually exclusive with the
+            reference panel. ── */}
+        {imgSize && (
+          <div
+            className="shrink-0 overflow-hidden transition-[width,margin-right,opacity] duration-300 ease-out motion-reduce:transition-none"
+            style={{
+              width: showStats ? imgSize.w : 0,
+              marginRight: showStats ? "2.5rem" : 0,
+              opacity: showStats ? 1 : 0,
+              pointerEvents: showStats ? "auto" : "none",
+            }}
+            aria-hidden={!showStats}
+          >
+            <div
+              className="overflow-y-auto rounded-lg border border-line bg-card shadow-plate-lift p-4"
+              style={{ width: imgSize.w, height: imgSize.h }}
+            >
+              <h3 className="eyebrow mb-3">Advanced stats</h3>
+              <AdvancedStatsPane detection={shown} />
+            </div>
+          </div>
+        )}
+
         {/* ── Captured detection image (with the Field-guide tab on its edge) ──
             The column and its caption are locked to the image's exact rendered
             width (`imgSize.w`), and the image plate is `w-fit`, so every overlay
@@ -406,6 +436,25 @@ export function Lightbox({
               </button>
             </div>
 
+            {/* Vertical Advanced-stats tab on the LEFT edge of the image —
+                mirrors the Field-guide tab; opening it closes the reference
+                panel (the two are mutually exclusive). */}
+            <button
+              className={`absolute right-full top-1/2 z-10 -translate-y-1/2 rounded-l-lg px-2 py-3.5 text-[11px] font-semibold uppercase tracking-[0.15em] shadow-plate [writing-mode:vertical-rl] transition-colors ${
+                showStats
+                  ? "bg-gold text-ink"
+                  : "bg-card/95 text-ink ring-1 ring-line hover:bg-card"
+              }`}
+              onClick={() => {
+                setShowStats((v) => !v);
+                setShowReference(false);
+              }}
+              aria-pressed={showStats}
+              aria-label={showStats ? "Hide advanced stats" : "Show advanced stats"}
+            >
+              Advanced stats
+            </button>
+
             {/* Vertical Field-guide tab on the right edge of the image */}
             <button
               className={`absolute left-full top-1/2 z-10 -translate-y-1/2 rounded-r-lg px-2 py-3.5 text-[11px] font-semibold uppercase tracking-[0.15em] shadow-plate [writing-mode:vertical-rl] transition-colors ${
@@ -413,7 +462,10 @@ export function Lightbox({
                   ? "bg-gold text-ink"
                   : "bg-card/95 text-ink ring-1 ring-line hover:bg-card"
               }`}
-              onClick={() => setShowReference((v) => !v)}
+              onClick={() => {
+                setShowReference((v) => !v);
+                setShowStats(false);
+              }}
               aria-pressed={showReference}
               aria-label={showReference ? "Hide field guide" : "Show field guide"}
             >
