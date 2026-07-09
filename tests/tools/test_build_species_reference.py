@@ -18,9 +18,17 @@ if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
 # pylint: disable=wrong-import-position
+from PIL import Image  # noqa: E402
+
 from tools import build_species_reference as builder  # noqa: E402
 
 # pylint: enable=wrong-import-position
+
+
+def _write_jpeg(path, size=(240, 160)):
+    """Write a small real JPEG at ``path`` so PIL can open/resize it."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    Image.new("RGB", size, (120, 160, 90)).save(path, "JPEG")
 
 
 # --- slug + pure helpers ---------------------------------------------------
@@ -260,6 +268,96 @@ def test_build_manifest_limit_caps_processed_labels(monkeypatch, tmp_path):
     assert len(manifest["species"]) == 2
     assert "A bird" in manifest["species"]
     assert "C bird" not in manifest["species"]
+
+
+# --- thumbnails ------------------------------------------------------------
+
+
+def test_thumbnail_rel_path_inserts_suffix():
+    """The thumbnail path is the original with a ``_thumb`` suffix."""
+    assert (
+        builder._thumbnail_rel_path("images/robin/0.jpg") == "images/robin/0_thumb.jpg"
+    )
+
+
+def test_make_thumbnail_produces_square_jpeg(tmp_path):
+    """``make_thumbnail`` writes a centre-cropped square JPEG of the given size."""
+    src = os.path.join(str(tmp_path), "src.jpg")
+    dest = os.path.join(str(tmp_path), "out", "0_thumb.jpg")
+    _write_jpeg(src, size=(240, 160))
+
+    assert builder.make_thumbnail(src, dest, size=128) is True
+    assert os.path.exists(dest)
+    with Image.open(dest) as thumb:
+        assert thumb.size == (128, 128)
+        assert thumb.format == "JPEG"
+
+
+def test_make_thumbnail_returns_false_on_bad_source(tmp_path):
+    """A corrupt/unreadable source is reported as failure, not an exception."""
+    src = os.path.join(str(tmp_path), "bad.jpg")
+    with open(src, "wb") as handle:
+        handle.write(b"\xff\xd8\xffnotarealjpeg")
+    dest = os.path.join(str(tmp_path), "0_thumb.jpg")
+
+    assert builder.make_thumbnail(src, dest) is False
+    assert not os.path.exists(dest)
+
+
+def test_ensure_thumbnails_backfills_missing(tmp_path):
+    """A manifest image with an on-disk original but no thumb is backfilled."""
+    output_dir = str(tmp_path)
+    image_rel = "images/robin/0.jpg"
+    _write_jpeg(os.path.join(output_dir, image_rel))
+    species_map = {"Robin": {"images": [{"path": image_rel}]}}
+
+    generated = builder.ensure_thumbnails(species_map, output_dir)
+
+    assert generated == 1
+    thumb_rel = species_map["Robin"]["images"][0]["thumbnail_path"]
+    assert thumb_rel == "images/robin/0_thumb.jpg"
+    assert os.path.exists(os.path.join(output_dir, thumb_rel))
+
+
+def test_ensure_thumbnails_skips_when_thumb_exists(tmp_path):
+    """An image with an existing thumbnail file is left untouched."""
+    output_dir = str(tmp_path)
+    image_rel = "images/robin/0.jpg"
+    thumb_rel = "images/robin/0_thumb.jpg"
+    _write_jpeg(os.path.join(output_dir, image_rel))
+    _write_jpeg(os.path.join(output_dir, thumb_rel), size=(128, 128))
+    species_map = {
+        "Robin": {"images": [{"path": image_rel, "thumbnail_path": thumb_rel}]}
+    }
+
+    assert builder.ensure_thumbnails(species_map, output_dir) == 0
+
+
+def test_ensure_thumbnails_skips_when_original_missing(tmp_path):
+    """No original on disk means no thumbnail is generated."""
+    species_map = {"Ghost": {"images": [{"path": "images/ghost/0.jpg"}]}}
+
+    assert builder.ensure_thumbnails(species_map, str(tmp_path)) == 0
+    assert "thumbnail_path" not in species_map["Ghost"]["images"][0]
+
+
+def test_build_species_entry_stamps_thumbnail_path(monkeypatch, tmp_path):
+    """When the downloaded image is a real JPEG, the entry gets a thumbnail."""
+    monkeypatch.setattr(builder, "OUTPUT_DIR", str(tmp_path))
+    _patch_fetches(monkeypatch)
+
+    # Override the canned download to write a real JPEG so make_thumbnail works.
+    def real_download(source_url, dest_path):
+        _write_jpeg(dest_path)
+        return True
+
+    monkeypatch.setattr(builder, "download_image", real_download)
+
+    entry = builder.build_species_entry("Eurasian blue tit", {})
+
+    image = entry["images"][0]
+    assert image["thumbnail_path"] == "images/eurasian-blue-tit/0_thumb.jpg"
+    assert os.path.exists(os.path.join(str(tmp_path), image["thumbnail_path"]))
 
 
 # --- coverage report -------------------------------------------------------

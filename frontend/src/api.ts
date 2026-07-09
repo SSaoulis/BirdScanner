@@ -447,6 +447,16 @@ export const api = {
       `/api/species/${encodeURIComponent(name)}/reference/images/${index}`,
 
     /**
+     * URL for the small cached thumbnail of a reference image — a few-KB square
+     * rendition, for tiny displays like the "In season" panel so they never
+     * pull the full-resolution original. Falls back to the full image
+     * server-side when the bank has no thumbnail; 404s when there is no image at
+     * all, so callers should still handle the image's error event.
+     */
+    referenceThumbnailUrl: (name: string, index = 0): string =>
+      `/api/species/${encodeURIComponent(name)}/reference/images/${index}/thumbnail`,
+
+    /**
      * Fetch the species the geomodel expects near the feeder for the current
      * week, ordered most-likely first. Always resolves (200); an empty
      * `species` list with null location means no location is configured yet.
