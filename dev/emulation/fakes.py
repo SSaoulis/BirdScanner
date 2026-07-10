@@ -9,7 +9,7 @@ The wiring is deliberately indirect: the real ``build_camera`` constructs
 ``Picamera2(camera_num)`` with no reference to the IMX500, so a single emulation
 state (frame source + detector + the shared fake IMX500) lives in the
 module-level :data:`_STATE`.  :func:`set_emulation_state` installs it; the fakes
-read from it.  :mod:`birdscanner.detector.emulation.install` registers these
+read from it.  :mod:`dev.emulation.install` registers these
 objects as the ``picamera2`` / ``libcamera`` modules in ``sys.modules``.
 
 Nothing Pi-only is imported here — these objects *are* the stand-ins.
@@ -25,8 +25,8 @@ import numpy as np
 
 from birdscanner.ml.object_detection import get_labels
 
-from birdscanner.detector.emulation.frames import FrameSource
-from birdscanner.detector.emulation.yolo import Detected, Detector
+from dev.emulation.frames import FrameSource
+from dev.emulation.yolo import Detected, Detector
 
 logger = logging.getLogger("tracking")
 

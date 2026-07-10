@@ -10,25 +10,25 @@ loop execute unchanged on a development machine.
 Public pieces:
 
 * :func:`install_fake_camera_modules` — register the fakes in ``sys.modules``
-  before importing the detector (see :mod:`birdscanner.detector.emulation.install`).
+  before importing the detector (see :mod:`dev.emulation.install`).
 * :class:`OnnxYoloDetector` — the off-Pi object detector.
 * :class:`TestImagesSource` / :class:`VideoSource` — frame sources.
 
-Run the emulated detector with ``python -m birdscanner.detector.run_emulated``.
+Run the emulated detector with ``python -m dev.run_emulated``.
 """
 
-from birdscanner.detector.emulation.frames import (
+from dev.emulation.frames import (
     FrameSource,
     TestImagesSource,
     VideoSource,
 )
-from birdscanner.detector.emulation.install import (
+from dev.emulation.install import (
     build_default_detector,
     build_frame_source_from_env,
     install_fake_camera_modules,
     uninstall_fake_camera_modules,
 )
-from birdscanner.detector.emulation.yolo import (
+from dev.emulation.yolo import (
     COCO_CLASSES,
     Detected,
     Detector,

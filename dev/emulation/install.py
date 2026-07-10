@@ -16,7 +16,7 @@ from pathlib import Path
 from types import ModuleType
 from typing import Dict, List, Optional
 
-from birdscanner.detector.emulation.fakes import (
+from dev.emulation.fakes import (
     FakeIMX500,
     FakeMappedArray,
     FakeNetworkIntrinsics,
@@ -27,12 +27,12 @@ from birdscanner.detector.emulation.fakes import (
     build_emulation_state,
     set_emulation_state,
 )
-from birdscanner.detector.emulation.frames import (
+from dev.emulation.frames import (
     FrameSource,
     TestImagesSource,
     VideoSource,
 )
-from birdscanner.detector.emulation.yolo import Detector, OnnxYoloDetector
+from dev.emulation.yolo import Detector, OnnxYoloDetector
 
 # The sys.modules keys the fakes occupy, so they can be cleanly removed again.
 _FAKE_MODULE_NAMES = (
@@ -134,7 +134,8 @@ def uninstall_fake_camera_modules() -> None:
 
 def _test_images() -> List[Path]:
     """Return the bundled ``tests/_test_images`` JPEG paths (may be empty)."""
-    repo_root = Path(__file__).resolve().parents[3]
+    # This file lives at dev/emulation/install.py, so the repo root is two up.
+    repo_root = Path(__file__).resolve().parents[2]
     image_dir = repo_root / "tests" / "_test_images"
     return sorted(image_dir.glob("*.jpg"))
 

@@ -20,7 +20,7 @@ Configuration (env vars):
 
 Usage::
 
-    FAKE_CAMERA_SOURCE=feeder_clip.mp4 python -m birdscanner.detector.run_emulated
+    FAKE_CAMERA_SOURCE=feeder_clip.mp4 python -m dev.run_emulated
 """
 
 import logging
@@ -28,7 +28,7 @@ import os
 import sys
 from typing import Optional
 
-from birdscanner.detector.emulation.install import (
+from dev.emulation.install import (
     build_default_detector,
     build_frame_source_from_env,
     install_fake_camera_modules,

@@ -11,8 +11,8 @@ from typing import Callable, Iterator, List, Optional
 import numpy as np
 import pytest
 
-from birdscanner.detector.emulation.frames import FrameSource
-from birdscanner.detector.emulation.yolo import Detected, Detector
+from dev.emulation.frames import FrameSource
+from dev.emulation.yolo import Detected, Detector
 
 
 class SolidFrameSource:
@@ -53,7 +53,7 @@ def camera_emulator() -> Iterator[Callable[..., None]]:
     optional ``max_frames`` cap) and registers the fakes.  Import
     ``birdscanner.detector.camera`` / ``.main`` only *after* calling it.
     """
-    from birdscanner.detector.emulation.install import (
+    from dev.emulation.install import (
         install_fake_camera_modules,
         uninstall_fake_camera_modules,
     )

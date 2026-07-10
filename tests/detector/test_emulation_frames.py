@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from birdscanner.detector.emulation.frames import TestImagesSource, VideoSource
+from dev.emulation.frames import TestImagesSource, VideoSource
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _TEST_IMAGES = sorted((_REPO_ROOT / "tests" / "_test_images").glob("*.jpg"))

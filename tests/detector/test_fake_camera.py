@@ -8,14 +8,14 @@ coordinate conversion, the frame-pump lifecycle, and the writable MappedArray.
 import numpy as np
 import pytest
 
-from birdscanner.detector.emulation.fakes import (
+from dev.emulation.fakes import (
     FakeMappedArray,
     FakePicam2,
     FakeRequest,
     build_emulation_state,
     set_emulation_state,
 )
-from birdscanner.detector.emulation.yolo import Detected
+from dev.emulation.yolo import Detected
 
 
 class _SolidSource:

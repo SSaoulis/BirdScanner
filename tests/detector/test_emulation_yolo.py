@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from birdscanner.detector.emulation.yolo import (
+from dev.emulation.yolo import (
     COCO_CLASSES,
     Detected,
     OnnxYoloDetector,
