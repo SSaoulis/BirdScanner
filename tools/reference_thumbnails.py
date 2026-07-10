@@ -12,10 +12,13 @@ This is a dev-only build tool, **not** part of the BirdScanner runtime.
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import Any
 
 from PIL import Image  # dev-only tool; Pillow ships in the project .venv
+
+_LOGGER = logging.getLogger(__name__)
 
 # Reference thumbnails: 128px is enough for a crisp retina render at ~40px
 # display, at a fraction of the original's bytes.
@@ -45,8 +48,9 @@ def make_thumbnail(src_path: str, dest_path: str, size: int = THUMBNAIL_SIZE) ->
 
     Opens the source with Pillow, center-crops to a square, resizes to
     ``size``x``size`` and saves a JPEG. Any failure (unreadable/corrupt source)
-    is swallowed and reported as ``False`` so a single bad image never aborts a
-    build.
+    is logged and reported as ``False`` so a single bad image never aborts a
+    build — but the warning means a wholesale "Generated 0 thumbnails" can no
+    longer silently hide a real, systemic failure.
 
     Args:
         src_path: Absolute path to the source image on disk.
@@ -68,7 +72,10 @@ def make_thumbnail(src_path: str, dest_path: str, size: int = THUMBNAIL_SIZE) ->
             os.makedirs(os.path.dirname(dest_path), exist_ok=True)
             square.save(dest_path, "JPEG", quality=THUMBNAIL_QUALITY)
         return True
-    except Exception:
+    except Exception as exc:
+        _LOGGER.warning(
+            "Failed to make thumbnail %s -> %s: %s", src_path, dest_path, exc
+        )
         return False
 
 
