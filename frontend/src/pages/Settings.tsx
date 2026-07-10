@@ -167,6 +167,14 @@ export function Settings() {
           onChange={(v) => setField("stability_seconds", v)}
           restart={restartFields.has("stability_seconds")}
         />
+        <ChipsField
+          label="Ignore these object types"
+          placeholder="Add object type…"
+          help="The camera detects all sorts of objects, not just birds. List the ones to drop before tracking so their false positives don't fill the logs (e.g. “bench”). Case-insensitive."
+          value={form.excluded_classes}
+          onChange={(v) => setField("excluded_classes", v)}
+          restart={restartFields.has("excluded_classes")}
+        />
       </Section>
 
       <Section title="Saving" eyebrow="What gets kept">
@@ -540,12 +548,14 @@ function ChipsField({
   value,
   onChange,
   restart,
+  placeholder = "Add species…",
 }: {
   label: string;
   help: string;
   value: string[];
   onChange: (v: string[]) => void;
   restart?: boolean;
+  placeholder?: string;
 }) {
   const [draft, setDraft] = useState("");
 
@@ -579,7 +589,7 @@ function ChipsField({
         <input
           type="text"
           value={draft}
-          placeholder="Add species…"
+          placeholder={placeholder}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter" || e.key === ",") {

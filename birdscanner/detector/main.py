@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from birdscanner.ml.object_detection import (
+    filter_excluded_detections,
     parse_detections,
     get_labels,
 )
@@ -183,12 +184,19 @@ def _run_capture_loop(
         # with an in-flight capture.
         with camera.crop_controller.camera_lock:
             metadata = camera.picam2.capture_metadata()
-            state["last_results"] = parse_detections(
+            results = parse_detections(
                 metadata,
                 camera.imx500,
                 camera.intrinsics,
                 app_config.threshold,
                 camera.picam2,
+            )
+            # Drop excluded object-detection classes (e.g. "bench") before they
+            # reach the tracker or drawing, so false positives never spawn tracks
+            # that flood the logs. Read live from config so the Settings page can
+            # edit the exclude list without a restart.
+            state["last_results"] = filter_excluded_detections(
+                results, labels, app_config.excluded_classes
             )
 
 

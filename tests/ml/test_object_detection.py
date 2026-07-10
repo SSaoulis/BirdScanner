@@ -9,7 +9,12 @@ import numpy as np
 import pytest
 
 import birdscanner.ml.object_detection as od
-from birdscanner.ml.object_detection import Detection, get_labels, parse_detections
+from birdscanner.ml.object_detection import (
+    Detection,
+    filter_excluded_detections,
+    get_labels,
+    parse_detections,
+)
 
 
 class _FakeIMX500:
@@ -96,3 +101,30 @@ def test_detection_set_box():
     assert detection.box is None
     detection.set_box((1, 2, 3, 4))
     assert detection.box == (1, 2, 3, 4)
+
+
+def _det(category):
+    """A Detection carrying only the class index (all filter needs)."""
+    return Detection(coords=np.zeros(4), category=category, conf=0.9, metadata={})
+
+
+_LABELS = ["bird", "bench", "person"]
+
+
+def test_filter_excluded_drops_matching_class_case_insensitively():
+    """Detections whose label is excluded (any case) are removed."""
+    dets = [_det(0), _det(1), _det(2)]  # bird, bench, person
+    kept = filter_excluded_detections(dets, _LABELS, {"Bench"})
+    assert [int(d.category) for d in kept] == [0, 2]
+
+
+def test_filter_excluded_empty_list_returns_input_unchanged():
+    """An empty exclude set is a no-op that returns the same list object."""
+    dets = [_det(0), _det(1)]
+    assert filter_excluded_detections(dets, _LABELS, set()) is dets
+
+
+def test_filter_excluded_keeps_out_of_range_category():
+    """A category index outside the label list is kept (guarded downstream)."""
+    dets = [_det(99)]
+    assert filter_excluded_detections(dets, _LABELS, {"bench"}) == dets
