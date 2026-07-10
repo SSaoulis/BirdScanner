@@ -81,6 +81,27 @@ def test_ignore_species_rejects_non_string_list() -> None:
         merge_settings(default_settings(), {"ignore_species": [1, 2]})
 
 
+def test_default_excluded_classes_drops_bench() -> None:
+    # The classic false-positive class is excluded out of the box.
+    assert "bench" in default_settings().excluded_classes
+
+
+def test_excluded_classes_is_a_live_field() -> None:
+    assert "excluded_classes" in LIVE_FIELDS
+
+
+def test_excluded_classes_trims_and_dedupes() -> None:
+    merged = merge_settings(
+        default_settings(), {"excluded_classes": [" bench ", "bench", "", "car"]}
+    )
+    assert merged.excluded_classes == ["bench", "car"]
+
+
+def test_excluded_classes_rejects_non_string_list() -> None:
+    with pytest.raises(ValueError, match="excluded_classes must be a list of strings"):
+        merge_settings(default_settings(), {"excluded_classes": [1, 2]})
+
+
 def test_default_location_is_unset() -> None:
     settings = default_settings()
     assert settings.latitude is None

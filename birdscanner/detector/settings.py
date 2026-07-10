@@ -46,6 +46,10 @@ class Settings:
             (applied live).
         ignore_species: Species names that are never saved even when classified
             (matched case-insensitively; applied live).
+        excluded_classes: Object-detection (YOLO/COCO) class labels dropped
+            before tracking, so false positives on unwanted classes (e.g.
+            ``"bench"``) never enter the tracker/logs (matched
+            case-insensitively; applied live).
         stability_seconds: Seconds a track must be stable before classification
             fires (``config.object_duration_threshold``; requires restart).
         image_dir: Root directory saved images/clips are written to (requires
@@ -68,6 +72,7 @@ class Settings:
     detection_threshold: float
     classification_threshold: float
     ignore_species: list[str]
+    excluded_classes: list[str]
     stability_seconds: float
     image_dir: str
     video_save: bool
@@ -86,6 +91,7 @@ LIVE_FIELDS: frozenset[str] = frozenset(
         "detection_threshold",
         "classification_threshold",
         "ignore_species",
+        "excluded_classes",
         "debug",
     }
 )
@@ -102,6 +108,7 @@ _POSITIVE_FLOAT_FIELDS = frozenset(
     {"stability_seconds", "video_pre_roll_seconds", "video_post_roll_seconds"}
 )
 _BOOL_FIELDS = frozenset({"video_save", "multithread", "debug"})
+_STRING_LIST_FIELDS = frozenset({"ignore_species", "excluded_classes"})
 # Optional coordinate fields: None (unset) is allowed, else within (lo, hi) degrees.
 _RANGED_OPTIONAL_FLOAT_FIELDS: dict[str, tuple[float, float]] = {
     "latitude": (-90.0, 90.0),
@@ -122,6 +129,7 @@ def default_settings() -> Settings:
         detection_threshold=app_config.threshold,
         classification_threshold=DEFAULT_SAVE_CONFIDENCE_THRESHOLD,
         ignore_species=[],
+        excluded_classes=sorted(app_config.excluded_classes),
         stability_seconds=app_config.object_duration_threshold,
         image_dir=IMAGE_DIR,
         video_save=app_config.video.save,
@@ -182,10 +190,10 @@ def _as_optional_ranged_float(
     return number
 
 
-def _as_species_list(value: Any) -> list[str]:
-    """Coerce ``value`` to a de-duplicated list of non-empty species strings."""
+def _as_string_list(name: str, value: Any) -> list[str]:
+    """Coerce ``value`` to a de-duplicated list of non-empty, trimmed strings."""
     if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
-        raise ValueError("ignore_species must be a list of strings")
+        raise ValueError(f"{name} must be a list of strings")
     seen: dict[str, None] = {}
     for item in value:
         trimmed = item.strip()
@@ -205,8 +213,8 @@ def _coerce_field(name: str, value: Any) -> Any:
     if name in _RANGED_OPTIONAL_FLOAT_FIELDS:
         lo, hi = _RANGED_OPTIONAL_FLOAT_FIELDS[name]
         return _as_optional_ranged_float(name, value, lo, hi)
-    if name == "ignore_species":
-        return _as_species_list(value)
+    if name in _STRING_LIST_FIELDS:
+        return _as_string_list(name, value)
     if name == "image_dir":
         text = str(value).strip()
         if not text:

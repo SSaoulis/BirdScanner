@@ -8,7 +8,11 @@ parsing of the IMX500 inference tensor. Supporting concerns live elsewhere:
 - ``classification_pipeline`` — species classification dispatch and persistence
 """
 
+from typing import Iterable
+
 import numpy as np
+
+from birdscanner.ml.detection_utils import label_for_category
 
 # Most recent set of parsed detections; returned as a fallback when a frame
 # yields no inference output so the live loop always has something to draw.
@@ -121,3 +125,44 @@ def get_labels(intrinsics) -> list:
     labels = intrinsics.labels
     labels = [label for label in labels if label and label != "-"]
     return labels
+
+
+def filter_excluded_detections(
+    detections: list,
+    labels: list,
+    excluded: Iterable[str],
+) -> list:
+    """Drop detections whose object-detection class is in the exclude list.
+
+    The IMX500 YOLO model emits every COCO object class it sees (bench, person,
+    car, ...), not just birds. False positives on unwanted classes otherwise
+    enter the tracker — creating tracks that spam the ``tracking`` logs with
+    stable/deleted events and draw boxes on the preview. Filtering them here, at
+    the single point the parsed detections re-enter the pipeline, keeps them out
+    of the tracker, the logs, the drawing, and classification entirely.
+
+    Matching is case-insensitive against the (filtered) label list. A detection
+    whose category index is out of range for ``labels`` is kept (it is handled
+    later by the out-of-range guard in the classification pipeline).
+
+    Args:
+        detections: Detection objects for the current frame.
+        labels: Class label strings (index-aligned with ``detection.category``).
+        excluded: Class labels to drop (compared lower-cased). Empty means keep
+            everything.
+
+    Returns:
+        The detections whose class is not excluded (the same list object when
+        nothing is excluded, so the common case allocates nothing).
+    """
+    excluded_lower = {name.lower() for name in excluded}
+    if not excluded_lower:
+        return detections
+
+    kept = []
+    for detection in detections:
+        label = label_for_category(labels, int(detection.category))
+        if label is not None and label.lower() in excluded_lower:
+            continue
+        kept.append(detection)
+    return kept

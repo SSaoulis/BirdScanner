@@ -51,6 +51,7 @@ def apply_settings_to_config(settings: Settings) -> None:
         settings: The settings loaded for this boot.
     """
     app_config.threshold = settings.detection_threshold
+    app_config.excluded_classes = {name.lower() for name in settings.excluded_classes}
     app_config.object_duration_threshold = settings.stability_seconds
     app_config.multithread = settings.multithread
     app_config.debug = settings.debug
@@ -142,6 +143,9 @@ class SettingsController:
     def _apply_live(self, settings: Settings) -> None:
         """Apply the live-safe fields of ``settings`` to the running pipeline."""
         app_config.threshold = settings.detection_threshold
+        app_config.excluded_classes = {
+            name.lower() for name in settings.excluded_classes
+        }
         apply_settings_to_context(settings, self._context)
         _set_log_level(settings.debug)
 
