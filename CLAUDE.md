@@ -33,6 +33,18 @@ command-line flags. Edit the values on the module-level `config` instance:
 - `save_video` — save a short mp4 clip per detection (best-frame still is always saved); defaults to `True`. `video_pre_roll_seconds` / `video_post_roll_seconds` size the clip (defaults `3.0` / `4.0`)
 - plus `model`, `fps`, `bbox_normalization`, `bbox_order`, `threshold`, `ignore_dash_labels`, `preserve_aspect_ratio`, `labels`, `print_intrinsics`
 
+### Run the app OFF the Pi (emulated camera, for local dev/debugging)
+```bash
+# needs assets/models/yolo11n.onnx (dev-only, out-of-band — see requirements.dev.txt)
+FAKE_CAMERA_SOURCE=some_feeder_clip.mp4 python -m birdscanner.detector.run_emulated
+# or, with no source set, it cycles the bundled tests/_test_images stills
+python -m birdscanner.detector.run_emulated
+```
+This installs fake `picamera2`/`libcamera` modules (backed by a real YOLO11n ONNX object detector)
+and then runs the real `main()`, so the whole detector — classifier, geomodel prior, SQLite writer,
+control server, clip encoding — runs locally and writes real detections. Point the API at the same
+`DB_PATH`/`IMAGE_DIR` to watch them in the UI. See the `birdscanner/detector/emulation` section below.
+
 ### Tests
 ```bash
 # All tests
@@ -74,7 +86,15 @@ fixtures live in the nearest `conftest.py`:
   Both are module-scoped so the large JPEGs / ONNX session are loaded once per module.
 Camera/crop fakes stay local to their single test file (`test_camera_server.py`,
 `test_crop_controller.py`) since they are not shared and are constructed at parametrize
-time (before fixtures exist).
+time (before fixtures exist). The **off-Pi camera emulator** (`birdscanner/detector/emulation`)
+has its own tests under `tests/detector/`: `test_capture_loop.py` (the payoff — installs the
+fakes via the `camera_emulator` fixture in `tests/detector/conftest.py`, then runs the **real**
+`build_camera` + `_run_capture_loop` off-Pi with a deterministic stub detector, asserting a bird
+flows all the way to a written `DetectionRecord` — this is what covers `camera.py` + `main.py`'s
+loop), `test_fake_camera.py` (the fakes in isolation), `test_emulation_yolo.py` (`OnnxYoloDetector`
+postprocessing with synthetic tensors; the real-model case skips when `yolo11n.onnx` is absent),
+and `test_emulation_frames.py` (the frame sources). The `camera_emulator` fixture pops the fake
+`sys.modules` entries on teardown so the global mutation never leaks into other tests.
 
 **End-to-end detection tests** — `tests/_test_images/` holds a small labelled fixture
 set (`Erithacus_rubecula.jpg`, `Eurasian_jay.jpg`) plus `bounding_box_locations.json`
@@ -230,7 +250,9 @@ imports. It has four layered subpackages plus the consolidated assets and dev to
 birdscanner/
   detector/   Pi-only camera + hardware control and the entry point (main, camera,
               gating, config, camera_server, crop, crop_controller, settings,
-              settings_controller, track_logging, paths, video_recorder)
+              settings_controller, track_logging, paths, video_recorder,
+              run_emulated + emulation/ — the off-Pi camera emulator, dev-only,
+              imports no picamera2/libcamera)
   ml/         platform-independent inference (object_detection, detection_utils,
               tracking, classification, classification_pipeline, best_frame, geomodel)
   api/        FastAPI REST API + routers (was backend/)
@@ -352,6 +374,13 @@ from `detector/` or `api/`.
 - `prepare_intrinsics(imx500)` validates the object-detection task and iterates `vars(app_config.intrinsics)`, so optional intrinsic fields left as `None` do not clobber the network intrinsics defaults (and `print_intrinsics` prints + exits)
 - `build_camera(imx500, intrinsics)` loads the persisted crop region via `load_crop_region(crop_config_path(), default_crop_region(...))` (default = the historical 900×900 at `(4/13, 5/10)` of the 4056×3040 sensor, aimed at the feeder), sizes the `main` stream to the crop's aspect ratio (`main_stream_size_for_crop`), applies `vflip=True, hflip=True` (camera is mounted upside-down), starts the camera, and builds the `CropController`. The camera config is built through a `build_camera_config(main_size, scaler_crop)` closure that centralises every picamera2 knob so `CropController` can rebuild it on a reconfigure. **Only when `config.video.full_fov` is enabled** does it request the full-FOV **`raw`** stream (via `_full_fov_raw_stream(picam2)`, which picks the 2028×1520 mode's **unpacked** format so `make_array("raw")` yields a directly-demosaicable array) — the uncropped source for the full-FOV video clip (`raw_frame.py`). In the default cropped-clip mode `raw_stream` is `None` and the `raw=` key is omitted from the config, so the explicit unpacked-raw request (and its ~+14 MB CMA premium across the 6 buffers vs. packed) is not paid — freeing headroom that offsets the `DEFAULT_LONG_SIDE` 640→1280 bump. The raw stream is already allocated regardless, so requesting it explicitly only makes it accessible in the callback. `_full_fov_raw_stream` **must not** read `picam2.sensor_modes`: that property lazily calls `configure()` (allocating full-res DMA buffers) for **every** sensor mode, which exhausts the container's host-global CMA pool and crashes bring-up with `OSError: [Errno 12] Cannot allocate memory` **before** `picam2.start()` (this was the PR #81 regression). Instead it enumerates raw formats via the **non-allocating** `picam2.camera.generate_configuration([libcamera.StreamRole.Raw])` (the cheap part of `sensor_modes`) and derives the unpacked format with `SensorFormat(name).unpacked`; passing an explicit size **and** format means `configure()`/`start()` never re-consults `sensor_modes` either. On any failure it falls back to a size-only spec (clips degrade to the cropped `main` frame, never crash). Returns a `Camera` bundle (picam2 + imx500 + intrinsics + crop_controller). This module is Pi-only (imports `libcamera`/`picamera2`); no test imports it
 
+**`birdscanner/detector/emulation/` + `birdscanner/detector/run_emulated.py`** — the **off-Pi camera emulator** (dev/test-only; imports **no** picamera2/libcamera — it *is* the stand-in). It lets the **real** `camera.py` bring-up and the **real** `main._run_capture_loop` execute off the Pi, which is what finally gives that live path test coverage (previously the only 0%-coverage code) and enables local development without the hardware. Mechanism: install fake `libcamera`/`picamera2` **modules** into `sys.modules` **before** `birdscanner.detector.camera` is imported (it imports them at module load), so the real code runs unchanged against the fakes. `camera.py`/`main.py` are **not modified**.
+- `emulation/yolo.py` — `OnnxYoloDetector`: the real off-Pi object detector (there is no off-Pi `.rpk`). Runs a stock YOLO11n `.onnx` via the already-pinned `onnxruntime`, decoding the `(1, 84, 8400)` output (letterbox → NMS) into `Detected(box_xyxy_norm, score, coco_name)`. A `Detector` Protocol lets tests inject a deterministic stub instead of the model. **Label-alignment gotcha:** it emits the class *name*, not the raw YOLO index — the fake IMX500 re-indexes by name against the intrinsics label list, because the `.rpk` and the generic export don't share a label ordering (a raw index would file a detected bird under the wrong class and it would never gate as `"bird"`). `LetterboxTransform` is the value object bundling the scale/pad + its `to_normalized(box)` inverse.
+- `emulation/frames.py` — `FrameSource` Protocol + `TestImagesSource` (cycles the bundled `tests/_test_images` JPEGs — zero setup, deterministic) and `VideoSource` (reads an mp4/mov via `cv2`, BGR→RGB, optional loop). Both yield `(H, W, 3)` uint8 RGB.
+- `emulation/fakes.py` — the module fakes mirroring exactly the surface the real code uses: `FakeIMX500` (`get_outputs` emits the `.rpk` tensor convention — xy-ordered xyxy scaled to `input_h`, classes name-mapped to the filtered intrinsics labels — so the real `parse_detections`/`_decode_boxes` run faithfully; `convert_inference_coords` scales the decoded box to the fake `main` size), `FakeNetworkIntrinsics`, `FakePicam2` (its `capture_metadata` is the frame pump: pull next frame → resize to `main` size → run detector → fire `pre_callback` → return metadata; a `max_frames` cap raises `KeyboardInterrupt` so the real loop unwinds via `main`'s existing shutdown), `FakeRequest`, `FakeMappedArray` (writable `.array`), plus `FakeTransform`/`FakeSensorFormat`. A module-level `_EmulationState` (frame source + detector + the shared `FakeIMX500`) is read by the fakes, since `build_camera` constructs `Picamera2(camera_num)` with no reference to the IMX500.
+- `emulation/install.py` — `install_fake_camera_modules(frame_source, detector, max_frames=None)` registers the fakes in `sys.modules` and installs the state; `uninstall_fake_camera_modules()` reverses it (tests clean up via the `camera_emulator` fixture in `tests/detector/conftest.py`).
+- `run_emulated.py` — the dev entry point: `python -m birdscanner.detector.run_emulated`. Installs the fakes from env (`FAKE_CAMERA_SOURCE` = a video path, else the bundled test images; `YOLO_ONNX_PATH` default `assets/models/yolo11n.onnx`; `FAKE_CAMERA_MAX_FRAMES` optional cap) **before** importing `main`, then runs the real `main()` — so the ConvNeXt classifier, geomodel prior, SQLite writer, control server, and clip encoding all run for real. Point the API at the same `DB_PATH`/`IMAGE_DIR` to watch the emulated detections appear in the UI. Needs `assets/models/yolo11n.onnx` (out-of-band, git-ignored like the classifier ONNX — export with `yolo export model=yolo11n.pt format=onnx`; see `requirements.dev.txt`); absent, the emulator + its tests skip/degrade gracefully.
+
 **`birdscanner/detector/gating.py`** — classification-pipeline wiring:
 - `build_gating(intrinsics)` builds the stable-track gating machinery and returns a `Gating` bundle (tracker, best-frame selector, video recorder). It constructs the `StableDetectionTracker` (wired to a `TrackingLogger` for lifecycle logging), a `BestFrameSelector` freed per-track via the tracker's combined `on_track_deleted` callback (a non-optional local captured by that closure so it never dereferences a possibly-`None` selector), and — when `save_video` is set — a `VideoRecorder`. `min_stable_frames(fps)` converts `object_duration_threshold` × fps into a frame count (floored at 1, so `object_duration_threshold <= 0` classifies after a single stable frame)
 - `build_manager(classifier, gating, detection_writer, geo_adjuster=None)` assembles the `PipelineContext` and `ClassificationManager` from the `Gating` bundle; the recorder's `add_frame`/`trigger` are injected as `video_frame_fn`/`record_fn` (keeping picamera2 out of `ml/`), and the optional `geo_adjuster` is set on the context. It builds the async manager with an explicit `queue_maxsize=CLASSIFICATION_QUEUE_MAXSIZE` (module constant, **32**) so the classification backlog is bounded and excess frames are dropped rather than accumulated — see the `ClassificationManager` note above for why an unbounded queue leaked memory and stalled the camera. Imports `ml/`, `config`, `track_logging`, `video_recorder`, `db/writer`, and `db/geo_prior_store` — no picamera2, so it is importable without a camera
@@ -429,6 +458,7 @@ Paths are resolved by `birdscanner/detector/paths.py` (env-overridable via `ASSE
 | Geomodel (spatio-temporal prior) | `assets/models/BirdNET+_Geomodel_V3.0.3_Global_12K_FP32.onnx` (out-of-band like the classifier ONNX; when absent, `refresh_geo_priors` logs a warning and startup continues without a prior) |
 | Geomodel labels | `assets/labels/BirdNET+_Geomodel_V3.0.3_Global_12K_Labels.txt` (tracked) |
 | Geomodel↔classifier crosswalk | `assets/labels/geomodel_classifier_map.json` (tracked, curated) |
+| Off-Pi emulator object detector (**dev-only**, not needed on the Pi) | `assets/models/yolo11n.onnx` (out-of-band like the classifier ONNX; used only by `birdscanner/detector/emulation` / `run_emulated`; export with `yolo export model=yolo11n.pt format=onnx`. Absent → emulator + its tests skip) |
 
 ### Bounding box format
 
