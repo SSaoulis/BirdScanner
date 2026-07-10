@@ -29,6 +29,7 @@ from birdscanner.ml.classification_pipeline import (
     PipelineContext,
 )
 from birdscanner.ml.geomodel import GeoPriorAdjuster
+from birdscanner.ml.object_detection import get_labels
 
 from birdscanner.detector.config import config as app_config
 from birdscanner.detector.track_logging import TrackingLogger
@@ -88,7 +89,7 @@ def build_gating(intrinsics: Any) -> Gating:
         or int(getattr(intrinsics, "inference_rate", 0) or 0)
         or 1
     )
-    track_logger = TrackingLogger()
+    track_logger = TrackingLogger(get_labels(intrinsics))
     selector = BestFrameSelector()
 
     def on_track_deleted(track: StableTrack) -> None:
