@@ -409,3 +409,50 @@ def test_compute_coverage_populates_all_buckets(monkeypatch):
     assert set(report["no_images"]) == {"No image bird", "Missing bird"}
     assert set(report["no_scientific_name"]) == {"No sci bird", "Missing bird"}
     assert "Good bird" not in report["missing"]
+
+
+# --- configurable output directory -----------------------------------------
+
+
+def test_parse_args_output_dir_flag_and_env_default(monkeypatch):
+    """``--output-dir`` wins; otherwise the default is $SPECIES_REFERENCE_DIR."""
+    # Explicit flag always wins, regardless of the environment.
+    assert builder.parse_args(["--output-dir", "/tmp/bank"]).output_dir == "/tmp/bank"
+    # With no flag, the default is read from the env at parse time.
+    monkeypatch.setenv("SPECIES_REFERENCE_DIR", "/data/species_reference")
+    assert builder.parse_args([]).output_dir == "/data/species_reference"
+
+
+def test_main_writes_bank_to_output_dir(monkeypatch, tmp_path):
+    """``--output-dir`` redirects the manifest/coverage into the chosen bank."""
+    # main() mutates these module globals via _set_output_dir; register them so
+    # monkeypatch restores the repo defaults on teardown (test isolation).
+    for name in ("OUTPUT_DIR", "MANIFEST_PATH", "COVERAGE_PATH"):
+        monkeypatch.setattr(builder, name, getattr(builder, name))
+    monkeypatch.setattr(builder, "load_class_labels", lambda: ["Arctic tern"])
+    monkeypatch.setattr(builder, "ensure_overrides_seed", lambda: {})
+    _patch_fetches(monkeypatch)
+
+    bank = tmp_path / "bank"
+    builder.main(["--output-dir", str(bank), "--throttle", "0"])
+
+    assert (bank / "manifest.json").is_file()
+    assert (bank / "coverage_report.json").is_file()
+    # The image landed under the chosen bank, not the repo.
+    assert (bank / "images" / "arctic-tern" / "0.jpg").is_file()
+
+
+def test_set_output_dir_leaves_overrides_repo_anchored(monkeypatch, tmp_path):
+    """Redirecting the bank must not move the curated overrides.json."""
+    for name in ("OUTPUT_DIR", "MANIFEST_PATH", "COVERAGE_PATH"):
+        monkeypatch.setattr(builder, name, getattr(builder, name))
+    repo_overrides = builder.OVERRIDES_PATH
+
+    builder._set_output_dir(str(tmp_path / "bank"))
+
+    assert builder.OUTPUT_DIR == str(tmp_path / "bank")
+    assert builder.MANIFEST_PATH == os.path.join(
+        str(tmp_path / "bank"), "manifest.json"
+    )
+    # overrides.json is source, not an artifact: it stays anchored to the repo.
+    assert builder.OVERRIDES_PATH == repo_overrides

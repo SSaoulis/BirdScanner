@@ -885,7 +885,38 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         metavar="SECONDS",
         help=f"Seconds to sleep between species (default {THROTTLE_SECONDS}).",
     )
+    parser.add_argument(
+        "--output-dir",
+        default=os.environ.get("SPECIES_REFERENCE_DIR") or OUTPUT_DIR,
+        metavar="DIR",
+        help=(
+            "Reference-bank directory to build/backfill into. Defaults to "
+            "$SPECIES_REFERENCE_DIR, else the in-repo bank. Point it at the "
+            "deployed bank (e.g. the data volume) to backfill thumbnails there "
+            "directly instead of building the repo bank and copying. "
+            "overrides.json is always read from the repo, not this directory."
+        ),
+    )
     return parser.parse_args(argv)
+
+
+def _set_output_dir(output_dir: str) -> None:
+    """Point the artifact-path globals at a chosen reference-bank directory.
+
+    Redirects the *output* paths (bank root, manifest, coverage report) so a
+    build/backfill can target a deployed bank (e.g. the data volume) instead of
+    the in-repo bank. Every helper reads these as module globals, so no function
+    signatures change. ``OVERRIDES_PATH`` is deliberately left untouched:
+    ``overrides.json`` is curated source, not a build artifact, and is always
+    read from the repo.
+
+    Args:
+        output_dir: The reference-bank root directory to write into.
+    """
+    global OUTPUT_DIR, MANIFEST_PATH, COVERAGE_PATH  # module-singleton paths
+    OUTPUT_DIR = output_dir
+    MANIFEST_PATH = os.path.join(output_dir, "manifest.json")
+    COVERAGE_PATH = os.path.join(output_dir, "coverage_report.json")
 
 
 def main(argv: Optional[list[str]] = None) -> None:
@@ -895,6 +926,7 @@ def main(argv: Optional[list[str]] = None) -> None:
         argv: Optional argument vector (defaults to ``sys.argv``).
     """
     args = parse_args(argv)
+    _set_output_dir(args.output_dir)
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     labels = load_class_labels()
