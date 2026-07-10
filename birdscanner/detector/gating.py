@@ -39,6 +39,16 @@ from birdscanner.db.writer import DetectionWriter
 
 logger = logging.getLogger("tracking")
 
+# Upper bound on the async classification queue. The queue holds full-resolution
+# frames (~5 MB each at ``DEFAULT_LONG_SIDE=1280``), so it must be bounded: when
+# the CPU classifier falls behind a busy feeder, ``ClassificationManager.process``
+# drops excess frames instead of growing without limit (an unbounded queue leaked
+# memory until the camera pipeline stalled). Dropping is safe — the
+# ``BestFrameSelector`` retains each track's best frame independently, so a stable
+# track still classifies from its best observed frame even if intermediate
+# detections are dropped. 32 caps in-flight RAM at ~160 MB worst case.
+CLASSIFICATION_QUEUE_MAXSIZE = 32
+
 
 @dataclass
 class Gating:
@@ -168,5 +178,6 @@ def build_manager(
     manager = ClassificationManager(
         context,
         use_multithreading=app_config.multithread,
+        queue_maxsize=CLASSIFICATION_QUEUE_MAXSIZE,
     )
     return manager
