@@ -11,6 +11,7 @@ with the injected fakes from ``tests/ml/conftest.py`` — no camera, model, or D
 import json
 import sys
 import threading
+import time
 import types
 from typing import cast
 
@@ -67,6 +68,60 @@ def test_async_worker_survives_a_raising_detection(monkeypatch):
         assert len(calls) == 2
     finally:
         manager.stop()
+
+
+def _wait_until(predicate, timeout: float = 5.0) -> bool:
+    """Poll ``predicate`` until true or the timeout elapses; return the result."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if predicate():
+            return True
+        time.sleep(0.01)
+    return predicate()
+
+
+def test_async_full_queue_drops_items(monkeypatch):
+    """A full bounded queue must drop new items rather than block or grow.
+
+    This is the backpressure that keeps the queue (which holds full-resolution
+    frames) from leaking memory when the classifier falls behind. With the worker
+    occupied and the single queue slot filled, a third ``process`` must be dropped
+    — never enqueued — so only the first two items are ever dispatched.
+    """
+    gate = threading.Event()
+    dispatched: list = []
+
+    def fake_dispatch(item, **_kwargs):
+        dispatched.append(item)
+        gate.wait(timeout=5.0)  # occupy the worker so the queue can fill
+
+    monkeypatch.setattr(
+        cp, "process_single_detection_with_stable_tracks", fake_dispatch
+    )
+
+    manager = ClassificationManager(
+        PipelineContext(classifier=cast(Classifier, object())),
+        use_multithreading=True,
+        queue_maxsize=1,
+    )
+    item_a, item_b, item_c = ("a",), ("b",), ("c",)
+    try:
+        manager.process(item_a)  # dequeued; worker blocks in fake_dispatch
+        assert _wait_until(lambda: dispatched == [item_a]), "worker never started"
+
+        manager.process(item_b)  # fills the single queue slot
+        manager.process(item_c)  # queue full -> must be dropped
+        assert manager._queue is not None and manager._queue.qsize() == 1
+
+        gate.set()  # let the worker drain A then B
+        # Drain fully before stop(): stop() sets the stop-event then does a
+        # blocking put(None), which would hang if the queue were still full.
+        assert _wait_until(lambda: dispatched == [item_a, item_b]), "did not drain"
+    finally:
+        manager.stop()
+
+    assert item_c not in dispatched
+    assert dispatched == [item_a, item_b]
 
 
 def test_sync_dispatch_swallows_exceptions(monkeypatch):
