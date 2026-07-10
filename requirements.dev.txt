@@ -17,6 +17,11 @@ mypy>=2.0.0
 # nothing) and is compatible with the numpy 1.24.x pinned in the detector reqs.
 opencv-python-headless==4.7.0.72
 
+# Progress bar for the dev-only tools/build_species_reference.py builder (shows
+# per-species rate/ETA over the long reference-bank build). Dev-only; never
+# installed on the Pi / in the Docker images.
+tqdm>=4.66
+
 # Used only by tools/camera_smoke_e2e.py (dev-only Pi SSH smoke test); never
 # installed on the Pi / in the Docker images. matplotlib >=3.7 needs only
 # numpy>=1.20, so it stays compatible with the numpy 1.24.2 pin above and does

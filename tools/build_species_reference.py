@@ -31,8 +31,13 @@ Outputs (all under ``assets/species_reference/``)
 Incremental
 -----------
 Re-running only fills in labels missing from the manifest (or whose image files
-are missing on disk); already-complete species are skipped. Use ``--force`` to
-refetch everything and ``--limit N`` to process only the first N missing labels.
+are missing on disk); already-complete species are skipped. When only an image
+file is missing but the cached text (summary/scientific name/behaviour) is
+intact, that species takes a fast **image-only** path: the thumbnail is
+re-downloaded from the manifest's stored ``source_url`` with **no** Wikipedia /
+Wikidata text calls (one request instead of ~six). A ``tqdm`` progress bar
+tracks the species being processed. Use ``--force`` to refetch everything and
+``--limit N`` to process only the first N missing labels.
 
 Full build (one-time, run by a human; do not run in CI):
 
@@ -56,7 +61,13 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Any, Optional
 
-from PIL import Image  # dev-only tool; Pillow ships in the project .venv
+from tqdm import tqdm  # dev-only tool; progress bar for the long build
+
+from tools.reference_thumbnails import (
+    ensure_thumbnails,
+    make_thumbnail,
+    _thumbnail_rel_path,
+)
 
 # --- Paths -----------------------------------------------------------------
 
@@ -84,11 +95,6 @@ MANIFEST_VERSION = 1
 MANIFEST_SOURCE = "wikipedia+wikidata"
 REQUEST_TIMEOUT = 30
 THROTTLE_SECONDS = 0.5
-# Reference thumbnails: a small square rendition served to gallery/dashboard
-# panels so they never pull the multi-MB full-resolution original into a 40px
-# box. 128px is enough for a crisp retina render at ~40px display.
-THUMBNAIL_SIZE = 128
-THUMBNAIL_QUALITY = 80
 # Section titles we treat as the "behaviour" field, in priority order.
 BEHAVIOUR_SECTION_TITLES = (
     "Behaviour",
@@ -445,101 +451,6 @@ def download_image(source_url: str, dest_path: str) -> bool:
     return True
 
 
-def _thumbnail_rel_path(image_rel_path: str) -> str:
-    """Return the ``*_thumb.jpg`` sibling path for an image's relative path.
-
-    Mirrors the detection ``_thumb.jpg`` naming convention: the thumbnail sits
-    next to the original with a ``_thumb`` suffix before the extension, e.g.
-    ``images/robin/0.jpg`` -> ``images/robin/0_thumb.jpg``.
-
-    Args:
-        image_rel_path: The original image path, relative to the bank root.
-
-    Returns:
-        The thumbnail path relative to the bank root.
-    """
-    base, ext = os.path.splitext(image_rel_path)
-    return f"{base}_thumb{ext or '.jpg'}"
-
-
-def make_thumbnail(src_path: str, dest_path: str, size: int = THUMBNAIL_SIZE) -> bool:
-    """Write a small center-cropped square JPEG thumbnail of an image.
-
-    Opens the source with Pillow, center-crops to a square, resizes to
-    ``size``x``size`` and saves a JPEG. Any failure (unreadable/corrupt source)
-    is swallowed and reported as ``False`` so a single bad image never aborts a
-    build.
-
-    Args:
-        src_path: Absolute path to the source image on disk.
-        dest_path: Absolute destination path for the thumbnail.
-        size: Output edge length in pixels.
-
-    Returns:
-        ``True`` when the thumbnail was written, ``False`` on any error.
-    """
-    try:
-        with Image.open(src_path) as img:
-            square = img.convert("RGB")
-            width, height = square.size
-            side = min(width, height)
-            left = (width - side) // 2
-            top = (height - side) // 2
-            square = square.crop((left, top, left + side, top + side))
-            square = square.resize((size, size), Image.Resampling.LANCZOS)
-            os.makedirs(os.path.dirname(dest_path), exist_ok=True)
-            square.save(dest_path, "JPEG", quality=THUMBNAIL_QUALITY)
-        return True
-    except Exception:
-        return False
-
-
-def ensure_thumbnails(species_map: dict[str, Any], output_dir: str = OUTPUT_DIR) -> int:
-    """Backfill missing reference thumbnails from the on-disk originals.
-
-    For every manifest image that has an original file on disk but no usable
-    thumbnail (``thumbnail_path`` absent, or the thumb file missing), generate
-    the ``*_thumb.jpg`` locally and stamp ``thumbnail_path`` on the entry. This
-    is a pure local resize (no network), so an already-built bank gains
-    thumbnails on a plain re-run without re-downloading anything. Mutates the
-    entries in ``species_map`` in place.
-
-    Args:
-        species_map: The manifest ``species`` map.
-        output_dir: Root of the reference bank; image paths are relative to it.
-
-    Returns:
-        The number of thumbnails generated this pass.
-    """
-    generated = 0
-    for entry in species_map.values():
-        if not isinstance(entry, dict):
-            continue
-        for image in entry.get("images", []):
-            if not isinstance(image, dict):
-                continue
-            rel_path = image.get("path")
-            if not isinstance(rel_path, str) or not rel_path:
-                continue
-            if not os.path.exists(os.path.join(output_dir, rel_path)):
-                continue
-            existing_thumb = image.get("thumbnail_path")
-            if (
-                isinstance(existing_thumb, str)
-                and existing_thumb
-                and os.path.exists(os.path.join(output_dir, existing_thumb))
-            ):
-                continue
-            thumb_rel = _thumbnail_rel_path(rel_path)
-            if make_thumbnail(
-                os.path.join(output_dir, rel_path),
-                os.path.join(output_dir, thumb_rel),
-            ):
-                image["thumbnail_path"] = thumb_rel
-                generated += 1
-    return generated
-
-
 # --- Manifest / overrides persistence --------------------------------------
 
 
@@ -726,6 +637,78 @@ def _file_title_from_url(image_url: str) -> Optional[str]:
     return "File:" + urllib.parse.unquote(name)
 
 
+# --- Image-only incremental refresh ----------------------------------------
+
+
+def _missing_image_entries(entry: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return the entry's image dicts whose original file is missing on disk.
+
+    Args:
+        entry: A manifest species entry.
+
+    Returns:
+        The subset of ``entry["images"]`` whose ``path`` is absent under
+        ``OUTPUT_DIR`` (empty when every original is present).
+    """
+    missing: list[dict[str, Any]] = []
+    for image in entry.get("images", []):
+        rel_path = image.get("path", "")
+        if rel_path and not os.path.exists(os.path.join(OUTPUT_DIR, rel_path)):
+            missing.append(image)
+    return missing
+
+
+def can_refresh_images_only(entry: dict[str, Any]) -> bool:
+    """Whether an incomplete entry can be fixed by re-downloading images alone.
+
+    The fast path for a "just fetch the thumbnails" re-run: holds when the cached
+    text is intact (non-empty ``summary``) and every missing image file still
+    carries a ``source_url``, so no Wikipedia/Wikidata text call is needed.
+
+    Args:
+        entry: A manifest species entry (assumed already known incomplete).
+
+    Returns:
+        ``True`` when :func:`refresh_species_images` alone can restore the entry.
+    """
+    if not entry.get("summary"):
+        return False
+    missing = _missing_image_entries(entry)
+    if not missing:
+        return False
+    return all(
+        isinstance(image.get("source_url"), str) and image.get("source_url")
+        for image in missing
+    )
+
+
+def refresh_species_images(entry: dict[str, Any]) -> dict[str, Any]:
+    """Re-download an entry's missing image files (and thumbnails) in place.
+
+    Reuses each image's cached ``source_url``/attribution/license and every text
+    field — no Wikipedia/Wikidata calls. Mirrors the download+thumbnail step of
+    :func:`_download_lead_image`; a failed download/thumbnail is skipped.
+
+    Args:
+        entry: An entry eligible per :func:`can_refresh_images_only`.
+
+    Returns:
+        The same ``entry``, mutated with any regenerated ``thumbnail_path``.
+    """
+    for image in _missing_image_entries(entry):
+        source_url = image.get("source_url")
+        rel_path = image.get("path", "")
+        if not source_url or not rel_path:
+            continue
+        dest_path = os.path.join(OUTPUT_DIR, rel_path)
+        if not download_image(source_url, dest_path):
+            continue
+        thumb_rel = _thumbnail_rel_path(rel_path)
+        if make_thumbnail(dest_path, os.path.join(OUTPUT_DIR, thumb_rel)):
+            image["thumbnail_path"] = thumb_rel
+    return entry
+
+
 # --- Coverage / orchestration ----------------------------------------------
 
 
@@ -783,6 +766,48 @@ class BuildOptions:
     throttle: float = THROTTLE_SECONDS
 
 
+def _plan_todo(
+    labels: list[str],
+    overrides: dict[str, dict[str, Any]],
+    species: dict[str, Any],
+    options: BuildOptions,
+) -> list[tuple[str, str]]:
+    """Classify labels into the ordered ``(label, mode)`` work list for a build.
+
+    ``mode`` is ``"image"`` when the label only needs its missing images
+    re-downloaded (see :func:`can_refresh_images_only`), else ``"full"``. Skipped
+    and already-complete labels are omitted; ``force`` makes every label
+    ``"full"``; ``limit`` caps the list to the first N labels needing work.
+
+    Args:
+        labels: All species labels (sorted by class index).
+        overrides: The loaded overrides map.
+        species: The working species map (skip labels already removed).
+        options: Build controls; see :class:`BuildOptions`.
+
+    Returns:
+        The ``(label, mode)`` pairs to process, in label order.
+    """
+    todo: list[tuple[str, str]] = []
+    for label in labels:
+        if overrides.get(label, {}).get("skip"):
+            continue
+        entry = species.get(label)
+        if not options.force and entry is not None and species_is_complete(entry):
+            continue
+        mode = (
+            "image"
+            if not options.force
+            and entry is not None
+            and can_refresh_images_only(entry)
+            else "full"
+        )
+        todo.append((label, mode))
+        if options.limit is not None and len(todo) >= options.limit:
+            break
+    return todo
+
+
 def build_manifest(
     labels: list[str],
     overrides: dict[str, dict[str, Any]],
@@ -801,21 +826,16 @@ def build_manifest(
         The complete manifest document ready to serialise.
     """
     species: dict[str, Any] = dict(existing.get("species", {}))
-    processed = 0
     for label in labels:
         if overrides.get(label, {}).get("skip"):
             species.pop(label, None)
-            continue
-        if (
-            not options.force
-            and label in species
-            and species_is_complete(species[label])
-        ):
-            continue
-        if options.limit is not None and processed >= options.limit:
-            break
-        species[label] = build_species_entry(label, overrides)
-        processed += 1
+
+    todo = _plan_todo(labels, overrides, species, options)
+    for label, mode in tqdm(todo, desc="Species reference", unit="species"):
+        if mode == "image":
+            refresh_species_images(species[label])
+        else:
+            species[label] = build_species_entry(label, overrides)
         if options.throttle:
             time.sleep(options.throttle)
 
@@ -889,7 +909,7 @@ def main(argv: Optional[list[str]] = None) -> None:
     )
     # Backfill thumbnails for any originals that lack one (cheap local resize),
     # so a re-run against an existing bank gains thumbnails without re-fetching.
-    thumbs = ensure_thumbnails(manifest["species"])
+    thumbs = ensure_thumbnails(manifest["species"], OUTPUT_DIR)
     write_json_file(MANIFEST_PATH, manifest)
 
     coverage = compute_coverage(manifest["species"], overrides, labels)
