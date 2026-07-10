@@ -21,6 +21,7 @@ class StableTrack:
     classified: bool = False
     frames_since_seen: int = 0
     species: Optional[str] = None
+    category: Optional[int] = None
 
 
 def match_detection_to_track(
@@ -156,6 +157,10 @@ class StableDetectionTracker:
         )
 
         boxes = [d.box for d in filtered]
+        # Carry each detection's object-detection category onto its track so the
+        # tracking logger can report a deleted track's class. Detection-like fakes
+        # without a ``category`` (e.g. box-only test doubles) contribute ``None``.
+        categories = [getattr(d, "category", None) for d in filtered]
 
         # Snapshot which tracks were already stable so we can detect first-time stability.
         previously_stable_ids = {
@@ -171,6 +176,13 @@ class StableDetectionTracker:
             max_missing_frames=self.max_missing_frames,
             on_track_deleted=self.on_track_deleted,
         )
+
+        # Record each matched detection's object-detection category on its track so
+        # the tracking logger can report a deleted track's class. Detections without
+        # a category (box-only test doubles) contribute ``None`` and leave it unset.
+        for det_id, track in self._last_per_det_track.items():
+            if categories[det_id] is not None:
+                track.category = categories[det_id]
 
         # Fire 'became stable' event once per track, at the moment it crosses the threshold.
         if self.on_track_became_stable is not None:

@@ -426,3 +426,43 @@ def test_update_frame_can_filter_to_only_bird_detections():
         keep_detection=lambda d: getattr(d, "category") == "bird",
     )
     assert tracker.track_count() == 1
+
+
+class DetWithIntCategory(DummyDet):
+    """A detection double carrying an integer object-detection category index."""
+
+    def __init__(self, box, category: int):
+        super().__init__(box)
+        self.category = category
+
+
+def test_update_frame_records_detection_category_on_track():
+    """A track carries the object-detection category of the detection that made it."""
+    tracker = StableDetectionTracker(iou_threshold=0.6, min_stable_frames=2)
+
+    tracker.update_frame([DetWithIntCategory((10, 10, 20, 20), category=14)])
+    track = tracker.track_for_detection_id(0)
+    assert track is not None
+    assert track.category == 14
+
+
+def test_update_frame_refreshes_track_category_on_match():
+    """A matched track keeps the latest detection's category."""
+    tracker = StableDetectionTracker(iou_threshold=0.6, min_stable_frames=2)
+
+    tracker.update_frame([DetWithIntCategory((10, 10, 20, 20), category=14)])
+    # Same box (IoU match) but a new category -> the track's category is refreshed.
+    tracker.update_frame([DetWithIntCategory((10, 10, 20, 20), category=3)])
+    track = tracker.track_for_detection_id(0)
+    assert track is not None
+    assert track.category == 3
+
+
+def test_update_frame_leaves_category_none_for_box_only_detections():
+    """Detections without a ``category`` attribute leave the track's category unset."""
+    tracker = StableDetectionTracker(iou_threshold=0.6, min_stable_frames=2)
+
+    tracker.update_frame([DummyDet((10, 10, 20, 20))])
+    track = tracker.track_for_detection_id(0)
+    assert track is not None
+    assert track.category is None
