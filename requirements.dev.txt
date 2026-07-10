@@ -28,3 +28,12 @@ tqdm>=4.66
 # not drag numpy 2.x in.
 matplotlib>=3.7
 paramiko>=3.0
+
+# Off-Pi camera emulator (dev/emulation + dev/run_emulated):
+# runs the detector locally against a real YOLO11n object detector via the
+# already-pinned onnxruntime — NO runtime ultralytics dependency. It needs a
+# `assets/models/yolo11n.onnx` export, which is out-of-band (git-ignored, like
+# the classifier ONNX). Produce it once on a dev machine with ultralytics:
+#     pip install ultralytics && yolo export model=yolo11n.pt format=onnx
+# then move yolo11n.onnx into assets/models/. The emulator + its tests skip
+# gracefully when the file is absent.
