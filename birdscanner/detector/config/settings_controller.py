@@ -1,6 +1,6 @@
 """Apply persisted settings to the detector — at boot and live at runtime.
 
-:mod:`birdscanner.detector.settings` holds the pure settings domain (the model,
+:mod:`birdscanner.detector.config.settings` holds the pure settings domain (the model,
 validation, and JSON load/save).  This module is the *stateful* side that pushes
 those values onto the running detector, mirroring how ``crop_controller.py``
 applies ``crop.py`` to the live camera:
@@ -19,8 +19,8 @@ from typing import Any
 
 from birdscanner.ml import classification_pipeline
 from birdscanner.ml.classification_pipeline import PipelineContext
-from birdscanner.detector.config import config as app_config
-from birdscanner.detector.settings import (
+from birdscanner.detector.config.config import config as app_config
+from birdscanner.detector.config.settings import (
     LIVE_FIELDS,
     RESTART_FIELDS,
     Settings,

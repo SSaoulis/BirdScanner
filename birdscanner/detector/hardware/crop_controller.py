@@ -25,7 +25,7 @@ from typing import Any, Callable, Dict, Tuple
 
 import numpy as np
 
-from birdscanner.detector.crop import (
+from birdscanner.detector.hardware.crop import (
     CropRegion,
     NormalizedBox,
     SensorDimensions,

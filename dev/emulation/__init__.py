@@ -4,7 +4,7 @@ The IMX500 camera stack (``picamera2`` / ``libcamera`` + the on-chip ``.rpk``
 object detector) only runs on the Raspberry Pi, which leaves the live camera
 bring-up and capture loop impossible to run or test off-Pi.  This package
 supplies drop-in fakes for the Pi-only modules plus a real off-Pi object detector
-(YOLO11n via ONNX), so the *real* :mod:`birdscanner.detector.camera` and capture
+(YOLO11n via ONNX), so the *real* :mod:`birdscanner.detector.hardware.camera` and capture
 loop execute unchanged on a development machine.
 
 Public pieces:

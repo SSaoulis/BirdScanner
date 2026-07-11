@@ -13,7 +13,7 @@ import cv2
 import numpy as np
 import pytest
 
-from birdscanner.detector.raw_frame import (
+from birdscanner.detector.hardware.raw_frame import (
     RawToRgb,
     bayer_cv2_code,
     build_clip_frame_source,

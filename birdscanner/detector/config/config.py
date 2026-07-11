@@ -61,9 +61,9 @@ class VideoConfig:
             saved still exactly (same crop, same image quality). ``True`` reverts
             to the full-scene clip, which is debayered from the raw stream with no
             ISP processing, so it is softer/noisier and 4:3 (see
-            :mod:`birdscanner.detector.raw_frame`); it also costs extra CMA to
+            :mod:`birdscanner.detector.hardware.raw_frame`); it also costs extra CMA to
             request the raw stream in an unpacked format (see
-            :func:`birdscanner.detector.camera.build_camera`).
+            :func:`birdscanner.detector.hardware.camera.build_camera`).
     """
 
     save: bool = True

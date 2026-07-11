@@ -8,14 +8,17 @@ reconfigure branching and the full-sensor preview capture can be exercised.
 import numpy as np
 import pytest
 
-from birdscanner.detector.crop import (
+from birdscanner.detector.hardware.crop import (
     SENSOR_H,
     SENSOR_W,
     SensorDimensions,
     default_crop_region,
     main_stream_size_for_crop,
 )
-from birdscanner.detector.crop_controller import CropController, CropControllerConfig
+from birdscanner.detector.hardware.crop_controller import (
+    CropController,
+    CropControllerConfig,
+)
 
 
 class _FakeRequest:

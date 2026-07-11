@@ -2,7 +2,12 @@
 
 import pytest
 
-from birdscanner.detector.config import Config, IntrinsicsConfig, VideoConfig, config
+from birdscanner.detector.config.config import (
+    Config,
+    IntrinsicsConfig,
+    VideoConfig,
+    config,
+)
 
 
 def test_config_defaults_mirror_known_good_runtime():

@@ -1,8 +1,8 @@
 """Install the fake ``picamera2`` / ``libcamera`` modules for off-Pi runs.
 
-The real :mod:`birdscanner.detector.camera` imports ``libcamera`` / ``picamera2``
+The real :mod:`birdscanner.detector.hardware.camera` imports ``libcamera`` / ``picamera2``
 at module load, so those fakes must be registered in ``sys.modules`` **before**
-``birdscanner.detector.camera`` (and therefore ``birdscanner.detector.main``) is
+``birdscanner.detector.hardware.camera`` (and therefore ``birdscanner.detector.main``) is
 imported.  :func:`install_fake_camera_modules` does that and wires the chosen
 frame source + detector into the shared emulation state; callers then import and
 run the real detector.
@@ -106,7 +106,7 @@ def install_fake_camera_modules(
 ) -> None:
     """Register the fakes in ``sys.modules`` and install the emulation state.
 
-    Call this **before** importing ``birdscanner.detector.camera`` /
+    Call this **before** importing ``birdscanner.detector.hardware.camera`` /
     ``birdscanner.detector.main``.
 
     Args:

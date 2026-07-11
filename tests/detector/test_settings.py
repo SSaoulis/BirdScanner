@@ -5,7 +5,7 @@ from dataclasses import fields
 
 import pytest
 
-from birdscanner.detector.settings import (
+from birdscanner.detector.config.settings import (
     LIVE_FIELDS,
     RESTART_FIELDS,
     Settings,

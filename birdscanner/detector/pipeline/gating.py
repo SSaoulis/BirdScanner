@@ -31,9 +31,9 @@ from birdscanner.ml.classification_pipeline import (
 from birdscanner.ml.geomodel import GeoPriorAdjuster
 from birdscanner.ml.object_detection import get_labels
 
-from birdscanner.detector.config import config as app_config
-from birdscanner.detector.track_logging import TrackingLogger
-from birdscanner.detector.video_recorder import VideoRecorder
+from birdscanner.detector.config.config import config as app_config
+from birdscanner.detector.pipeline.track_logging import TrackingLogger
+from birdscanner.detector.hardware.video_recorder import VideoRecorder
 from birdscanner.db.database import SessionFactory
 from birdscanner.db.geo_prior_store import load_geo_priors
 from birdscanner.db.writer import DetectionWriter
@@ -123,7 +123,7 @@ def build_geo_adjuster(
     """Build the runtime geomodel adjuster from the stored prior, if available.
 
     Reads the priors persisted at startup (see
-    :mod:`birdscanner.detector.geo_priors`) and, together with the classifier's
+    :mod:`birdscanner.detector.pipeline.geo_priors`) and, together with the classifier's
     ``idx_to_class`` map, precomputes the reweighting matrix. Returns ``None`` —
     disabling the geomodel correction so classification is unchanged — when the
     classifier has no class-index map or no priors are stored (no location

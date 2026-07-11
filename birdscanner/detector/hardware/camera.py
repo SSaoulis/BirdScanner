@@ -28,8 +28,8 @@ from picamera2.devices import IMX500  # type: ignore
 from picamera2.devices.imx500 import NetworkIntrinsics  # type: ignore
 from picamera2.sensor_format import SensorFormat  # type: ignore
 
-from birdscanner.detector.config import config as app_config
-from birdscanner.detector.crop import (
+from birdscanner.detector.config.config import config as app_config
+from birdscanner.detector.hardware.crop import (
     SENSOR_W,
     SENSOR_H,
     SensorDimensions,
@@ -38,9 +38,12 @@ from birdscanner.detector.crop import (
     load_crop_region,
     main_stream_size_for_crop,
 )
-from birdscanner.detector.crop_controller import CropController, CropControllerConfig
+from birdscanner.detector.hardware.crop_controller import (
+    CropController,
+    CropControllerConfig,
+)
 from birdscanner.detector.paths import coco_labels_path
-from birdscanner.detector.raw_frame import FULL_FOV_RAW_SIZE
+from birdscanner.detector.hardware.raw_frame import FULL_FOV_RAW_SIZE
 
 logger = logging.getLogger("tracking")
 
@@ -49,7 +52,7 @@ def _full_fov_raw_stream(picam2: Picamera2) -> dict:
     """Return the ``raw`` stream spec for the full-FOV sensor mode.
 
     The video clip is fed from the ``raw`` stream (the only source of the
-    uncropped field of view; see :mod:`birdscanner.detector.raw_frame`). The
+    uncropped field of view; see :mod:`birdscanner.detector.hardware.raw_frame`). The
     spec requests the *unpacked* format of the full-FOV binned mode so
     ``request.make_array("raw")`` yields a directly-demosaicable integer array
     (the native packed ``*_CSI2P`` format would need bespoke unpacking).
@@ -64,7 +67,7 @@ def _full_fov_raw_stream(picam2: Picamera2) -> dict:
     even reached. Passing an explicit size AND format also means ``configure()``
     never needs ``sensor_modes`` at ``start()``. On any failure this falls back
     to a size-only spec (the clip pipeline then degrades gracefully to the
-    cropped ``main`` frame — see :mod:`birdscanner.detector.raw_frame` — rather
+    cropped ``main`` frame — see :mod:`birdscanner.detector.hardware.raw_frame` — rather
     than crashing).
 
     Args:

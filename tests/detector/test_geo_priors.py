@@ -5,7 +5,7 @@ Uses the shared in-memory ``session_factory`` fixture and an injected fake
 """
 
 from birdscanner.db.geo_prior_store import read_meta
-from birdscanner.detector.geo_priors import refresh_geo_priors
+from birdscanner.detector.pipeline.geo_priors import refresh_geo_priors
 
 
 def _fake_compute(priors):

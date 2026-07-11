@@ -51,7 +51,7 @@ def camera_emulator() -> Iterator[Callable[..., None]]:
 
     The returned callable takes a :class:`FrameSource` + :class:`Detector` (plus an
     optional ``max_frames`` cap) and registers the fakes.  Import
-    ``birdscanner.detector.camera`` / ``.main`` only *after* calling it.
+    ``birdscanner.detector.hardware.camera`` / ``.main`` only *after* calling it.
     """
     from dev.emulation.install import (
         install_fake_camera_modules,

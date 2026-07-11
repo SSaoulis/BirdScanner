@@ -1,7 +1,7 @@
 """Fake ``picamera2`` / ``libcamera`` objects for the off-Pi camera emulator.
 
 These stand-ins implement exactly the surface the real detector uses (enumerated
-in the module docstrings of :mod:`birdscanner.detector.camera` and
+in the module docstrings of :mod:`birdscanner.detector.hardware.camera` and
 :mod:`birdscanner.ml.object_detection`), so the *real* camera bring-up and the
 *real* capture loop run unchanged against them off the Pi.
 

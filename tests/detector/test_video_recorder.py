@@ -9,8 +9,8 @@ backend produced one.
 
 import threading
 
-from birdscanner.detector import video_recorder as vr
-from birdscanner.detector.video_recorder import VideoRecorder, _open_writer
+from birdscanner.detector.hardware import video_recorder as vr
+from birdscanner.detector.hardware.video_recorder import VideoRecorder, _open_writer
 
 
 class _FakeWriter:
