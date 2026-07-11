@@ -6,13 +6,13 @@ import pytest
 
 from birdscanner.ml import classification_pipeline
 from birdscanner.ml.classification_pipeline import PipelineContext
-from birdscanner.detector.config import config as app_config
-from birdscanner.detector.settings import (
+from birdscanner.detector.config.config import config as app_config
+from birdscanner.detector.config.settings import (
     default_settings,
     load_settings,
     merge_settings,
 )
-from birdscanner.detector.settings_controller import (
+from birdscanner.detector.config.settings_controller import (
     SettingsController,
     apply_settings_to_config,
     apply_settings_to_context,

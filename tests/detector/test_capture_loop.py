@@ -20,7 +20,7 @@ import pytest
 
 import birdscanner.ml.classification_pipeline as cp
 from birdscanner.db.writer import DetectionWriter
-from birdscanner.detector.config import config as app_config
+from birdscanner.detector.config.config import config as app_config
 from birdscanner.ml.classification import Classifier
 
 
@@ -48,12 +48,12 @@ def test_capture_loop_persists_emulated_bird(camera_emulator, monkeypatch, tmp_p
     camera_emulator(SolidFrameSource(), FixedBoxDetector(), max_frames=8)
 
     # Import only after the fakes are installed.
-    from birdscanner.detector.camera import (
+    from birdscanner.detector.hardware.camera import (
         build_camera,
         prepare_intrinsics,
         wait_for_camera,
     )
-    from birdscanner.detector.gating import build_gating
+    from birdscanner.detector.pipeline.gating import build_gating
     from birdscanner.detector.main import _run_capture_loop
     from birdscanner.ml.classification_pipeline import (
         ClassificationManager,
@@ -115,12 +115,12 @@ def test_capture_loop_stops_when_frames_exhausted(camera_emulator, monkeypatch):
 
     camera_emulator(_OneShotSource(), FixedBoxDetector())
 
-    from birdscanner.detector.camera import (
+    from birdscanner.detector.hardware.camera import (
         build_camera,
         prepare_intrinsics,
         wait_for_camera,
     )
-    from birdscanner.detector.gating import build_gating
+    from birdscanner.detector.pipeline.gating import build_gating
     from birdscanner.detector.main import _run_capture_loop
     from birdscanner.ml.classification_pipeline import (
         ClassificationManager,

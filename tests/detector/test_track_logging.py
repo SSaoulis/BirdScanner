@@ -3,7 +3,10 @@
 import logging
 from types import SimpleNamespace
 
-from birdscanner.detector.track_logging import TrackingLogger, configure_logging
+from birdscanner.detector.pipeline.track_logging import (
+    TrackingLogger,
+    configure_logging,
+)
 
 
 def _track(category=None):

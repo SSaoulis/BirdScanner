@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from birdscanner.detector.crop import (
+from birdscanner.detector.hardware.crop import (
     MIN_CROP_PX,
     SENSOR_H,
     SENSOR_W,

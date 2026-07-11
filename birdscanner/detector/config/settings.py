@@ -1,15 +1,15 @@
 """Runtime-editable settings: domain, validation, and JSON persistence.
 
-The static :mod:`birdscanner.detector.config` holds the *code* defaults for the
+The static :mod:`birdscanner.detector.config.config` holds the *code* defaults for the
 detector.  This module layers a user-editable overlay on top of it, persisted as
 JSON on the detector's writable data volume (mirroring
-:mod:`birdscanner.detector.crop`), so the Settings page in the UI can change
+:mod:`birdscanner.detector.hardware.crop`), so the Settings page in the UI can change
 detection parameters without editing code or rebuilding the container.
 
 Only a subset of settings can be applied to a *running* detector — the detection
 confidence threshold, the save-side classification floor, the ignore list, and
 the log level are read live, so they take effect immediately (see
-:mod:`birdscanner.detector.settings_controller`).  The rest are consumed once at
+:mod:`birdscanner.detector.config.settings_controller`).  The rest are consumed once at
 startup wiring (camera model, stability duration, video, save location,
 threading), so they are persisted and take effect on the next detector boot;
 :data:`RESTART_FIELDS` records which those are so the UI can flag them.
@@ -25,7 +25,7 @@ import os
 from dataclasses import asdict, dataclass, replace
 from typing import Any, Optional
 
-from birdscanner.detector.config import config as app_config
+from birdscanner.detector.config.config import config as app_config
 from birdscanner.ml.classification_pipeline import (
     DEFAULT_SAVE_CONFIDENCE_THRESHOLD,
     IMAGE_DIR,

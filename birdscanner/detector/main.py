@@ -1,8 +1,8 @@
 """Main entry point for bird detection and classification application.
 
 ``main`` reads as a short startup script: configure logging, create the DB
-schema, bring up the camera (:mod:`birdscanner.detector.camera`), wire the
-classification pipeline (:mod:`birdscanner.detector.gating`), start the control
+schema, bring up the camera (:mod:`birdscanner.detector.hardware.camera`), wire the
+classification pipeline (:mod:`birdscanner.detector.pipeline.gating`), start the control
 server, then hand off to :func:`_run_capture_loop`.  The per-frame loop is the
 only substantial logic that lives here; the setup steps live in their own
 cohesive modules.
@@ -25,37 +25,37 @@ from birdscanner.ml.classification_pipeline import (
     ClassificationManager,
 )
 from birdscanner.ml import classification_pipeline
-from birdscanner.detector.camera import (
+from birdscanner.detector.hardware.camera import (
     Camera,
     build_camera,
     prepare_intrinsics,
     wait_for_camera,
 )
-from birdscanner.detector.camera_server import (
+from birdscanner.detector.hardware.camera_server import (
     ControlServerDeps,
     camera_server_port,
     start_camera_server,
 )
-from birdscanner.detector.config import config as app_config
-from birdscanner.detector.gating import (
+from birdscanner.detector.config.config import config as app_config
+from birdscanner.detector.pipeline.gating import (
     Gating,
     build_gating,
     build_geo_adjuster,
     build_manager,
 )
-from birdscanner.detector.geo_priors import refresh_geo_priors
-from birdscanner.detector.settings import load_settings, settings_config_path
-from birdscanner.detector.settings_controller import (
+from birdscanner.detector.pipeline.geo_priors import refresh_geo_priors
+from birdscanner.detector.config.settings import load_settings, settings_config_path
+from birdscanner.detector.config.settings_controller import (
     SettingsController,
     apply_settings_to_config,
     apply_settings_to_context,
 )
-from birdscanner.detector.track_logging import configure_logging
+from birdscanner.detector.pipeline.track_logging import configure_logging
 from birdscanner.detector.paths import (
     class_to_idx_path,
     classifier_model_path,
 )
-from birdscanner.detector.raw_frame import build_clip_frame_source
+from birdscanner.detector.hardware.raw_frame import build_clip_frame_source
 from birdscanner.db.database import make_engine, init_db, make_session_factory
 from birdscanner.db.writer import DetectionWriter
 from birdscanner.db.deleter import delete_detection

@@ -9,7 +9,7 @@ the pipeline lives in the top-level ``conftest.py``.
 
 from typing import cast
 
-from birdscanner.detector.gating import (
+from birdscanner.detector.pipeline.gating import (
     CLASSIFICATION_QUEUE_MAXSIZE,
     Gating,
     build_manager,
@@ -36,7 +36,9 @@ def test_build_manager_bounds_the_async_queue(monkeypatch):
     until the camera pipeline stalled. ``build_manager`` must size it so
     ``ClassificationManager.process`` drops excess frames under load.
     """
-    monkeypatch.setattr("birdscanner.detector.gating.app_config.multithread", True)
+    monkeypatch.setattr(
+        "birdscanner.detector.pipeline.gating.app_config.multithread", True
+    )
 
     manager = build_manager(
         cast(Classifier, object()),
