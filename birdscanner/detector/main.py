@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from birdscanner.ml.object_detection import (
-    filter_excluded_detections,
+    filter_included_detections,
     parse_detections,
     get_labels,
 )
@@ -191,12 +191,13 @@ def _run_capture_loop(
                 app_config.threshold,
                 camera.picam2,
             )
-            # Drop excluded object-detection classes (e.g. "bench") before they
-            # reach the tracker or drawing, so false positives never spawn tracks
-            # that flood the logs. Read live from config so the Settings page can
-            # edit the exclude list without a restart.
-            state["last_results"] = filter_excluded_detections(
-                results, labels, app_config.excluded_classes
+            # Keep only included object-detection classes (default just "bird")
+            # before they reach the tracker or drawing, so non-bird false
+            # positives never spawn tracks that flood the logs. Read live from
+            # config so the Settings page can edit the include list without a
+            # restart.
+            state["last_results"] = filter_included_detections(
+                results, labels, app_config.included_classes
             )
 
 
