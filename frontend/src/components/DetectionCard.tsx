@@ -52,7 +52,7 @@ export function DetectionCard({ detection, onSelect, selected, onOpenLightbox }:
 
   const imageContent = (
     <>
-      <div className={`relative w-full h-36 bg-paper ${isSelectable ? "cursor-pointer" : ""}`}>
+      <div className={`relative w-28 h-24 shrink-0 sm:w-full sm:h-36 bg-paper ${isSelectable ? "cursor-pointer" : ""}`}>
         <img
           src={thumbnailUrl}
           alt={species}
@@ -104,8 +104,10 @@ export function DetectionCard({ detection, onSelect, selected, onOpenLightbox }:
           </button>
         )}
       </div>
-      {/* Caption plate — ruled off from the photo like a guide's specimen label */}
-      <div className="border-t border-line px-3 py-2">
+      {/* Caption plate — ruled off from the photo like a guide's specimen label.
+          On mobile the card is a row (thumbnail left, caption right), so the rule
+          sits on the left; on `sm`+ it's a vertical plate with the rule on top. */}
+      <div className="flex-1 min-w-0 flex flex-col justify-center border-l sm:border-l-0 sm:border-t border-line px-3 py-2">
         <p className="font-display text-[0.95rem] font-medium leading-tight text-ink truncate" title={species}>
           {species}
         </p>
@@ -135,8 +137,10 @@ export function DetectionCard({ detection, onSelect, selected, onOpenLightbox }:
     </>
   );
 
+  // Fills its grid/flex cell: a full-width row on mobile (thumbnail + caption
+  // side by side), a vertical plate on `sm`+ (image above caption).
   const baseClass =
-    "flex-shrink-0 w-44 overflow-hidden rounded-xl border bg-card shadow-plate transition-all duration-200 group";
+    "w-full flex flex-row sm:flex-col overflow-hidden rounded-xl border bg-card shadow-plate transition-all duration-200 group";
 
   if (isSelectable) {
     return (
