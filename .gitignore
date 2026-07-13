@@ -8,6 +8,7 @@ assets/models/*.pt
 
 .agents/
 .claude/
+.venv-imx/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

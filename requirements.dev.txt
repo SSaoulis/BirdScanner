@@ -22,6 +22,13 @@ opencv-python-headless==4.7.0.72
 # installed on the Pi / in the Docker images.
 tqdm>=4.66
 
+# Jupyter kernel for the dev-only tracking notebooks under notebooks/ (e.g.
+# notebooks/tracking_playground.ipynb, which runs the off-Pi detector + tracker
+# over a recorded feeder clip to prototype tracking). Dev-only; never installed
+# on the Pi / in the Docker images. Install jupyterlab/notebook separately for a
+# local server, or open the notebook via an IDE that bundles one.
+ipykernel>=6.29
+
 # Used only by tools/camera_smoke_e2e.py (dev-only Pi SSH smoke test); never
 # installed on the Pi / in the Docker images. matplotlib >=3.7 needs only
 # numpy>=1.20, so it stays compatible with the numpy 1.24.2 pin above and does
@@ -37,3 +44,12 @@ paramiko>=3.0
 #     pip install ultralytics && yolo export model=yolo11n.pt format=onnx
 # then move yolo11n.onnx into assets/models/. The emulator + its tests skip
 # gracefully when the file is absent.
+
+# NB: the IMX500 int8 *emulator* build (tools/build_imx_emulator.py, used to
+# diagnose the low on-Pi detection confidence) needs torch + ultralytics + Sony
+# MCT. Those are HEAVY and pull numpy 2.x, which would break the numpy 1.24.2
+# pin the emulation/onnxruntime path relies on — so they are deliberately NOT
+# listed here. Install them into a separate throwaway venv from
+# requirements.imx-emulator.txt (see that file's header). The one-time build
+# writes assets/models/yolo11n_imx_fakequant.onnx; the probe/notebook then run
+# on this .venv (onnxruntime + cv2 only).

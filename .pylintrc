@@ -19,7 +19,11 @@ ignored-modules=libcamera,
                 picamera2.devices.imx500,
                 onnxruntime,
                 onnxruntime.quantization,
-                onnx
+                onnx,
+                torch,
+                ultralytics,
+                model_compression_toolkit,
+                edgemdt_tpc
 
 [MESSAGES CONTROL]
 disable=too-few-public-methods,

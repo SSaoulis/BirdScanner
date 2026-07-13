@@ -4,6 +4,8 @@
 .git
 .gitignore
 .env
+.venv-imx
+.venv
 *.md
 tests/
 frontend/node_modules/

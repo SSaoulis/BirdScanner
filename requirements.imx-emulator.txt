@@ -1,0 +1,24 @@
+# One-time build deps for the IMX500 int8 *emulator* (tools/build_imx_emulator.py).
+#
+# These reproduce the IMX500 quantization on the host so we can run the feeder
+# clip through an int8 fake-quant YOLO11n (see notebooks/tracking_playground.ipynb
+# and the plan). They are HEAVY (torch + ultralytics + Sony MCT) and pull numpy
+# 2.x + their own opencv, which would clobber the project .venv's pinned
+# numpy==1.24.2 (required for onnxruntime 1.23.2 / the apt picamera2 stack).
+#
+# => Install these into a SEPARATE throwaway venv, NOT the project .venv:
+#       py -m venv .venv-imx
+#       .venv-imx\Scripts\pip install -r requirements.imx-emulator.txt
+#       .venv-imx\Scripts\python tools/build_imx_emulator.py
+#
+# The build runs ONCE and writes assets/models/yolo11n_imx_fakequant.onnx
+# (git-ignored, out-of-band like yolo11n.onnx). After that, the probe
+# (tools/imx_emulator_probe.py) and the notebook need only onnxruntime + cv2,
+# which already live in the project .venv — so day-to-day work stays on .venv.
+
+ultralytics>=8.3.0          # provides yolo11n.pt (auto-download) + the torch DetectionModel
+torch>=2.2                  # CPU wheel is fine for a one-off host quantization
+model-compression-toolkit>=2.2.0   # Sony MCT: PTQ + FAKELY_QUANT ONNX export
+onnx>=1.15                  # export target
+onnxscript>=0.1             # required by torch.onnx.export for the float baseline
+onnxruntime>=1.17           # sanity-load the exported fake-quant ONNX in this venv
