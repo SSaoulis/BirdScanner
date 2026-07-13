@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api, type Detection } from "../api";
 import { DetectionCard } from "../components/DetectionCard";
 import { ExpectedThisWeek } from "../components/ExpectedThisWeek";
+import { FeaturedDetection } from "../components/FeaturedDetection";
 import { Lightbox } from "../components/Lightbox";
 
 // "Spotted today" is capped higher so a busy day still renders without an
@@ -282,6 +283,16 @@ export function Dashboard() {
           </div>
 
           {error && <p className="text-sm text-rust">{error}</p>}
+
+          {/* Hero: the most recent sighting at full size + its stats. Hidden
+              when nothing has been spotted today (or filtered out). */}
+          {!loading && today.length > 0 && (
+            <FeaturedDetection
+              detection={today[0]}
+              today={today}
+              onOpenLightbox={() => setLightbox({ section: "today", index: 0 })}
+            />
+          )}
 
           <section className="space-y-4">
             <h2 className="eyebrow">Spotted today</h2>
