@@ -8,9 +8,15 @@ BirdScanner is a real-time bird detection and classification system for a Raspbe
 
 ## How to develop
 
-- Start by creating a worktree from main, and pull the latest changes from main onto it before reading/analysing files.
-- Once a change is made, update this CLAUDE.md and open a PR.
-- Use the `.venv` in the project root — it has the linting/formatting tools and all packages installed.
+The development cycle is based on a worktree approach. Therefore there are a fixed set of rules to apply to develop: 
+
+- Start by creating a worktree from main.
+- ALWAYS pull latest changes from main onto the worktree before any files are read/analysed.
+- Once a change is made, ALWAYS update the CLAUDE.md, and make a PR (not a draft PR).
+- Generate a sub-agent to review the changes. If the changes are good, allow the agent to accept the PR, then merge it into main.
+
+
+Use the .venv in the project root - this contains the linting/formatting tools and all required packages installed. 
 
 ## Commands
 
