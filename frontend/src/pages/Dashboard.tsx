@@ -4,6 +4,7 @@ import { DetectionCard } from "../components/DetectionCard";
 import { ExpectedThisWeek } from "../components/ExpectedThisWeek";
 import { FeaturedDetection } from "../components/FeaturedDetection";
 import { Lightbox } from "../components/Lightbox";
+import { TodaySummary } from "../components/TodaySummary";
 
 // "Spotted today" is capped higher so a busy day still renders without an
 // unbounded query. The earlier sightings (this week / this month / older) share
@@ -87,13 +88,6 @@ export function Dashboard() {
   const [earlier, setEarlier] = useState<Detection[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  // Minimum confidence as a 0–100 percentage; 0 means "show all".
-  // `sliderConfidence` tracks the live slider position for display only;
-  // `minConfidence` is the committed value that drives the fetch and is only
-  // updated when the slider is released (so dragging doesn't refetch on every
-  // intermediate value).
-  const [sliderConfidence, setSliderConfidence] = useState<number>(0);
-  const [minConfidence, setMinConfidence] = useState<number>(0);
   // Which strip + index is open in the comparison panel, or null when closed.
   const [lightbox, setLightbox] = useState<{ section: Section; index: number } | null>(null);
 
@@ -106,18 +100,15 @@ export function Dashboard() {
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const beforeToday = new Date(todayStart.getTime() - 1000);
-    const minConf = minConfidence > 0 ? minConfidence / 100 : undefined;
 
     Promise.all([
       api.detections.list({
         from: toNaiveISO(todayStart),
         limit: TODAY_LIMIT,
-        min_confidence: minConf,
       }),
       api.detections.list({
         to: toNaiveISO(beforeToday),
         limit: EARLIER_LIMIT,
-        min_confidence: minConf,
       }),
     ])
       .then(([todayData, earlierData]) => {
@@ -131,7 +122,7 @@ export function Dashboard() {
         setError(e instanceof Error ? e.message : "Failed to load detections");
         setLoading(false);
       });
-  }, [minConfidence]);
+  }, []);
 
   const activeList = lightbox?.section === "today" ? today : earlier;
   const currentDetection = lightbox !== null ? activeList[lightbox.index] ?? null : null;
@@ -149,16 +140,13 @@ export function Dashboard() {
     setEarlier((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
   };
 
-  const noConfidenceSuffix =
-    minConfidence > 0 ? ` at ${minConfidence}% match or better` : "";
-
   /** Render the "Spotted today" horizontal strip (or its empty/loading state). */
   const renderTodayStrip = () => {
     if (loading) {
       return <p className="text-sm text-bark animate-pulse">Checking the feeder…</p>;
     }
     if (today.length === 0) {
-      return <p className="text-sm text-bark">{`No birds spotted today${noConfidenceSuffix}.`}</p>;
+      return <p className="text-sm text-bark">No birds spotted today.</p>;
     }
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -191,7 +179,7 @@ export function Dashboard() {
       return (
         <section className="space-y-4">
           <h2 className="eyebrow">Earlier sightings</h2>
-          <p className="text-sm text-bark">{`Nothing earlier to show${noConfidenceSuffix}.`}</p>
+          <p className="text-sm text-bark">Nothing earlier to show.</p>
         </section>
       );
     }
@@ -240,13 +228,21 @@ export function Dashboard() {
         />
       )}
 
-      <header className="mb-8">
+      <header className="mb-6">
         <p className="eyebrow mb-2">At the feeder</p>
         <h1 className="font-display text-3xl font-semibold tracking-tight text-ink">
           Today&rsquo;s visitors
         </h1>
         <p className="mt-1 text-sm text-bark">{todayLabel}</p>
       </header>
+
+      {/* Day-at-a-glance totals, directly beneath the title. Rendered once loaded
+          so it doesn't flash zeros; shows 0 / 0 / — when nothing's been spotted. */}
+      {!loading && (
+        <div className="mb-8">
+          <TodaySummary today={today} />
+        </div>
+      )}
 
       {/* Feed on the left, the "In season" marginalia note in a narrow right rail.
           The rail is source-first so it stacks under the header on mobile (a useful
@@ -258,30 +254,6 @@ export function Dashboard() {
         </aside>
 
         <div className="min-w-0 space-y-8 lg:col-start-1 lg:row-start-1">
-          {/* Minimum confidence slider applies to every strip below. */}
-          <div className="flex items-center justify-end gap-3">
-            <label
-              className="text-xs font-semibold text-sage-deep whitespace-nowrap"
-              htmlFor="dashboard-confidence"
-            >
-              Only show matches above{" "}
-              <span className="tnum text-gold-deep">{sliderConfidence}%</span>
-            </label>
-            <input
-              id="dashboard-confidence"
-              type="range"
-              min={0}
-              max={100}
-              step={1}
-              className="w-40 accent-gold"
-              value={sliderConfidence}
-              onChange={(e) => setSliderConfidence(Number(e.target.value))}
-              onMouseUp={() => setMinConfidence(sliderConfidence)}
-              onTouchEnd={() => setMinConfidence(sliderConfidence)}
-              onKeyUp={() => setMinConfidence(sliderConfidence)}
-            />
-          </div>
-
           {error && <p className="text-sm text-rust">{error}</p>}
 
           {/* Hero: the most recent sighting at full size + its stats. Hidden
@@ -289,7 +261,6 @@ export function Dashboard() {
           {!loading && today.length > 0 && (
             <FeaturedDetection
               detection={today[0]}
-              today={today}
               onOpenLightbox={() => setLightbox({ section: "today", index: 0 })}
             />
           )}
