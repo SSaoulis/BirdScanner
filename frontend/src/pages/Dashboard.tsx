@@ -160,7 +160,7 @@ export function Dashboard() {
       return <p className="text-sm text-bark">{`No birds spotted today${noConfidenceSuffix}.`}</p>;
     }
     return (
-      <div className="flex gap-4 overflow-x-auto pb-3">
+      <div className="flex flex-wrap justify-center gap-4">
         {today.map((d, i) => (
           <DetectionCard
             key={d.id}
@@ -197,7 +197,7 @@ export function Dashboard() {
     return buildEarlierGroups(earlier).map((group) => (
       <section key={group.label} className="space-y-4">
         <h2 className="eyebrow">{group.label}</h2>
-        <div className="flex flex-wrap gap-4">
+        <div className="flex flex-wrap justify-center gap-4">
           {group.items.map(({ detection, index }) => (
             <DetectionCard
               key={detection.id}
@@ -218,7 +218,7 @@ export function Dashboard() {
   });
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-8 space-y-8">
+    <div className="mx-auto max-w-6xl px-6 py-8">
       {/* Comparison panel overlay */}
       {currentDetection && lightbox !== null && (
         <Lightbox
@@ -239,7 +239,7 @@ export function Dashboard() {
         />
       )}
 
-      <header>
+      <header className="mb-8">
         <p className="eyebrow mb-2">At the feeder</p>
         <h1 className="font-display text-3xl font-semibold tracking-tight text-ink">
           Today&rsquo;s visitors
@@ -247,41 +247,50 @@ export function Dashboard() {
         <p className="mt-1 text-sm text-bark">{todayLabel}</p>
       </header>
 
-      {/* What the geomodel expects around the feeder this time of year. */}
-      <ExpectedThisWeek />
+      {/* Feed on the left, the "In season" marginalia note in a narrow right rail.
+          The rail is source-first so it stacks under the header on mobile (a useful
+          glance before scrolling the feed) but pins to the right column on desktop. */}
+      <div className="lg:grid lg:grid-cols-[1fr_15rem] lg:items-start lg:gap-8">
+        <aside className="mb-8 lg:col-start-2 lg:mb-0 lg:sticky lg:top-8">
+          {/* What the geomodel expects around the feeder this time of year. */}
+          <ExpectedThisWeek />
+        </aside>
 
-      {/* Minimum confidence slider applies to every strip below. */}
-      <div className="flex items-center justify-end gap-3">
-        <label
-          className="text-xs font-semibold text-sage-deep whitespace-nowrap"
-          htmlFor="dashboard-confidence"
-        >
-          Only show matches above{" "}
-          <span className="tnum text-gold-deep">{sliderConfidence}%</span>
-        </label>
-        <input
-          id="dashboard-confidence"
-          type="range"
-          min={0}
-          max={100}
-          step={1}
-          className="w-40 accent-gold"
-          value={sliderConfidence}
-          onChange={(e) => setSliderConfidence(Number(e.target.value))}
-          onMouseUp={() => setMinConfidence(sliderConfidence)}
-          onTouchEnd={() => setMinConfidence(sliderConfidence)}
-          onKeyUp={() => setMinConfidence(sliderConfidence)}
-        />
+        <div className="min-w-0 space-y-8 lg:col-start-1 lg:row-start-1">
+          {/* Minimum confidence slider applies to every strip below. */}
+          <div className="flex items-center justify-end gap-3">
+            <label
+              className="text-xs font-semibold text-sage-deep whitespace-nowrap"
+              htmlFor="dashboard-confidence"
+            >
+              Only show matches above{" "}
+              <span className="tnum text-gold-deep">{sliderConfidence}%</span>
+            </label>
+            <input
+              id="dashboard-confidence"
+              type="range"
+              min={0}
+              max={100}
+              step={1}
+              className="w-40 accent-gold"
+              value={sliderConfidence}
+              onChange={(e) => setSliderConfidence(Number(e.target.value))}
+              onMouseUp={() => setMinConfidence(sliderConfidence)}
+              onTouchEnd={() => setMinConfidence(sliderConfidence)}
+              onKeyUp={() => setMinConfidence(sliderConfidence)}
+            />
+          </div>
+
+          {error && <p className="text-sm text-rust">{error}</p>}
+
+          <section className="space-y-4">
+            <h2 className="eyebrow">Spotted today</h2>
+            {renderTodayStrip()}
+          </section>
+
+          {renderEarlierSections()}
+        </div>
       </div>
-
-      {error && <p className="text-sm text-rust">{error}</p>}
-
-      <section className="space-y-4">
-        <h2 className="eyebrow">Spotted today</h2>
-        {renderTodayStrip()}
-      </section>
-
-      {renderEarlierSections()}
     </div>
   );
 }

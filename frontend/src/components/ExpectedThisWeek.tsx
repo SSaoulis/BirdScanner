@@ -2,11 +2,9 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, type ExpectedSpecies, type ExpectedThisWeek as ExpectedData } from "../api";
 
-// How many species the panel asks for — small on purpose so the band stays a
+// How many species the panel asks for — small on purpose so the rail stays a
 // glanceable field-guide index rather than a long list.
 const EXPECTED_COUNT = 6;
-// Discrete abundance scale (like the pips in a printed guide).
-const DOT_COUNT = 5;
 
 /**
  * Small square thumbnail for an expected species, pulled from the offline
@@ -43,43 +41,15 @@ function SpeciesThumb({ species }: { species: string }) {
 }
 
 /**
- * A discrete 5-pip abundance scale — the field-guide way of showing "how likely,
- * roughly". Filled pips are sized from the species' rank within the returned
- * set (relative to the most-likely species), so the ordering reads at a glance;
- * no percentage is shown because the prior is an occurrence likelihood, not a
- * chance-of-seeing-today. The top species reads full; even the least-likely
- * shows at least one pip.
+ * One field-guide index row: a small thumbnail and the common name in the
+ * journal serif. Rows are rendered in the geomodel's ranked order (most to
+ * least expected), so their order alone carries the "how likely" cue — no
+ * probability indicator is shown, since the scores cluster high and reading
+ * them as a scale is more confusing than helpful.
  */
-function AbundanceDots({ filled }: { filled: number }) {
+function ExpectedRow({ item }: { item: ExpectedSpecies }) {
   return (
-    <span
-      className="flex flex-shrink-0 items-center gap-1"
-      role="img"
-      aria-label={`Abundance: ${filled} of ${DOT_COUNT}`}
-    >
-      {Array.from({ length: DOT_COUNT }).map((_, i) => (
-        <span
-          key={i}
-          className={`h-1.5 w-1.5 rounded-full ${
-            i < filled ? "bg-sage-deep" : "bg-line"
-          }`}
-        />
-      ))}
-    </span>
-  );
-}
-
-/**
- * One field-guide index row: thumbnail, common name in the journal serif, and
- * the abundance dots. `max` is the top species' score so the scale is relative
- * to the set.
- */
-function ExpectedRow({ item, max }: { item: ExpectedSpecies; max: number }) {
-  const fraction = max > 0 ? item.score / max : 0;
-  // At least one pip so a listed species never reads as "none".
-  const filled = Math.min(DOT_COUNT, Math.max(1, Math.round(fraction * DOT_COUNT)));
-  return (
-    <div className="flex items-center gap-3">
+    <li className="flex items-center gap-3">
       <SpeciesThumb species={item.species} />
       <span
         className="min-w-0 flex-1 truncate font-display text-sm text-ink"
@@ -87,8 +57,7 @@ function ExpectedRow({ item, max }: { item: ExpectedSpecies; max: number }) {
       >
         {item.species}
       </span>
-      <AbundanceDots filled={filled} />
-    </div>
+    </li>
   );
 }
 
@@ -142,12 +111,11 @@ export function ExpectedThisWeek() {
   if (loading) {
     return (
       <Shell>
-        <div className="grid animate-pulse grid-cols-1 gap-x-6 gap-y-2.5 sm:grid-cols-2">
+        <div className="animate-pulse space-y-2.5">
           {Array.from({ length: EXPECTED_COUNT }).map((_, i) => (
             <div key={i} className="flex items-center gap-3">
               <div className="h-9 w-9 flex-shrink-0 rounded-md bg-line/60" />
               <div className="h-3 flex-1 rounded bg-line/60" />
-              <div className="h-1.5 w-12 flex-shrink-0 rounded-full bg-line/60" />
             </div>
           ))}
         </div>
@@ -174,14 +142,13 @@ export function ExpectedThisWeek() {
 
   if (data.species.length === 0) return null;
 
-  const max = data.species[0].score;
   return (
     <Shell>
-      <div className="grid grid-cols-1 gap-x-6 gap-y-2.5 sm:grid-cols-2">
+      <ul className="space-y-2.5">
         {data.species.map((item) => (
-          <ExpectedRow key={item.species} item={item} max={max} />
+          <ExpectedRow key={item.species} item={item} />
         ))}
-      </div>
+      </ul>
     </Shell>
   );
 }
