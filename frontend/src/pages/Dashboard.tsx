@@ -161,7 +161,7 @@ export function Dashboard() {
       return <p className="text-sm text-bark">{`No birds spotted today${noConfidenceSuffix}.`}</p>;
     }
     return (
-      <div className="flex flex-wrap justify-center gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
         {today.map((d, i) => (
           <DetectionCard
             key={d.id}
@@ -198,7 +198,7 @@ export function Dashboard() {
     return buildEarlierGroups(earlier).map((group) => (
       <section key={group.label} className="space-y-4">
         <h2 className="eyebrow">{group.label}</h2>
-        <div className="flex flex-wrap justify-center gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
           {group.items.map(({ detection, index }) => (
             <DetectionCard
               key={detection.id}

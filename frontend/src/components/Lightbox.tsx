@@ -8,6 +8,7 @@ import {
 } from "../api";
 import { SpeciesPicker } from "./SpeciesPicker";
 import { AdvancedStatsPane } from "./AdvancedStats";
+import { useIsDesktop } from "../hooks/useMediaQuery";
 
 interface LightboxProps {
   /** The detection currently displayed in the panel. */
@@ -156,6 +157,10 @@ export function Lightbox({
   // to these exact pixel dimensions so it always matches the image.
   const imgRef = useRef<HTMLImageElement | null>(null);
   const [imgSize, setImgSize] = useState<{ w: number; h: number } | null>(null);
+  // Above `lg` the panels sit *beside* the image, locked to its pixel size;
+  // below it they stack full-width beneath the image (a segmented control picks
+  // which one shows), so nothing is crushed into ~44vw on a phone.
+  const isDesktop = useIsDesktop();
 
   // Track the rendered image size so the reference panel can match it exactly.
   // A ResizeObserver catches both the initial load (0 → natural size) and any
@@ -260,7 +265,7 @@ export function Lightbox({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/95 p-4"
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink/95 p-4 lg:items-center lg:overflow-hidden"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
@@ -277,16 +282,18 @@ export function Lightbox({
         </button>
       )}
 
-      {/* Image + reference row — stops click propagation so interacting inside doesn't close */}
+      {/* Image + reference row — stops click propagation so interacting inside
+          doesn't close. On mobile it stacks (image, caption, then the chosen
+          panel); on `lg`+ the panels flank the image. */}
       <div
-        className="relative flex items-start"
+        className="relative flex flex-col items-center lg:flex-row lg:items-start"
         onClick={(e) => e.stopPropagation()}
       >
         {/* ── Advanced-stats panel (left) — mirrors the reference panel but folds
             to the left (animates margin-right). Locked to the image's exact
             rendered size, content scrolls internally. Mutually exclusive with the
-            reference panel. ── */}
-        {imgSize && (
+            reference panel. Desktop only — on mobile it stacks below the image. ── */}
+        {isDesktop && imgSize && (
           <div
             className="shrink-0 overflow-hidden transition-[width,margin-right,opacity] duration-300 ease-out motion-reduce:transition-none"
             style={{
@@ -331,7 +338,7 @@ export function Lightbox({
                 // holds a stable footprint through loading and after. object-cover
                 // keeps the square poster filling the box (no stretch) meanwhile.
                 style={imgSize ? { width: imgSize.w, height: imgSize.h } : undefined}
-                className="block max-h-[80vh] max-w-[44vw] rounded-lg bg-ink object-cover shadow-plate-lift"
+                className="block max-h-[60vh] max-w-full rounded-lg bg-ink object-cover shadow-plate-lift lg:max-h-[80vh] lg:max-w-[44vw]"
               />
             ) : (
               <img
@@ -343,7 +350,7 @@ export function Lightbox({
                 ref={imgRef}
                 src={fullUrl}
                 alt={`Captured ${species}`}
-                className="block max-h-[80vh] max-w-[44vw] animate-plate-develop rounded-lg bg-ink shadow-plate-lift"
+                className="block max-h-[60vh] max-w-full animate-plate-develop rounded-lg bg-ink shadow-plate-lift lg:max-h-[80vh] lg:max-w-[44vw]"
               />
             )}
 
@@ -440,7 +447,7 @@ export function Lightbox({
                 mirrors the Field-guide tab; opening it closes the reference
                 panel (the two are mutually exclusive). */}
             <button
-              className={`absolute right-full top-1/2 z-10 -translate-y-1/2 rounded-l-lg px-2 py-3.5 text-[11px] font-semibold uppercase tracking-[0.15em] shadow-plate [writing-mode:vertical-rl] transition-colors ${
+              className={`absolute right-full top-1/2 z-10 hidden -translate-y-1/2 rounded-l-lg px-2 py-3.5 text-[11px] font-semibold uppercase tracking-[0.15em] shadow-plate [writing-mode:vertical-rl] transition-colors lg:block ${
                 showStats
                   ? "bg-gold text-ink"
                   : "bg-card/95 text-ink ring-1 ring-line hover:bg-card"
@@ -457,7 +464,7 @@ export function Lightbox({
 
             {/* Vertical Field-guide tab on the right edge of the image */}
             <button
-              className={`absolute left-full top-1/2 z-10 -translate-y-1/2 rounded-r-lg px-2 py-3.5 text-[11px] font-semibold uppercase tracking-[0.15em] shadow-plate [writing-mode:vertical-rl] transition-colors ${
+              className={`absolute left-full top-1/2 z-10 hidden -translate-y-1/2 rounded-r-lg px-2 py-3.5 text-[11px] font-semibold uppercase tracking-[0.15em] shadow-plate [writing-mode:vertical-rl] transition-colors lg:block ${
                 showReference
                   ? "bg-gold text-ink"
                   : "bg-card/95 text-ink ring-1 ring-line hover:bg-card"
@@ -575,6 +582,68 @@ export function Lightbox({
             </div>
             {deleteError && <p className="mt-2 text-xs text-rust">{deleteError}</p>}
           </div>
+
+          {/* ── Mobile panel switcher ──
+              Below `lg` the two side panels can't flank the image, so they stack
+              here as full-width sections. A segmented control (mirroring the
+              History tabs) picks which one shows; picking the active one again
+              closes it. Hidden on desktop, where the edge tabs + side panels
+              take over. */}
+          {!isDesktop && (
+            <div
+              className="w-full"
+              style={{ width: imgSize ? imgSize.w : undefined }}
+            >
+              <div
+                className="flex gap-1 rounded-xl border border-line bg-card p-1"
+                role="group"
+                aria-label="More about this sighting"
+              >
+                <button
+                  className={`flex-1 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                    showReference ? "bg-gold text-ink" : "text-bark hover:text-ink"
+                  }`}
+                  onClick={() => {
+                    setShowReference((v) => !v);
+                    setShowStats(false);
+                  }}
+                  aria-pressed={showReference}
+                >
+                  Field guide
+                </button>
+                <button
+                  className={`flex-1 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                    showStats ? "bg-gold text-ink" : "text-bark hover:text-ink"
+                  }`}
+                  onClick={() => {
+                    setShowStats((v) => !v);
+                    setShowReference(false);
+                  }}
+                  aria-pressed={showStats}
+                >
+                  Advanced stats
+                </button>
+              </div>
+
+              {showReference && (
+                <div className="mt-3 rounded-lg border border-line bg-card p-4 shadow-plate">
+                  <h3 className="eyebrow mb-3">Field guide</h3>
+                  <ReferencePane
+                    state={refState}
+                    activeImageIndex={activeImageIndex}
+                    onSelectImage={setActiveImageIndex}
+                  />
+                </div>
+              )}
+
+              {showStats && (
+                <div className="mt-3 rounded-lg border border-line bg-card p-4 shadow-plate">
+                  <h3 className="eyebrow mb-3">Advanced stats</h3>
+                  <AdvancedStatsPane detection={shown} />
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* ── Reference panel — locked to the image's exact rendered size ──
@@ -583,8 +652,9 @@ export function Lightbox({
             margin (the gap to the image) and opacity, clipping the fixed-size
             inner card so its content never reflows mid-animation. The image is
             centred in the row, so it glides aside as the panel grows. The
-            global prefers-reduced-motion guard zeroes these durations. */}
-        {imgSize && (
+            global prefers-reduced-motion guard zeroes these durations. Desktop
+            only — on mobile the guide stacks below the image. */}
+        {isDesktop && imgSize && (
           <div
             className="shrink-0 overflow-hidden transition-[width,margin-left,opacity] duration-300 ease-out motion-reduce:transition-none"
             style={{
