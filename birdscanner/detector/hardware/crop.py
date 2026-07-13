@@ -265,6 +265,45 @@ def main_stream_size_for_crop(
     return (_align(int(round(w))), _align(int(round(h))))
 
 
+def inference_roi_for_crop(
+    region: CropRegion, sensor: SensorDimensions = SensorDimensions()
+) -> Tuple[int, int, int, int]:
+    """Return the on-chip DNN inference ROI (``left, top, w, h``) for a crop.
+
+    The IMX500 runs the object-detection network **on-sensor**, before the ISP,
+    so ``ScalerCrop`` — which only crops the ISP ``main`` stream the classifier
+    and stills read — does *not* change what the detector sees. Left alone, the
+    DNN squishes the whole sensor field of view into its input tensor, so a
+    feeder bird occupies a tiny fraction of the input and scores poorly. Feeding
+    this rectangle to :meth:`IMX500.set_inference_roi_abs` restricts the sensor
+    region scaled into the network input to the **same** region as the crop, so
+    the detector and the classifier finally see the same zoomed-in bird.
+
+    The ROI is expressed in full-sensor pixels, the same space and origin the
+    crop region uses, so it is a **direct pass-through** of the crop rectangle
+    (clamped to the sensor). This matches ``ScalerCrop``, which libcamera applies
+    in the transformed (vflip+hflip) preview orientation with no rotation (see
+    the module docstring).
+
+    Coordinate caveat (verify on the Pi): if the DNN ends up looking at the
+    diagonally-opposite region — detections vanish or ``detection_confidence``
+    does not improve after enabling this — the sensor ROI control uses the
+    unflipped frame while ``ScalerCrop`` uses the flipped one. In that case apply
+    the 180-degree flip here instead of the direct mapping::
+
+        r = region.clamped(sensor.w, sensor.h)
+        return (sensor.w - r.x - r.w, sensor.h - r.y - r.h, r.w, r.h)
+
+    Args:
+        region: The detection crop region in sensor pixels.
+        sensor: Sensor active-area dimensions in pixels.
+
+    Returns:
+        The ``(left, top, width, height)`` ROI for ``set_inference_roi_abs``.
+    """
+    return region.clamped(sensor.w, sensor.h).as_tuple()
+
+
 def crop_config_path() -> str:
     """Return the path of the crop-region JSON file.
 

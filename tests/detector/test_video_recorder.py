@@ -131,7 +131,7 @@ def test_open_writer_falls_back_to_mp4v(monkeypatch):
 
     def _factory(_dest, fourcc, _fps, _size):
         codecs.append(fourcc)
-        return _FakeWriter(opened=(fourcc == "mp4v"))
+        return _FakeWriter(opened=fourcc == "mp4v")
 
     monkeypatch.setattr(vr.cv2, "VideoWriter", _factory)
     monkeypatch.setattr(vr.cv2, "VideoWriter_fourcc", lambda *chars: "".join(chars))

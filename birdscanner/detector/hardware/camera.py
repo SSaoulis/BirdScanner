@@ -32,9 +32,11 @@ from birdscanner.detector.config.config import config as app_config
 from birdscanner.detector.hardware.crop import (
     SENSOR_W,
     SENSOR_H,
+    CropRegion,
     SensorDimensions,
     crop_config_path,
     default_crop_region,
+    inference_roi_for_crop,
     load_crop_region,
     main_stream_size_for_crop,
 )
@@ -262,6 +264,28 @@ def build_camera(imx500: IMX500, intrinsics: Any) -> Camera:
     if intrinsics.preserve_aspect_ratio:
         imx500.set_auto_aspect_ratio()
 
+    sensor = SensorDimensions(SENSOR_W, SENSOR_H)
+
+    def apply_inference_roi(region: CropRegion) -> None:
+        """Restrict the on-chip DNN input to the detection crop region.
+
+        The IMX500 runs detection on-sensor, so ``ScalerCrop`` (which only crops
+        the ISP ``main`` stream) does not change what the detector sees; without
+        this the DNN squishes the whole field of view into its input tensor and a
+        feeder bird scores poorly. Wired to the crop at boot and re-applied on
+        every live crop change so the detector always sees the same zoomed view
+        as the classifier. Gated by ``config.restrict_inference_to_crop`` so the
+        historic full-FOV behaviour can be restored for comparison.
+
+        Args:
+            region: The detection crop region to restrict inference to.
+        """
+        if not app_config.restrict_inference_to_crop:
+            return
+        imx500.set_inference_roi_abs(inference_roi_for_crop(region, sensor))
+
+    apply_inference_roi(crop_region)
+
     crop_controller = CropController(
         picam2,
         CropControllerConfig(
@@ -269,7 +293,8 @@ def build_camera(imx500: IMX500, intrinsics: Any) -> Camera:
             main_size=initial_main_size,
             config_factory=build_camera_config,
             config_path=crop_config_path(),
-            sensor=SensorDimensions(SENSOR_W, SENSOR_H),
+            sensor=sensor,
+            set_inference_roi=apply_inference_roi,
         ),
     )
     return Camera(picam2, imx500, intrinsics, crop_controller)

@@ -11,6 +11,7 @@ import pytest
 from birdscanner.detector.hardware.crop import (
     SENSOR_H,
     SENSOR_W,
+    CropRegion,
     SensorDimensions,
     default_crop_region,
     main_stream_size_for_crop,
@@ -72,7 +73,7 @@ class _FakePicam2:
         return _FakeRequest(self.frame, scaler)
 
 
-def _controller(tmp_path, cam, region=None):
+def _controller(tmp_path, cam, region=None, set_inference_roi=None):
     """Build a CropController around ``cam`` at the default (or given) region."""
     region = region or default_crop_region()
     main_size = main_stream_size_for_crop(region.w, region.h)
@@ -84,6 +85,7 @@ def _controller(tmp_path, cam, region=None):
             config_factory=lambda main, scaler: ("config", main, scaler),
             config_path=str(tmp_path / "crop.json"),
             sensor=SensorDimensions(SENSOR_W, SENSOR_H),
+            set_inference_roi=set_inference_roi,
         ),
     )
 
@@ -121,6 +123,29 @@ def test_aspect_change_triggers_reconfigure_and_persists(tmp_path, frame_factory
     assert cam.stopped == 1 and cam.started == 1
     assert cam.configs  # config_factory output was applied
     assert (tmp_path / "crop.json").exists()
+
+
+def test_live_crop_change_applies_inference_roi(tmp_path, frame_factory):
+    """A same-aspect pan/zoom re-applies the DNN inference ROI for the new region."""
+    cam = _FakePicam2(frame_factory(0, (8, 8)))
+    seen: list[CropRegion] = []
+    ctrl = _controller(tmp_path, cam, set_inference_roi=seen.append)
+    ctrl.reset_to_default()
+    assert cam.stopped == 0 and cam.started == 0  # live path, no reconfigure
+    assert seen and seen[-1] == default_crop_region()
+
+
+def test_aspect_change_reapplies_inference_roi_after_reconfigure(
+    tmp_path, frame_factory
+):
+    """An aspect change re-arms the inference ROI after the stop/start cycle."""
+    cam = _FakePicam2(frame_factory(0, (8, 8)))
+    seen: list[CropRegion] = []
+    ctrl = _controller(tmp_path, cam, set_inference_roi=seen.append)
+    ctrl.set_from_normalized(0.0, 0.0, 1.0, 0.5)
+    assert cam.stopped == 1 and cam.started == 1  # reconfigure happened
+    # The ROI was applied for the new full-width, half-height region.
+    assert seen and seen[-1].w == SENSOR_W and seen[-1].h < seen[-1].w
 
 
 def test_capture_full_preview_restores_previous_crop(tmp_path, frame_factory):

@@ -85,6 +85,14 @@ class Config:
         object_duration_threshold: Seconds a track must be stable (IoU>0.6 across
             frames) before bird classification fires; values ``<= 0`` floor the
             requirement to a single stable frame.
+        restrict_inference_to_crop: Crop the on-chip detector's input to the
+            detection crop region (via ``IMX500.set_inference_roi_abs``) so the
+            DNN sees the same zoomed-in feeder view as the classifier instead of
+            the whole sensor field of view. ``True`` (the default) fixes the
+            small-bird low-confidence problem; ``False`` reverts to the historic
+            full-FOV inference for comparison. Applied at boot and kept in sync
+            on every live crop change (see
+            :func:`birdscanner.detector.hardware.crop.inference_roi_for_crop`).
         included_classes: Object-detection (YOLO/COCO) class labels to keep
             before tracking, matched case-insensitively (an allowlist, default
             ``{"bird"}``). The IMX500 model emits every COCO class it sees, so
@@ -114,6 +122,7 @@ class Config:
     print_intrinsics: bool = False
     multithread: bool = True
     object_duration_threshold: float = 0.1
+    restrict_inference_to_crop: bool = True
     included_classes: set[str] = field(default_factory=lambda: {"bird"})
     debug: bool = True
     preview: bool = False
