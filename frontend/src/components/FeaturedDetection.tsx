@@ -1,5 +1,4 @@
 import { api, type Detection } from "../api";
-import { AdvancedStatsPane } from "./AdvancedStats";
 
 /** Today's aggregate counts derived from the day's detections. */
 interface TodayCounts {
@@ -58,11 +57,9 @@ interface FeaturedDetectionProps {
 
 /**
  * The Dashboard hero: the most recent sighting shown at full size on the left,
- * with its detection statistics on the right. The right column leads with a
- * small strip of today's aggregate counts (total sightings / distinct species /
- * most common) and then the featured bird's own telemetry (reusing
- * `AdvancedStatsPane`). Purely presentational — the Dashboard owns the data and
- * lightbox wiring. Rendered only when there is at least one sighting today.
+ * with today's aggregate counts on the right — a small strip of total sightings /
+ * distinct species / most common. Purely presentational — the Dashboard owns the
+ * data and lightbox wiring. Rendered only when there is at least one sighting today.
  */
 export function FeaturedDetection({ detection, today, onOpenLightbox }: FeaturedDetectionProps) {
   const counts = todayCounts(today);
@@ -86,14 +83,13 @@ export function FeaturedDetection({ detection, today, onOpenLightbox }: Featured
           />
         </button>
 
-        {/* Detection statistics: today's counts, then this bird's telemetry. */}
+        {/* Today's aggregate counts. */}
         <div className="space-y-5 border-t border-line p-5 lg:border-l lg:border-t-0">
           <div className="flex flex-wrap gap-x-8 gap-y-3">
             <CountTile label="Sightings today" value={String(counts.total)} />
             <CountTile label="Species today" value={String(counts.distinctSpecies)} />
             <CountTile label="Most common" value={counts.mostCommon ?? "—"} />
           </div>
-          <AdvancedStatsPane detection={detection} />
         </div>
       </div>
     </section>
