@@ -241,3 +241,14 @@ UI at `http://birdpi.local:8080` (mDNS) or `http://<pi-ip>:8080`.
 - The `detector` `expose`s port 8000 (control server) on the internal network only; the `api` reaches it via `DETECTOR_URL` (default `http://detector:8000`), the detector binds `CAMERA_SERVER_PORT` (default 8000) — change them together.
 - **Video encoding is software** (no Pi 5 hardware encoder) via the apt opencv FFmpeg backend, encoding H.264 (`avc1`); Debian's libavcodec has libx264 so `avc1` is available. An `mp4v` fallback file won't play in the browser (shows only the poster).
 - If the camera is unavailable the detector does **not** crash-loop (`wait_for_camera()` retries every 30 s); the `api` is independent and the UI still loads (the detector initialises the DB schema on startup).
+
+### Remote access (Tailscale)
+
+The UI ships **without authentication**, and the `api` proxies destructive actions to the detector (delete/correct detections, change settings, **restart**, re-crop). So the UI must never be exposed raw to the public internet (no router port-forward). To reach it off-LAN — e.g. from a phone on cellular to show friends — put the Pi on a **Tailscale** mesh VPN; tailnet membership becomes the missing auth layer. **No repo/compose changes** — port 8080 is already published to the host, so it's reachable over the tailnet as-is; port 8000 stays internal-only.
+
+- **Install on the Pi host** (not in Docker, so MagicDNS names the Pi and the host's 8080 is reachable): `curl -fsSL https://tailscale.com/install.sh | sh` then `sudo tailscale up` and authenticate (that account owns the tailnet).
+- **Enable MagicDNS** (admin console → DNS) for a stable name like `birdpi.<tailnet>.ts.net`.
+- **Add other people/devices**: install the app + sign in on your phone; invite your brother to the tailnet, or share just the Pi node (admin console → Machines → Share) if he has his own tailnet. Friends viewing via your phone need nothing.
+- **HTTPS + clean hostname** (recommended for mobile): `sudo tailscale serve --bg 8080` → `https://birdpi.<tailnet>.ts.net`.
+- **Do NOT enable `tailscale funnel`** without first adding a real auth gate — it publishes the endpoint publicly and removes the tailnet auth boundary in front of the unauthenticated, destructive-action UI.
+- **Verify** it's true remote access, not LAN: load the URL from a phone on cellular (Wi-Fi off); confirm a non-tailnet device can't connect.
