@@ -127,19 +127,20 @@ def get_labels(intrinsics) -> list:
     return labels
 
 
-def filter_excluded_detections(
+def filter_included_detections(
     detections: list,
     labels: list,
-    excluded: Iterable[str],
+    included: Iterable[str],
 ) -> list:
-    """Drop detections whose object-detection class is in the exclude list.
+    """Keep only detections whose object-detection class is in the include list.
 
-    The IMX500 YOLO model emits every COCO object class it sees (bench, person,
-    car, ...), not just birds. False positives on unwanted classes otherwise
-    enter the tracker — creating tracks that spam the ``tracking`` logs with
-    stable/deleted events and draw boxes on the preview. Filtering them here, at
-    the single point the parsed detections re-enter the pipeline, keeps them out
-    of the tracker, the logs, the drawing, and classification entirely.
+    The IMX500 YOLO model emits every COCO object class it sees (bird, person,
+    car, bench, ...), not just birds. Anything that is not an included class
+    otherwise enters the tracker — creating tracks that spam the ``tracking``
+    logs with stable/deleted events and draw boxes on the preview. Filtering
+    here, at the single point the parsed detections re-enter the pipeline, keeps
+    unwanted classes out of the tracker, the logs, the drawing, and
+    classification entirely (an allowlist, e.g. just ``"bird"``).
 
     Matching is case-insensitive against the (filtered) label list. A detection
     whose category index is out of range for ``labels`` is kept (it is handled
@@ -148,21 +149,22 @@ def filter_excluded_detections(
     Args:
         detections: Detection objects for the current frame.
         labels: Class label strings (index-aligned with ``detection.category``).
-        excluded: Class labels to drop (compared lower-cased). Empty means keep
-            everything.
+        included: Class labels to keep (compared lower-cased). Empty means keep
+            everything (a no-op), so clearing the list never silently drops all
+            detections.
 
     Returns:
-        The detections whose class is not excluded (the same list object when
-        nothing is excluded, so the common case allocates nothing).
+        The detections whose class is included (the same list object when the
+        include set is empty, so the no-op case allocates nothing).
     """
-    excluded_lower = {name.lower() for name in excluded}
-    if not excluded_lower:
+    included_lower = {name.lower() for name in included}
+    if not included_lower:
         return detections
 
     kept = []
     for detection in detections:
         label = label_for_category(labels, int(detection.category))
-        if label is not None and label.lower() in excluded_lower:
+        if label is not None and label.lower() not in included_lower:
             continue
         kept.append(detection)
     return kept

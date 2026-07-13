@@ -81,25 +81,25 @@ def test_ignore_species_rejects_non_string_list() -> None:
         merge_settings(default_settings(), {"ignore_species": [1, 2]})
 
 
-def test_default_excluded_classes_drops_bench() -> None:
-    # The classic false-positive class is excluded out of the box.
-    assert "bench" in default_settings().excluded_classes
+def test_default_included_classes_keeps_bird() -> None:
+    # Out of the box, only birds are tracked.
+    assert "bird" in default_settings().included_classes
 
 
-def test_excluded_classes_is_a_live_field() -> None:
-    assert "excluded_classes" in LIVE_FIELDS
+def test_included_classes_is_a_live_field() -> None:
+    assert "included_classes" in LIVE_FIELDS
 
 
-def test_excluded_classes_trims_and_dedupes() -> None:
+def test_included_classes_trims_and_dedupes() -> None:
     merged = merge_settings(
-        default_settings(), {"excluded_classes": [" bench ", "bench", "", "car"]}
+        default_settings(), {"included_classes": [" bird ", "bird", "", "cat"]}
     )
-    assert merged.excluded_classes == ["bench", "car"]
+    assert merged.included_classes == ["bird", "cat"]
 
 
-def test_excluded_classes_rejects_non_string_list() -> None:
-    with pytest.raises(ValueError, match="excluded_classes must be a list of strings"):
-        merge_settings(default_settings(), {"excluded_classes": [1, 2]})
+def test_included_classes_rejects_non_string_list() -> None:
+    with pytest.raises(ValueError, match="included_classes must be a list of strings"):
+        merge_settings(default_settings(), {"included_classes": [1, 2]})
 
 
 def test_default_location_is_unset() -> None:
@@ -162,6 +162,18 @@ def test_load_invalid_value_returns_defaults(tmp_path) -> None:
     payload = {**{"detection_threshold": 5.0}}
     path.write_text(json.dumps(payload), encoding="utf-8")
     assert load_settings(str(path)) == default_settings()
+
+
+def test_load_drops_legacy_key_but_keeps_valid_fields(tmp_path) -> None:
+    # A settings.json written by an older build carries the renamed
+    # ``excluded_classes`` key; it is ignored, but a co-persisted valid field
+    # (latitude) still survives instead of the whole overlay resetting.
+    path = tmp_path / "settings.json"
+    payload = {"excluded_classes": ["bench"], "latitude": 51.5}
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    loaded = load_settings(str(path))
+    assert loaded.latitude == 51.5
+    assert loaded.included_classes == default_settings().included_classes
 
 
 def test_settings_config_path_env_override(monkeypatch) -> None:

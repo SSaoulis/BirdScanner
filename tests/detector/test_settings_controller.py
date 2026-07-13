@@ -23,7 +23,7 @@ from birdscanner.detector.config.settings_controller import (
 def _restore_globals():
     """Snapshot + restore the mutable global config/IMAGE_DIR around each test."""
     threshold = app_config.threshold
-    excluded_classes = set(app_config.excluded_classes)
+    included_classes = set(app_config.included_classes)
     duration = app_config.object_duration_threshold
     multithread = app_config.multithread
     debug = app_config.debug
@@ -34,7 +34,7 @@ def _restore_globals():
     level = logging.getLogger("tracking").level
     yield
     app_config.threshold = threshold
-    app_config.excluded_classes = excluded_classes
+    app_config.included_classes = included_classes
     app_config.object_duration_threshold = duration
     app_config.multithread = multithread
     app_config.debug = debug
@@ -71,20 +71,18 @@ def test_apply_settings_to_config_pushes_all_fields() -> None:
     assert classification_pipeline.IMAGE_DIR == "/tmp/pics"
 
 
-def test_apply_settings_to_config_lowercases_excluded_classes() -> None:
-    settings = merge_settings(
-        default_settings(), {"excluded_classes": ["Bench", "PERSON"]}
-    )
+def test_apply_settings_to_config_lowercases_included_classes() -> None:
+    settings = merge_settings(default_settings(), {"included_classes": ["Bird", "CAT"]})
     apply_settings_to_config(settings)
-    assert app_config.excluded_classes == {"bench", "person"}
+    assert app_config.included_classes == {"bird", "cat"}
 
 
-def test_update_excluded_classes_applies_live(tmp_path) -> None:
+def test_update_included_classes_applies_live(tmp_path) -> None:
     controller = SettingsController(
         str(tmp_path / "s.json"), default_settings(), _context()
     )
-    state = controller.update({"excluded_classes": ["Car", "Bench"]})
-    assert app_config.excluded_classes == {"car", "bench"}
+    state = controller.update({"included_classes": ["Bird", "Cat"]})
+    assert app_config.included_classes == {"bird", "cat"}
     # It is a live field, so no restart is required.
     assert state["needs_restart"] is False
 

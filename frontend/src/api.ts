@@ -247,8 +247,8 @@ export interface Settings {
   classification_threshold: number;
   /** Species never saved even when classified (matched case-insensitively). */
   ignore_species: string[];
-  /** Object-detection (COCO) class labels dropped before tracking (e.g. "bench"). */
-  excluded_classes: string[];
+  /** Object-detection (COCO) class labels kept before tracking (allowlist, e.g. "bird"); empty keeps all. */
+  included_classes: string[];
   /** Seconds a track must be stable before classification fires. */
   stability_seconds: number;
   /** Root directory saved images/clips are written to. */

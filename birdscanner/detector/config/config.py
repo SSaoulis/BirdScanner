@@ -85,11 +85,12 @@ class Config:
         object_duration_threshold: Seconds a track must be stable (IoU>0.6 across
             frames) before bird classification fires; values ``<= 0`` floor the
             requirement to a single stable frame.
-        excluded_classes: Object-detection (YOLO/COCO) class labels to drop
-            before tracking, matched case-insensitively. The IMX500 model emits
-            every COCO class it sees, so false positives on unwanted classes
-            (e.g. ``"bench"``) otherwise create tracks that flood the logs; these
-            are filtered out in the capture loop. Applied live.
+        included_classes: Object-detection (YOLO/COCO) class labels to keep
+            before tracking, matched case-insensitively (an allowlist, default
+            ``{"bird"}``). The IMX500 model emits every COCO class it sees, so
+            anything not on this list (e.g. ``"bench"``, ``"person"``) is dropped
+            in the capture loop before it can create tracks that flood the logs.
+            An empty set keeps everything. Applied live.
         debug: Enable DEBUG-level logging for track lifecycle events.
         preview: Show the camera preview window.
         latitude: Deployment latitude in degrees, used to compute the geomodel
@@ -113,7 +114,7 @@ class Config:
     print_intrinsics: bool = False
     multithread: bool = True
     object_duration_threshold: float = 0.1
-    excluded_classes: set[str] = field(default_factory=lambda: {"bench"})
+    included_classes: set[str] = field(default_factory=lambda: {"bird"})
     debug: bool = True
     preview: bool = False
     latitude: Optional[float] = None

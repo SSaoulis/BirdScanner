@@ -46,10 +46,11 @@ class Settings:
             (applied live).
         ignore_species: Species names that are never saved even when classified
             (matched case-insensitively; applied live).
-        excluded_classes: Object-detection (YOLO/COCO) class labels dropped
-            before tracking, so false positives on unwanted classes (e.g.
-            ``"bench"``) never enter the tracker/logs (matched
-            case-insensitively; applied live).
+        included_classes: Object-detection (YOLO/COCO) class labels kept before
+            tracking (an allowlist, e.g. ``"bird"``); anything not on the list
+            (e.g. ``"bench"``, ``"person"``) never enters the tracker/logs. An
+            empty list keeps everything (matched case-insensitively; applied
+            live).
         stability_seconds: Seconds a track must be stable before classification
             fires (``config.object_duration_threshold``; requires restart).
         image_dir: Root directory saved images/clips are written to (requires
@@ -72,7 +73,7 @@ class Settings:
     detection_threshold: float
     classification_threshold: float
     ignore_species: list[str]
-    excluded_classes: list[str]
+    included_classes: list[str]
     stability_seconds: float
     image_dir: str
     video_save: bool
@@ -91,7 +92,7 @@ LIVE_FIELDS: frozenset[str] = frozenset(
         "detection_threshold",
         "classification_threshold",
         "ignore_species",
-        "excluded_classes",
+        "included_classes",
         "debug",
     }
 )
@@ -108,7 +109,7 @@ _POSITIVE_FLOAT_FIELDS = frozenset(
     {"stability_seconds", "video_pre_roll_seconds", "video_post_roll_seconds"}
 )
 _BOOL_FIELDS = frozenset({"video_save", "multithread", "debug"})
-_STRING_LIST_FIELDS = frozenset({"ignore_species", "excluded_classes"})
+_STRING_LIST_FIELDS = frozenset({"ignore_species", "included_classes"})
 # Optional coordinate fields: None (unset) is allowed, else within (lo, hi) degrees.
 _RANGED_OPTIONAL_FLOAT_FIELDS: dict[str, tuple[float, float]] = {
     "latitude": (-90.0, 90.0),
@@ -129,7 +130,7 @@ def default_settings() -> Settings:
         detection_threshold=app_config.threshold,
         classification_threshold=DEFAULT_SAVE_CONFIDENCE_THRESHOLD,
         ignore_species=[],
-        excluded_classes=sorted(app_config.excluded_classes),
+        included_classes=sorted(app_config.included_classes),
         stability_seconds=app_config.object_duration_threshold,
         image_dir=IMAGE_DIR,
         video_save=app_config.video.save,
@@ -286,8 +287,17 @@ def load_settings(path: str) -> Settings:
     if not isinstance(data, dict):
         logger.warning("Settings file %s is not an object; using defaults", path)
         return defaults
+    # Drop unknown/legacy keys (e.g. the renamed ``excluded_classes``) so a file
+    # written by an older build keeps its still-valid fields instead of the whole
+    # overlay resetting to defaults. ``merge_settings`` itself stays strict so the
+    # API update path still rejects unknown keys with a 400.
+    known = set(Settings.__dataclass_fields__)  # pylint: disable=no-member
+    recognised = {name: value for name, value in data.items() if name in known}
+    dropped = set(data) - recognised.keys()
+    if dropped:
+        logger.warning("Ignoring unknown settings in %s: %s", path, sorted(dropped))
     try:
-        return merge_settings(defaults, data)
+        return merge_settings(defaults, recognised)
     except ValueError as exc:
         logger.warning("Invalid settings in %s (%s); using defaults", path, exc)
         return defaults

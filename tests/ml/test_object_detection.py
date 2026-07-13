@@ -11,7 +11,7 @@ import pytest
 import birdscanner.ml.object_detection as od
 from birdscanner.ml.object_detection import (
     Detection,
-    filter_excluded_detections,
+    filter_included_detections,
     get_labels,
     parse_detections,
 )
@@ -111,20 +111,20 @@ def _det(category):
 _LABELS = ["bird", "bench", "person"]
 
 
-def test_filter_excluded_drops_matching_class_case_insensitively():
-    """Detections whose label is excluded (any case) are removed."""
+def test_filter_included_keeps_only_matching_class_case_insensitively():
+    """Only detections whose label is included (any case) survive."""
     dets = [_det(0), _det(1), _det(2)]  # bird, bench, person
-    kept = filter_excluded_detections(dets, _LABELS, {"Bench"})
-    assert [int(d.category) for d in kept] == [0, 2]
+    kept = filter_included_detections(dets, _LABELS, {"Bird"})
+    assert [int(d.category) for d in kept] == [0]
 
 
-def test_filter_excluded_empty_list_returns_input_unchanged():
-    """An empty exclude set is a no-op that returns the same list object."""
+def test_filter_included_empty_list_returns_input_unchanged():
+    """An empty include set is a no-op that returns the same list object."""
     dets = [_det(0), _det(1)]
-    assert filter_excluded_detections(dets, _LABELS, set()) is dets
+    assert filter_included_detections(dets, _LABELS, set()) is dets
 
 
-def test_filter_excluded_keeps_out_of_range_category():
+def test_filter_included_keeps_out_of_range_category():
     """A category index outside the label list is kept (guarded downstream)."""
     dets = [_det(99)]
-    assert filter_excluded_detections(dets, _LABELS, {"bench"}) == dets
+    assert filter_included_detections(dets, _LABELS, {"bird"}) == dets

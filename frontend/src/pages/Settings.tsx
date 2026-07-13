@@ -168,12 +168,12 @@ export function Settings() {
           restart={restartFields.has("stability_seconds")}
         />
         <ChipsField
-          label="Ignore these object types"
+          label="Track only these object types"
           placeholder="Add object type…"
-          help="The camera detects all sorts of objects, not just birds. List the ones to drop before tracking so their false positives don't fill the logs (e.g. “bench”). Case-insensitive."
-          value={form.excluded_classes}
-          onChange={(v) => setField("excluded_classes", v)}
-          restart={restartFields.has("excluded_classes")}
+          help="The camera detects all sorts of objects, not just birds. List the ones to track — everything else is dropped before tracking, so their false positives never fill the logs (default just “bird”). Leave empty to track everything. Case-insensitive."
+          value={form.included_classes}
+          onChange={(v) => setField("included_classes", v)}
+          restart={restartFields.has("included_classes")}
         />
       </Section>
 
