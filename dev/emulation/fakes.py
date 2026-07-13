@@ -73,6 +73,7 @@ class FakeIMX500:
         self.camera_num = 0
         self._input_size = _INPUT_SIZE
         self.current_detections: List[Detected] = []
+        self.inference_roi: Optional[Tuple[int, int, int, int]] = None
 
     # -- bring-up no-ops -------------------------------------------------------
     def show_network_fw_progress_bar(self) -> None:
@@ -80,6 +81,18 @@ class FakeIMX500:
 
     def set_auto_aspect_ratio(self) -> None:
         """No-op: aspect handling is irrelevant for the emulator."""
+
+    def set_inference_roi_abs(self, roi: Tuple[int, int, int, int]) -> None:
+        """Record the DNN inference ROI the detector requests.
+
+        On real hardware this restricts the sensor region fed to the on-chip
+        network; off-Pi there is no sensor to constrain, so we just record the
+        last requested ROI (tests assert the detector wired it to the crop).
+
+        Args:
+            roi: The ``(left, top, width, height)`` sensor-pixel ROI.
+        """
+        self.inference_roi = roi
 
     # -- inference surface -----------------------------------------------------
     def get_input_size(self) -> Tuple[int, int]:

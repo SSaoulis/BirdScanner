@@ -65,6 +65,12 @@ def test_capture_loop_persists_emulated_bird(camera_emulator, monkeypatch, tmp_p
     gating = build_gating(intrinsics)
     camera = build_camera(imx500, intrinsics)
 
+    # build_camera restricts the on-chip DNN input to the (default) detection crop
+    # so the detector sees the same zoomed view as the classifier.
+    from birdscanner.detector.hardware.crop import default_crop_region
+
+    assert imx500.inference_roi == default_crop_region().as_tuple()
+
     writer = _RecordingWriter()
     context = PipelineContext(
         classifier=cast(Classifier, object()),

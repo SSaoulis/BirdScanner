@@ -18,7 +18,6 @@ import sys
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-import cv2
 import numpy as np
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -27,7 +26,7 @@ if str(REPO_ROOT) not in sys.path:
 
 # Block disable so black re-wrapping can't drift the suppression off the anchor line.
 # pylint: disable=wrong-import-position
-from dev.emulation.yolo import COCO_CLASSES, Detected, _letterbox
+from dev.emulation.yolo import COCO_CLASSES, Detected, _letterbox, nms_indices
 
 # pylint: enable=wrong-import-position
 
@@ -136,15 +135,4 @@ class ImxOnnxDetector:
         Returns:
             The kept box indices (may be empty).
         """
-        if len(boxes) == 0:
-            return []
-        xywh = [
-            [float(cx - w / 2), float(cy - h / 2), float(w), float(h)]
-            for cx, cy, w, h in boxes
-        ]
-        indices = cv2.dnn.NMSBoxes(
-            xywh, scores.tolist(), self._conf_threshold, self._iou_threshold
-        )
-        if len(indices) == 0:
-            return []
-        return [int(i) for i in np.array(indices).reshape(-1)]
+        return nms_indices(boxes, scores, self._conf_threshold, self._iou_threshold)

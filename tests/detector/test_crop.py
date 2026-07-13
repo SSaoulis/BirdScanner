@@ -10,8 +10,10 @@ from birdscanner.detector.hardware.crop import (
     SENSOR_W,
     CropRegion,
     NormalizedBox,
+    SensorDimensions,
     crop_config_path,
     default_crop_region,
+    inference_roi_for_crop,
     load_crop_region,
     main_stream_size_for_crop,
     normalized_to_sensor,
@@ -116,6 +118,22 @@ def test_load_missing_keys_returns_default(tmp_path) -> None:
     path.write_text(json.dumps({"x": 1, "y": 2}), encoding="utf-8")
     default = default_crop_region()
     assert load_crop_region(str(path), default) == default
+
+
+def test_inference_roi_for_crop_matches_the_crop_region() -> None:
+    """The DNN inference ROI passes the crop rectangle straight through."""
+    region = default_crop_region()
+    assert inference_roi_for_crop(region) == region.as_tuple()
+
+
+def test_inference_roi_for_crop_clamps_out_of_bounds_region() -> None:
+    """An oversized/off-sensor region is clamped to the sensor before use."""
+    sensor = SensorDimensions(SENSOR_W, SENSOR_H)
+    roi = inference_roi_for_crop(CropRegion(-50, -50, SENSOR_W + 999, 400), sensor)
+    left, top, width, height = roi
+    assert left >= 0 and top >= 0
+    assert left + width <= SENSOR_W
+    assert top + height <= SENSOR_H
 
 
 def test_crop_config_path_env_override(monkeypatch) -> None:

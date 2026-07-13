@@ -194,6 +194,40 @@ def _letterbox(frame: np.ndarray, size: int) -> Tuple[np.ndarray, LetterboxTrans
     return canvas, LetterboxTransform(ratio, pad_x, pad_y, width, height)
 
 
+def nms_indices(
+    boxes: np.ndarray,
+    scores: np.ndarray,
+    conf_threshold: float,
+    iou_threshold: float,
+) -> List[int]:
+    """Run non-maximum suppression over centre-form boxes, returning kept indices.
+
+    Shared by the generic and IMX-format detectors (see
+    :class:`tools.imx_detector.ImxOnnxDetector`) so the cv2 NMS boilerplate lives
+    in one place.
+
+    Args:
+        boxes: ``(N, 4)`` boxes as ``(cx, cy, w, h)`` in input pixels.
+        scores: ``(N,)`` confidence scores.
+        conf_threshold: Minimum score for a box to be considered.
+        iou_threshold: IoU threshold above which overlapping boxes are suppressed.
+
+    Returns:
+        The kept box indices (may be empty).
+    """
+    if len(boxes) == 0:
+        return []
+    # cv2.dnn.NMSBoxes expects xywh with the top-left corner, not the centre.
+    xywh = [
+        [float(cx - box_w / 2), float(cy - box_h / 2), float(box_w), float(box_h)]
+        for cx, cy, box_w, box_h in boxes
+    ]
+    indices = cv2.dnn.NMSBoxes(xywh, scores.tolist(), conf_threshold, iou_threshold)
+    if len(indices) == 0:
+        return []
+    return [int(i) for i in np.array(indices).reshape(-1)]
+
+
 class OnnxYoloDetector:
     """YOLO11n ONNX object detector run via :mod:`onnxruntime`.
 
@@ -294,16 +328,4 @@ class OnnxYoloDetector:
         Returns:
             The kept box indices (may be empty).
         """
-        if len(boxes) == 0:
-            return []
-        # cv2.dnn.NMSBoxes expects xywh with the top-left corner, not the centre.
-        xywh = [
-            [float(cx - box_w / 2), float(cy - box_h / 2), float(box_w), float(box_h)]
-            for cx, cy, box_w, box_h in boxes
-        ]
-        indices = cv2.dnn.NMSBoxes(
-            xywh, scores.tolist(), self._conf_threshold, self._iou_threshold
-        )
-        if len(indices) == 0:
-            return []
-        return [int(i) for i in np.array(indices).reshape(-1)]
+        return nms_indices(boxes, scores, self._conf_threshold, self._iou_threshold)

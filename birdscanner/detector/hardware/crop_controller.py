@@ -21,7 +21,7 @@ import logging
 import threading
 import time
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Tuple
+from typing import Any, Callable, Dict, Optional, Tuple
 
 import numpy as np
 
@@ -62,6 +62,11 @@ class CropControllerConfig:
             and a ScalerCrop tuple (see :data:`ConfigFactory`).
         config_path: Path to persist the region to on every change.
         sensor: Sensor active-area dimensions in pixels.
+        set_inference_roi: Optional callback applying the on-chip DNN inference
+            ROI for a region, invoked after every crop change so the detector's
+            view stays locked to the crop (see
+            :func:`birdscanner.detector.hardware.camera.build_camera`). ``None``
+            leaves the inference ROI untouched.
     """
 
     region: CropRegion
@@ -69,6 +74,7 @@ class CropControllerConfig:
     config_factory: ConfigFactory
     config_path: str
     sensor: SensorDimensions
+    set_inference_roi: Optional[Callable[[CropRegion], None]] = None
 
 
 class CropController:
@@ -88,6 +94,7 @@ class CropController:
         self._config_factory = config.config_factory
         self._config_path = config.config_path
         self._sensor = config.sensor
+        self._set_inference_roi = config.set_inference_roi
         # Re-entrant so capture_full_preview can hold the lock while calling
         # other guarded helpers on the same thread.
         self.camera_lock = threading.RLock()
@@ -170,6 +177,11 @@ class CropController:
                 self._picam2.start()
                 self._main_size = new_main
             self._region = region
+            # Keep the on-chip DNN inference ROI locked to the crop. Applied here
+            # (inside the lock) so it also re-arms after a reconfigure's
+            # stop/start cycle, which can reset the sensor ROI control.
+            if self._set_inference_roi is not None:
+                self._set_inference_roi(region)
             save_crop_region(self._config_path, region)
         logger.info("Detection crop set to %s", region.as_tuple())
         return self.get_state()
