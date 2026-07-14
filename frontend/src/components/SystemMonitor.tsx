@@ -21,10 +21,12 @@ interface GaugeBarProps {
   unit: string;
   max: number;
   colorClass: string;
+  min?: number;
 }
 
-function GaugeBar({ label, value, unit, max, colorClass }: GaugeBarProps) {
-  const pct = value === null ? 0 : Math.min((value / max) * 100, 100);
+function GaugeBar({ label, value, unit, max, colorClass, min = 0 }: GaugeBarProps) {
+  const pct =
+    value === null ? 0 : Math.min(Math.max(((value - min) / (max - min)) * 100, 0), 100);
   return (
     <div>
       <div className="flex justify-between text-sm mb-1">
@@ -113,7 +115,8 @@ export function SystemMonitor() {
           label="CPU Temp"
           value={status?.cpu_temp_celsius ?? null}
           unit="°C"
-          max={100}
+          min={25}
+          max={85}
           colorClass={tempColor(status?.cpu_temp_celsius ?? 0)}
         />
         <div className="flex justify-between text-sm pt-2 border-t border-line">
