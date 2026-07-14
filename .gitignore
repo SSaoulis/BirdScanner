@@ -157,6 +157,8 @@ celerybeat.pid
 
 # Environments
 .env
+# Deploy script secrets (deploy.ps1); deploy.env.example IS committed.
+deploy.env
 .envrc
 .venv
 env/

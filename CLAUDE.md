@@ -237,6 +237,8 @@ docker compose logs -f detector
 ```
 UI at `http://birdpi.local:8080` (mDNS) or `http://<pi-ip>:8080`.
 
+**Remote redeploy (`deploy.ps1`)** — one-shot PowerShell script (Windows dev box → Pi) that SSHes in via **plink** (PuTTY), then runs `cd $PI_REPO_PATH && git pull && docker compose up --build -d` (detached by default so it returns; pass `-Follow` to stream logs in the foreground instead — but Ctrl-C then stops the stack). Config is read from a git-ignored `deploy.env` (copy `deploy.env.example`): `PI_SSH_HOST`/`PI_SSH_USER`/`PI_SSH_PORT`/`PI_SSH_PASSWORD`/`PI_REPO_PATH`; real env vars override the file. The password is passed to plink via `-pw` (kept out of the compose `.env`). Needs `plink.exe` on PATH; the first connection caches the Pi's host key (script omits `-batch` so that prompt can appear).
+
 **Key points:**
 - The `data` Docker volume is the **single source of truth**: `detector` writes the images + mp4 clips (under `$IMAGE_DIR/{species}/`), the SQLite DB, `crop.json` (`CROP_CONFIG_PATH`), and `settings.json` (`SETTINGS_PATH`); the `api` mounts it read-only and proxies all write actions (settings/crop/delete/correct) to the detector's control server.
 - The `detector` image (`Dockerfile.detector`) is based on `dtcooper/raspberrypi-os:bookworm` so the system `python3` can import the apt-installed `python3-picamera2`/`python3-libcamera` (not on PyPI). numpy/opencv/pillow come from apt; `numpy==1.24.2` + `onnxruntime==1.23.2` + `sqlmodel` are pip-installed with `--break-system-packages`. A plain `python:3.x` base crashes with `ModuleNotFoundError: No module named 'libcamera'`.
