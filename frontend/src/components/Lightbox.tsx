@@ -392,17 +392,22 @@ export function Lightbox({
             ) : (
               <img
                 // Keyed on the shown id so a fresh element mounts on every swap
-                // and the develop-in animation replays. The full-res bytes are
+                // and the develop-in reveal replays. The full-res bytes are
                 // network-fetched on demand, so the breathing blur-up loader
-                // (below) covers the gap; onLoad flips `photoReady`, fading the
-                // loader out as this sharp plate develops in over it.
+                // (below) covers the gap. The plate is held hidden (opacity-0)
+                // while it loads — rather than developing in from the first byte
+                // — so you never watch it paint in top-to-bottom beneath the
+                // blur. onLoad flips `photoReady`, which fades the loader out and
+                // develops in the now fully-decoded sharp plate over it.
                 key={id}
                 ref={imgRef}
                 src={fullUrl}
                 alt={`Captured ${species}`}
                 onLoad={() => setPhotoReady(true)}
                 onError={() => setPhotoReady(true)}
-                className="block max-h-[60vh] max-w-full animate-plate-develop rounded-lg bg-ink shadow-plate-lift lg:max-h-[80vh] lg:max-w-[44vw]"
+                className={`block max-h-[60vh] max-w-full rounded-lg bg-ink shadow-plate-lift lg:max-h-[80vh] lg:max-w-[44vw] ${
+                  photoReady ? "animate-plate-develop" : "opacity-0"
+                }`}
               />
             )}
 
