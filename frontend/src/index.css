@@ -55,11 +55,11 @@
   }
 }
 
-/* ── Lightbox: the next plate resolves into focus ──
-   When the viewer moves to the next sighting, the current image is held on
-   screen while the next one preloads off-screen, then swaps in and quietly
-   resolves out of a soft focus — a gentle cross-fade so the picture, its box
-   and its label all land together, with no scrim or moving highlight. */
+/* ── Lightbox: the plate resolves into focus ──
+   The sharp full-res still develops in over the breathing blur-up loader (see
+   plate-breathe below): as it decodes it quietly resolves out of a soft focus,
+   a gentle blur-to-sharp so the picture lands without a scrim or moving
+   highlight. */
 @keyframes plate-develop {
   0% {
     opacity: 0;

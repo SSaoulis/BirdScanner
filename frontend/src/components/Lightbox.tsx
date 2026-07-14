@@ -383,7 +383,13 @@ export function Lightbox({
                 key={id}
                 src={thumbUrl}
                 alt=""
-                className="h-full w-full animate-plate-breathe rounded-lg bg-ink object-cover"
+                // The breathing (blur) animation only runs while loading; once
+                // ready we drop it (keeping a static blur for the opacity
+                // fade-out) so an infinite filter animation isn't left
+                // compositing behind every open lightbox.
+                className={`h-full w-full rounded-lg bg-ink object-cover blur-[8px] ${
+                  activeReady ? "" : "animate-plate-breathe"
+                }`}
               />
             </div>
 
