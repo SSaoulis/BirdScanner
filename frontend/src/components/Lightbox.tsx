@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type Ref } from "react";
 import {
   api,
   timeAgo,
@@ -341,16 +341,14 @@ export function Lightbox({
                 className="block max-h-[60vh] max-w-full rounded-lg bg-ink object-cover shadow-plate-lift lg:max-h-[80vh] lg:max-w-[44vw]"
               />
             ) : (
-              <img
-                // Keyed on the shown id so a fresh element mounts on every swap
-                // and the develop-in animation replays. The bytes are already
-                // cached (preloaded before the swap), so it resolves from a soft
-                // blur straight into the sharp plate.
+              <PlateImage
+                // Keyed on the shown id so a fresh element mounts on every swap,
+                // resetting its loaded state and replaying the develop-in reveal.
                 key={id}
-                ref={imgRef}
+                imgRef={imgRef}
                 src={fullUrl}
                 alt={`Captured ${species}`}
-                className="block max-h-[60vh] max-w-full animate-plate-develop rounded-lg bg-ink shadow-plate-lift lg:max-h-[80vh] lg:max-w-[44vw]"
+                className="block max-h-[60vh] max-w-full rounded-lg bg-ink shadow-plate-lift lg:max-h-[80vh] lg:max-w-[44vw]"
               />
             )}
 
@@ -688,6 +686,40 @@ export function Lightbox({
         </button>
       )}
     </div>
+  );
+}
+
+interface PlateImageProps {
+  /** URL of the full-resolution detection image. */
+  src: string;
+  /** Alt text describing the captured bird. */
+  alt: string;
+  /** Ref to the underlying <img>, used to measure its rendered size. */
+  imgRef: Ref<HTMLImageElement>;
+  /** Layout/appearance classes shared with the sibling video player. */
+  className: string;
+}
+
+/**
+ * Full-resolution detection image that stays hidden until it has fully loaded,
+ * then resolves into focus.
+ *
+ * A bare <img> paints progressively (top-to-bottom) as its bytes arrive, so the
+ * time-based blur-in would reveal a half-drawn picture beneath the blur. Instead
+ * this holds the image invisible (opacity 0) while it loads and only reveals it
+ * — via the develop-in animation — once `onLoad` fires, so the plate always
+ * appears whole. Mounted keyed by detection id, so `loaded` resets on each swap.
+ */
+function PlateImage({ src, alt, imgRef, className }: PlateImageProps) {
+  const [loaded, setLoaded] = useState(false);
+  return (
+    <img
+      ref={imgRef}
+      src={src}
+      alt={alt}
+      onLoad={() => setLoaded(true)}
+      className={`${className} ${loaded ? "animate-plate-develop" : "opacity-0"}`}
+    />
   );
 }
 
