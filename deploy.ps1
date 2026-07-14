@@ -15,16 +15,18 @@
 
 .EXAMPLE
     ./deploy.ps1
-        Build + (re)start using the settings in deploy.env.
+        Build + (re)start the stack detached (docker compose up --build -d),
+        then return.
 
 .EXAMPLE
-    ./deploy.ps1 -Detach
-        Same, but start the stack detached (docker compose up --build -d).
+    ./deploy.ps1 -Follow
+        Same, but stay attached and stream logs in the foreground. NOTE: Ctrl-C
+        then stops the stack (foreground `compose up` treats SIGINT as shutdown).
 #>
 [CmdletBinding()]
 param(
-    # Start the stack detached (-d) instead of streaming logs in the foreground.
-    [switch]$Detach
+    # Stream logs in the foreground instead of detaching. Ctrl-C stops the stack.
+    [switch]$Follow
 )
 
 $ErrorActionPreference = 'Stop'
@@ -90,8 +92,11 @@ $port = [Environment]::GetEnvironmentVariable('PI_SSH_PORT')
 if ([string]::IsNullOrWhiteSpace($port)) { $port = '22' }
 $repoPath = Get-RequiredEnv 'PI_REPO_PATH'
 
+# Default to detached so a redeploy builds, starts, and returns. In the
+# foreground (-Follow) a Ctrl-C would send SIGINT to `compose up` and stop the
+# stack, so detached is the safer default.
 $composeUp = 'docker compose up --build'
-if ($Detach) { $composeUp += ' -d' }
+if (-not $Follow) { $composeUp += ' -d' }
 
 # Fail fast at each step; quote the path in case it ever contains spaces.
 $remoteCommand = "cd '$repoPath' && git pull && $composeUp"
