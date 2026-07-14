@@ -50,7 +50,7 @@ function ScoreBar({ label, barFrac, valueText, highlight }: ScoreBarProps) {
     <div className="flex flex-col gap-0.5">
       <div className="flex items-baseline justify-between gap-2">
         <span
-          className={`truncate text-sm ${
+          className={`min-w-0 truncate text-sm ${
             highlight ? "font-display text-ink" : "text-bark"
           }`}
         >
