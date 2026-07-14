@@ -327,12 +327,13 @@ export function Lightbox({
         ) : (
           <img
             // Keyed on the shown id so a fresh element mounts on every swap.
-            // On desktop the develop-in animation replays as the sharp plate
-            // resolves; on mobile it is dropped because the physical filmstrip
-            // slide is already the transition (a blur re-develop under it would
-            // double up). The full-res bytes are network-fetched on demand, so
-            // the breathing blur-up loader (below) covers the gap; onLoad flips
-            // `photoReady`, fading the loader out.
+            // The plate is held hidden (opacity-0) while the full-res bytes
+            // network-fetch, so you never watch it paint in top-to-bottom
+            // beneath the blur loader (below, which covers the gap). Once
+            // loaded, onLoad flips `photoReady`: on desktop the develop-in
+            // reveal replays as the loader fades; on mobile the develop is
+            // dropped because the physical filmstrip slide is already the
+            // transition (a blur re-develop under it would double up).
             key={id}
             ref={imgRef}
             src={fullUrl}
@@ -340,7 +341,7 @@ export function Lightbox({
             onLoad={() => setPhotoReady(true)}
             onError={() => setPhotoReady(true)}
             className={`block max-h-[60vh] max-w-full rounded-lg bg-ink shadow-plate-lift lg:max-h-[80vh] lg:max-w-[44vw] ${
-              isDesktop ? "animate-plate-develop" : ""
+              photoReady ? (isDesktop ? "animate-plate-develop" : "") : "opacity-0"
             }`}
           />
         )}
