@@ -226,6 +226,12 @@ export function Dashboard() {
           onDelete={removeDetection}
           onUpdate={updateDetection}
           position={{ index: lightbox.index, total: activeList.length }}
+          prevDetection={lightbox.index > 0 ? activeList[lightbox.index - 1] ?? null : null}
+          nextDetection={
+            lightbox.index < activeList.length - 1
+              ? activeList[lightbox.index + 1] ?? null
+              : null
+          }
         />
       )}
 
