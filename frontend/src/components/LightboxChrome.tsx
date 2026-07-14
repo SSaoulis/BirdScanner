@@ -68,13 +68,6 @@ export function PlateControlBar({
   const tabIndex = interactive ? undefined : -1;
   return (
     <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-start justify-between gap-2 rounded-t-lg bg-gradient-to-b from-ink/80 via-ink/35 to-transparent px-2.5 pb-12 pt-2.5">
-      {/* Mobile position chip — the affordance for swipe navigation.
-          Non-interactive; hidden on desktop, where the edge arrows show. */}
-      {position && (
-        <span className="tnum pointer-events-none absolute left-1/2 top-2.5 -translate-x-1/2 rounded-full bg-ink/55 px-2.5 py-1 text-xs font-medium text-paper ring-1 ring-paper/25 backdrop-blur lg:hidden">
-          {position.index + 1} / {position.total}
-        </span>
-      )}
       <div className={`flex items-center gap-2 ${interactive ? "pointer-events-auto" : ""}`}>
         {/* Media (Photo / Video) — swaps the still for the clip */}
         <div
@@ -137,17 +130,28 @@ export function PlateControlBar({
         )}
       </div>
 
-      {/* Close */}
-      <button
-        className={`rounded-full bg-ink/55 p-1.5 text-lg leading-none text-paper ring-1 ring-paper/25 backdrop-blur transition-colors hover:bg-ink/70 ${
-          interactive ? "pointer-events-auto" : ""
-        }`}
-        onClick={interactive ? onClose : undefined}
-        aria-label="Close"
-        tabIndex={tabIndex}
-      >
-        ✕
-      </button>
+      {/* Right group: the mobile position chip (the swipe-navigation
+          affordance — non-interactive, hidden on desktop where the edge arrows
+          show) tucked immediately left of Close, so it stays clear of the
+          left-hand view controls. */}
+      <div className="flex items-center gap-2">
+        {position && (
+          <span className="tnum pointer-events-none rounded-full bg-ink/55 px-2.5 py-1 text-xs font-medium text-paper ring-1 ring-paper/25 backdrop-blur lg:hidden">
+            {position.index + 1} / {position.total}
+          </span>
+        )}
+        {/* Close */}
+        <button
+          className={`rounded-full bg-ink/55 p-1.5 text-lg leading-none text-paper ring-1 ring-paper/25 backdrop-blur transition-colors hover:bg-ink/70 ${
+            interactive ? "pointer-events-auto" : ""
+          }`}
+          onClick={interactive ? onClose : undefined}
+          aria-label="Close"
+          tabIndex={tabIndex}
+        >
+          ✕
+        </button>
+      </div>
     </div>
   );
 }
