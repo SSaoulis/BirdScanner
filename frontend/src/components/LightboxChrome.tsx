@@ -63,6 +63,9 @@ export function PlateControlBar({
   onToggleBox,
   onClose,
 }: PlateControlBarProps) {
+  // The inert neighbour preview is removed from the tab order too (not just
+  // pointer-events), so an off-screen, aria-hidden plate never traps focus.
+  const tabIndex = interactive ? undefined : -1;
   return (
     <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-start justify-between gap-2 rounded-t-lg bg-gradient-to-b from-ink/80 via-ink/35 to-transparent px-2.5 pb-12 pt-2.5">
       {/* Mobile position chip — the affordance for swipe navigation.
@@ -101,6 +104,7 @@ export function PlateControlBar({
                 }
                 aria-pressed={mode === m}
                 aria-disabled={unavailable}
+                tabIndex={tabIndex}
                 title={unavailable ? noVideoReasonText(noVideoReason) : undefined}
               >
                 {m}
@@ -126,6 +130,7 @@ export function PlateControlBar({
                 : undefined
             }
             aria-pressed={showBox}
+            tabIndex={tabIndex}
           >
             {showBox ? "Box on" : "Box off"}
           </button>
@@ -139,6 +144,7 @@ export function PlateControlBar({
         }`}
         onClick={interactive ? onClose : undefined}
         aria-label="Close"
+        tabIndex={tabIndex}
       >
         ✕
       </button>
@@ -207,6 +213,9 @@ export function SpecimenLabel({
   deleteError,
   picker,
 }: SpecimenLabelProps) {
+  // See PlateControlBar: keep the inert neighbour out of the tab order so its
+  // (side-effecting) Download link can't be keyboard-activated off screen.
+  const tabIndex = interactive ? undefined : -1;
   return (
     <div
       className="w-full rounded-xl border border-line bg-card/95 px-4 py-3 shadow-plate"
@@ -232,6 +241,7 @@ export function SpecimenLabel({
               aria-expanded={correcting}
               aria-label="Correct the species"
               title="Wrong bird? Set the record straight."
+              tabIndex={tabIndex}
             >
               <span aria-hidden="true">✎</span>
               Correct ID
@@ -276,6 +286,7 @@ export function SpecimenLabel({
             download
             className="rounded-md border border-line bg-paper px-3 py-1.5 text-xs font-medium text-ink transition-colors hover:bg-card"
             onClick={interactive ? (e) => e.stopPropagation() : undefined}
+            tabIndex={tabIndex}
           >
             Download
           </a>
@@ -290,6 +301,7 @@ export function SpecimenLabel({
                 : undefined
             }
             disabled={deleting}
+            tabIndex={tabIndex}
           >
             {deleting ? "Deleting…" : "Delete"}
           </button>
@@ -329,6 +341,8 @@ export function MobilePanelTabs({
   onSelectReference,
   onSelectStats,
 }: MobilePanelTabsProps) {
+  // See PlateControlBar: the inert neighbour's tabs leave the tab order too.
+  const tabIndex = interactive ? undefined : -1;
   return (
     <div
       className="flex gap-1 rounded-xl border border-line bg-card p-1"
@@ -341,6 +355,7 @@ export function MobilePanelTabs({
         }`}
         onClick={interactive ? onSelectReference : undefined}
         aria-pressed={showReference}
+        tabIndex={tabIndex}
       >
         Field guide
       </button>
@@ -350,6 +365,7 @@ export function MobilePanelTabs({
         }`}
         onClick={interactive ? onSelectStats : undefined}
         aria-pressed={showStats}
+        tabIndex={tabIndex}
       >
         Advanced stats
       </button>
