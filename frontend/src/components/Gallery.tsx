@@ -107,6 +107,11 @@ export function Gallery({
           }
           onDelete={onDeleteDetection}
           onUpdate={onUpdateDetection}
+          position={
+            lightboxIndex !== null
+              ? { index: lightboxIndex, total: detections.length }
+              : null
+          }
         />
       )}
 
