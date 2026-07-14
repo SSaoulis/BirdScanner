@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type TouchEvent } from "react";
 import {
   api,
   timeAgo,
@@ -23,6 +23,11 @@ interface LightboxProps {
   onDelete: (id: number) => void;
   /** Called with the updated detection after its species is corrected. */
   onUpdate: (updated: Detection) => void;
+  /**
+   * Position of this detection within the parent's list, for the mobile counter
+   * chip. `index` is 0-based. Omit to hide the chip (navigation still works).
+   */
+  position?: { index: number; total: number } | null;
 }
 
 /**
@@ -68,6 +73,7 @@ export function Lightbox({
   onNext,
   onDelete,
   onUpdate,
+  position,
 }: LightboxProps) {
   // The detection whose plate is *currently on screen*. Decoupled from the
   // incoming `detection` prop so that on prev/next we hold the current plate —
@@ -226,6 +232,35 @@ export function Lightbox({
     return () => window.removeEventListener("keydown", handleKey);
   }, [onClose, onPrev, onNext, correcting]);
 
+  // Touch-swipe navigation (mobile). The floating arrows are desktop-only, so a
+  // horizontal swipe on the image is the phone affordance for prev/next. Start
+  // coords are stashed on touchstart; the swipe is judged on touchend.
+  const touchStart = useRef<{ x: number; y: number } | null>(null);
+
+  /** Record where a touch began so `handleTouchEnd` can measure the swipe. */
+  function handleTouchStart(e: TouchEvent) {
+    const t = e.changedTouches[0];
+    touchStart.current = { x: t.clientX, y: t.clientY };
+  }
+
+  /**
+   * Navigate on a horizontal-dominant swipe. Fires only when the gesture is
+   * clearly sideways (past 50px and more horizontal than vertical), so a plain
+   * vertical scroll of the overlay never triggers it. Suppressed while the
+   * correction picker owns interaction; respects null callbacks at the list ends.
+   */
+  function handleTouchEnd(e: TouchEvent) {
+    const start = touchStart.current;
+    touchStart.current = null;
+    if (!start || correcting) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - start.x;
+    const dy = t.clientY - start.y;
+    if (Math.abs(dx) <= 50 || Math.abs(dx) <= Math.abs(dy) * 1.5) return;
+    if (dx < 0) onNext?.();
+    else onPrev?.();
+  }
+
   // Prevent body scroll while open
   useEffect(() => {
     document.body.style.overflow = "hidden";
@@ -274,7 +309,7 @@ export function Lightbox({
       {/* Prev arrow */}
       {onPrev && (
         <button
-          className="absolute left-4 top-1/2 -translate-y-1/2 p-3 rounded-full bg-card/90 hover:bg-card text-ink text-2xl shadow-plate transition-colors z-10"
+          className="hidden lg:block absolute left-4 top-1/2 -translate-y-1/2 p-3 rounded-full bg-card/90 hover:bg-card text-ink text-2xl shadow-plate transition-colors z-10"
           onClick={(e) => { e.stopPropagation(); onPrev(); }}
           aria-label="Previous sighting"
         >
@@ -321,7 +356,11 @@ export function Lightbox({
             the image itself. Nothing below can be wider than the image, so the
             plate is never pushed aside and the tab sits flush on its edge. */}
         <div className="flex flex-col items-start gap-3">
-          <div className="relative w-fit">
+          <div
+            className="relative w-fit"
+            onTouchStart={handleTouchStart}
+            onTouchEnd={handleTouchEnd}
+          >
             {mode === "video" && hasVideo ? (
               <video
                 src={videoUrl}
@@ -379,6 +418,13 @@ export function Lightbox({
                 bottom. The scrim is click-through; only the controls take pointer
                 events. */}
             <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-start justify-between gap-2 rounded-t-lg bg-gradient-to-b from-ink/80 via-ink/35 to-transparent px-2.5 pb-12 pt-2.5">
+              {/* Mobile position chip — the affordance for swipe navigation.
+                  Non-interactive; hidden on desktop, where the edge arrows show. */}
+              {position && (
+                <span className="pointer-events-none absolute left-1/2 top-2.5 -translate-x-1/2 rounded-full bg-ink/55 px-2.5 py-1 text-xs font-medium tabular-nums text-paper ring-1 ring-paper/25 backdrop-blur lg:hidden">
+                  {position.index + 1} / {position.total}
+                </span>
+              )}
               <div className="pointer-events-auto flex items-center gap-2">
                 {/* Media (Photo / Video) — swaps the still for the clip */}
                 <div
@@ -680,7 +726,7 @@ export function Lightbox({
       {/* Next arrow */}
       {onNext && (
         <button
-          className="absolute right-4 top-1/2 -translate-y-1/2 p-3 rounded-full bg-card/90 hover:bg-card text-ink text-2xl shadow-plate transition-colors z-10"
+          className="hidden lg:block absolute right-4 top-1/2 -translate-y-1/2 p-3 rounded-full bg-card/90 hover:bg-card text-ink text-2xl shadow-plate transition-colors z-10"
           onClick={(e) => { e.stopPropagation(); onNext(); }}
           aria-label="Next sighting"
         >

@@ -225,6 +225,7 @@ export function Dashboard() {
           }
           onDelete={removeDetection}
           onUpdate={updateDetection}
+          position={{ index: lightbox.index, total: activeList.length }}
         />
       )}
 
