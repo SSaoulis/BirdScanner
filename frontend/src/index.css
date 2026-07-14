@@ -74,6 +74,26 @@
   animation: plate-develop 0.4s ease-out both;
 }
 
+/* ── Lightbox: a plate still "developing" ──
+   The soft breathing state shown over a blurred low-res thumbnail while the
+   full-res still (or the clip) loads — a gentle pulse of blur + opacity so the
+   viewer can see the next picture is on its way. Held static under
+   prefers-reduced-motion by the global guard below. */
+@keyframes plate-breathe {
+  0%,
+  100% {
+    opacity: 0.65;
+    filter: blur(8px);
+  }
+  50% {
+    opacity: 1;
+    filter: blur(14px);
+  }
+}
+.animate-plate-breathe {
+  animation: plate-breathe 1.9s ease-in-out infinite;
+}
+
 /* Warm, slim scrollbars so the horizontal strips don't show a cold grey bar. */
 ::-webkit-scrollbar {
   height: 10px;
