@@ -34,6 +34,14 @@ python -m dev.run_emulated   # no source → cycles the bundled tests/_test_imag
 ```
 Installs fake `picamera2`/`libcamera` modules (backed by a real YOLO11n ONNX detector) and runs the real `main()`, so the whole detector (classifier, geomodel prior, SQLite writer, control server, clip encoding) runs locally. Point the API at the same `DB_PATH`/`IMAGE_DIR` to watch detections in the UI. See `dev/emulation`.
 
+### Tracking + classification dev suite (off-Pi, for developing a new tracking method)
+```bash
+# needs assets/models/yolo11n.onnx (out-of-band); classifier ONNX optional
+python -m dev.tracking_review tests/_test_videos/great_tit_2.mp4 out.mp4
+python -m dev.tracking_review in.mp4 out.mp4 --no-classify --min-stable 4 --iou 0.3
+```
+`dev/tracking_review.py` takes an `.mp4` in and renders a composite **dashboard `.mp4`**: each frame is the annotated video pane (tracked boxes, `#id`+stability, gold once stable, species once classified) over two time-series plots with a live cursor — bird-class confidence (`0` on no-detection frames) and tracked `n_stable` (max `stable_frames` across active tracks) — with the classifier's best frame per track (+ ROI inset) appended at the end. It assembles the *real* `birdscanner.ml` pipeline (`StableDetectionTracker` → `BestFrameSelector` → `preprocess_roi` → ConvNeXt `Classifier`) behind the off-Pi `OnnxYoloDetector` (IMX500 stand-in, used directly — no `parse_detections`/`FakeIMX500`). The shared building blocks (`run_review` — pass `make_tracker` to drop in a new tracker, `keep_frames=True` to retain frames; `render_dashboard_video`; `annotate_frame`; `ReviewConfig`) also drive `notebooks/tracking_playground.ipynb`. YOLO model resolves via `--yolo-model` → `YOLO_ONNX_PATH` → `assets/models/yolo11n.onnx` → project-root `yolo11n.onnx`; classification degrades to detection+tracking only when the classifier ONNX is absent. The mp4 writer prefers H.264 (`avc1`), falling back to `mp4v` when the local OpenCV lacks an H.264 encoder (common on Windows dev boxes — the file still writes).
+
 ### Tests
 ```bash
 pytest tests/                                                    # all
@@ -98,7 +106,7 @@ birdscanner/
   api/        FastAPI REST API + routers
   db/         SQLite persistence
 assets/       labels/, models/ (classifier ONNX + class map), species_reference/
-dev/          off-Pi camera emulator (run_emulated + emulation/); may import birdscanner
+dev/          off-Pi camera emulator (run_emulated + emulation/) + tracking_review (mp4→dashboard dev suite); may import birdscanner
 tools/        offline builders/scripts — NOT runtime
 ```
 
