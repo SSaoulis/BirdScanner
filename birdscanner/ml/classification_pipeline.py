@@ -496,6 +496,27 @@ def _should_persist(result: Classification, context: PipelineContext) -> bool:
     return result.species.lower() not in context.ignore_species
 
 
+def _clip_frame(context: PipelineContext, request, full_img: np.ndarray) -> np.ndarray:
+    """Return the frame to buffer for the video clip's pre-roll.
+
+    Prefers the full, uncropped field of view produced by ``video_frame_source``
+    (the raw stream); falls back to the cropped ``main`` frame when no source is
+    wired or it fails to produce a frame.
+
+    Args:
+        context: Pipeline dependencies (holds the optional video frame source).
+        request: The current camera request the source debayers.
+        full_img: The cropped ``main`` frame, used as the fallback.
+
+    Returns:
+        The frame to feed the video ring buffer.
+    """
+    if context.video_frame_source is None:
+        return full_img
+    produced = context.video_frame_source(request)
+    return produced if produced is not None else full_img
+
+
 def process_detections(
     request,
     stream: str,
@@ -521,17 +542,9 @@ def process_detections(
         full_img = m.array.copy()
 
         # Feed every clean frame into the video ring buffer (cheap; no encoding
-        # while idle) so a triggered clip has pre-roll footage. The clip records
-        # the full, uncropped field of view (from the raw stream via
-        # ``video_frame_source``) rather than the cropped ``main`` frame; if no
-        # source is wired or it fails, fall back to the cropped frame.
+        # while idle) so a triggered clip has pre-roll footage.
         if context.video_frame_fn is not None:
-            clip_frame = full_img
-            if context.video_frame_source is not None:
-                produced = context.video_frame_source(request)
-                if produced is not None:
-                    clip_frame = produced
-            context.video_frame_fn(clip_frame)
+            context.video_frame_fn(_clip_frame(context, request, full_img))
 
         for detection_id, detection in enumerate(last_results):
             classifier_class = label_for_category(labels, int(detection.category))

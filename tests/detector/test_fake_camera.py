@@ -81,22 +81,38 @@ def test_get_outputs_drops_unknown_labels(emulation_state):
     assert classes.shape == (1, 0)
 
 
-def test_convert_inference_coords_maps_to_main_pixels(emulation_state):
-    """A normalized (y0, x0, y1, x1) box scales to main-stream (x, y, w, h) pixels."""
+def test_convert_inference_coords_maps_through_scaler_crop(emulation_state):
+    """A full-sensor box is offset into the ScalerCrop and scaled to main pixels.
+
+    Mirrors the real IMX500: coords are fractions of the full sensor, translated
+    into the crop window then scaled to the main stream. Here the crop is
+    900x600 at sensor (1000, 500) and main is 2x the crop, so a box whose corner
+    sits 100x60 sensor-px inside the crop lands at 200x120 in main.
+    """
+    imx500 = emulation_state.imx500
+    picam2 = FakePicam2()
+    picam2.main_size = (1800, 1200)  # 2x the 900x600 crop
+    picam2._scaler = (1000, 500, 900, 600)  # crop window in sensor pixels
+
+    # (y0, x0, y1, x1) as full-sensor fractions; corners at crop-relative
+    # (100, 60) and (550, 360) sensor pixels (4056x3040 sensor).
+    box = (560 / 3040, 1100 / 4056, 860 / 3040, 1550 / 4056)
+    result = imx500.convert_inference_coords(box, {}, picam2)
+
+    assert result == (200, 120, 900, 600)
+
+
+def test_convert_inference_coords_degenerate_crop_scales_to_main(emulation_state):
+    """A zero-area ScalerCrop falls back to plain main-stream scaling."""
     imx500 = emulation_state.imx500
     picam2 = FakePicam2()
     picam2.main_size = (1000, 500)
+    picam2._scaler = (0, 0, 0, 0)
 
     # box in decoded (y0, x0, y1, x1) order: top=0.2, left=0.1, bottom=0.6, right=0.4
-    box = (0.2, 0.1, 0.6, 0.4)
-    result = imx500.convert_inference_coords(box, {}, picam2)
+    result = imx500.convert_inference_coords((0.2, 0.1, 0.6, 0.4), {}, picam2)
 
-    assert result == (
-        100,
-        100,
-        300,
-        200,
-    )  # x=0.1*1000, y=0.2*500, w=0.3*1000, h=0.4*500
+    assert result == (100, 100, 300, 200)  # x=0.1*1000, y=0.2*500, w=0.3*1000, ...
 
 
 def test_capture_metadata_fires_callback_and_counts(emulation_state):

@@ -67,9 +67,18 @@ def test_capture_loop_persists_emulated_bird(camera_emulator, monkeypatch, tmp_p
 
     # build_camera restricts the on-chip DNN input to the (default) detection crop
     # so the detector sees the same zoomed view as the classifier.
-    from birdscanner.detector.hardware.crop import default_crop_region
+    from birdscanner.detector.hardware.crop import (
+        SENSOR_H,
+        SENSOR_W,
+        default_crop_region,
+    )
+    from birdscanner.ml.object_detection import InferenceRoi
 
     assert imx500.inference_roi == default_crop_region().as_tuple()
+    # The exact ROI pushed to the DNN is published for the loop's coordinate remap.
+    assert camera.inference_roi_state.roi == InferenceRoi(
+        *default_crop_region().as_tuple(), SENSOR_W, SENSOR_H
+    )
 
     writer = _RecordingWriter()
     context = PipelineContext(
@@ -91,13 +100,47 @@ def test_capture_loop_persists_emulated_bird(camera_emulator, monkeypatch, tmp_p
     assert record.species == "Robin"
     # The stand-in YOLO confidence round-tripped as detection_confidence.
     assert record.detection_confidence == pytest.approx(0.95)
-    # The normalized box was persisted within [0, 1].
-    for frac in (record.box_x, record.box_y, record.box_w, record.box_h):
-        assert frac is not None and 0.0 <= frac <= 1.0
+    # The box round-trips through the ROI coordinate remap: the detector emits a
+    # (0.3, 0.3, 0.7, 0.7) box in its (ROI-relative) main frame, and after the
+    # ROI->full-sensor remap + ScalerCrop mapping it comes back as the same
+    # region of the main stream — (x, y) = (0.3, 0.3), (w, h) = (0.4, 0.4). Before
+    # the remap fix this landed clamped to the crop edge (wrong place).
+    assert record.box_x == pytest.approx(0.3, abs=0.01)
+    assert record.box_y == pytest.approx(0.3, abs=0.01)
+    assert record.box_w == pytest.approx(0.4, abs=0.01)
+    assert record.box_h == pytest.approx(0.4, abs=0.01)
 
     # The track was marked classified exactly once (gating held).
     track = gating.tracker.track_for_detection_id(0)
     assert track is not None and track.classified
+
+
+def test_build_camera_without_roi_restriction_leaves_roi_unset(
+    camera_emulator, monkeypatch
+):
+    """With restrict_inference_to_crop off, no ROI is pushed or published.
+
+    The historic full-FOV behaviour: the DNN sees the whole sensor, boxes are
+    already full-sensor-normalized, and the loop's coordinate remap is a no-op
+    (inference_roi_state.roi stays None).
+    """
+    from .conftest import FixedBoxDetector, SolidFrameSource
+
+    monkeypatch.setattr(app_config, "restrict_inference_to_crop", False)
+    camera_emulator(SolidFrameSource(), FixedBoxDetector(), max_frames=1)
+
+    from birdscanner.detector.hardware.camera import (
+        build_camera,
+        prepare_intrinsics,
+        wait_for_camera,
+    )
+
+    imx500 = wait_for_camera("fake.rpk")
+    intrinsics = prepare_intrinsics(imx500)
+    camera = build_camera(imx500, intrinsics)
+
+    assert imx500.inference_roi is None
+    assert camera.inference_roi_state.roi is None
 
 
 def test_capture_loop_stops_when_frames_exhausted(camera_emulator, monkeypatch):

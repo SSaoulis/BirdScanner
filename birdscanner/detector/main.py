@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from birdscanner.ml.object_detection import (
+    InferenceContext,
     filter_included_detections,
     parse_detections,
     get_labels,
@@ -169,6 +170,8 @@ def _run_capture_loop(
         gating: The stable-track gating bundle.
     """
     labels = get_labels(camera.intrinsics)
+    # The IMX500 handles are constant across the loop; bundle them once.
+    context = InferenceContext(camera.imx500, camera.intrinsics, camera.picam2)
     state: dict = {"last_results": None}
 
     def detection_callback(request):
@@ -186,10 +189,12 @@ def _run_capture_loop(
             metadata = camera.picam2.capture_metadata()
             results = parse_detections(
                 metadata,
-                camera.imx500,
-                camera.intrinsics,
+                context,
                 app_config.threshold,
-                camera.picam2,
+                # When the DNN input is restricted to the crop, the network's
+                # boxes are ROI-relative; hand parse_detections the active ROI so
+                # it remaps them back to full-sensor coords (None = full FOV).
+                inference_roi=camera.inference_roi_state.roi,
             )
             # Keep only included object-detection classes (default just "bird")
             # before they reach the tracker or drawing, so non-bird false
