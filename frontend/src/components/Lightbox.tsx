@@ -265,7 +265,7 @@ export function Lightbox({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink/95 p-4 lg:items-center lg:overflow-hidden"
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto overflow-x-hidden bg-ink/95 p-4 lg:items-center lg:overflow-hidden"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
@@ -487,8 +487,8 @@ export function Lightbox({
               tabular line beneath, and the record actions (download / delete) on
               the right. */}
           <div
-            className="rounded-xl border border-line bg-card/95 px-4 py-3 shadow-plate"
-            style={{ width: imgSize ? imgSize.w : undefined }}
+            className="w-full rounded-xl border border-line bg-card/95 px-4 py-3 shadow-plate"
+            style={{ width: isDesktop && imgSize ? imgSize.w : undefined }}
           >
             <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
               <div className="min-w-0">
@@ -590,10 +590,7 @@ export function Lightbox({
               closes it. Hidden on desktop, where the edge tabs + side panels
               take over. */}
           {!isDesktop && (
-            <div
-              className="w-full"
-              style={{ width: imgSize ? imgSize.w : undefined }}
-            >
+            <div className="w-full">
               <div
                 className="flex gap-1 rounded-xl border border-line bg-card p-1"
                 role="group"
@@ -626,7 +623,7 @@ export function Lightbox({
               </div>
 
               {showReference && (
-                <div className="mt-3 overflow-x-hidden rounded-lg border border-line bg-card p-4 shadow-plate">
+                <div className="mt-3 rounded-lg border border-line bg-card p-4 shadow-plate">
                   <h3 className="eyebrow mb-3">Field guide</h3>
                   <ReferencePane
                     state={refState}
@@ -637,7 +634,7 @@ export function Lightbox({
               )}
 
               {showStats && (
-                <div className="mt-3 overflow-x-hidden rounded-lg border border-line bg-card p-4 shadow-plate">
+                <div className="mt-3 rounded-lg border border-line bg-card p-4 shadow-plate">
                   <h3 className="eyebrow mb-3">Advanced stats</h3>
                   <AdvancedStatsPane detection={shown} />
                 </div>
