@@ -19,7 +19,7 @@ import logging
 import sys
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Optional
 
 import libcamera
 import picamera2.formats as picamera2_formats  # type: ignore
@@ -46,6 +46,7 @@ from birdscanner.detector.hardware.crop_controller import (
 )
 from birdscanner.detector.paths import coco_labels_path
 from birdscanner.detector.hardware.raw_frame import FULL_FOV_RAW_SIZE
+from birdscanner.ml.object_detection import InferenceRoi
 
 logger = logging.getLogger("tracking")
 
@@ -98,6 +99,27 @@ def _full_fov_raw_stream(picam2: Picamera2) -> dict:
 
 
 @dataclass
+class InferenceRoiState:
+    """Mutable holder for the on-chip DNN inference ROI currently in force.
+
+    Written by ``build_camera``'s ``apply_inference_roi`` (at boot and on every
+    live crop change) and read by ``main._run_capture_loop`` so
+    :func:`birdscanner.ml.object_detection.parse_detections` can remap the
+    network's ROI-relative boxes back to full-sensor coordinates. It mirrors
+    *exactly* the ROI pushed to ``IMX500.set_inference_roi_abs`` (a single source
+    of truth), and stays ``None`` when inference is not restricted to the crop
+    (``config.restrict_inference_to_crop`` off), which makes the remap a no-op.
+    Both the writes and the read happen under the crop controller's
+    ``camera_lock``, so no additional synchronisation is needed.
+
+    Attributes:
+        roi: The active inference ROI, or ``None`` when the DNN sees the full FOV.
+    """
+
+    roi: Optional[InferenceRoi] = None
+
+
+@dataclass
 class Camera:
     """The started camera and the objects needed to drive/reconfigure it.
 
@@ -106,12 +128,15 @@ class Camera:
         imx500: The initialised IMX500 device.
         intrinsics: The (overridden) network intrinsics.
         crop_controller: Owns live crop changes and the shared camera lock.
+        inference_roi_state: The on-chip DNN inference ROI currently in force,
+            kept in sync with the crop for the capture loop's coordinate remap.
     """
 
     picam2: Any
     imx500: Any
     intrinsics: Any
     crop_controller: CropController
+    inference_roi_state: InferenceRoiState
 
 
 def wait_for_camera(model_path: str, retry_interval: float = 30.0) -> IMX500:
@@ -265,6 +290,7 @@ def build_camera(imx500: IMX500, intrinsics: Any) -> Camera:
         imx500.set_auto_aspect_ratio()
 
     sensor = SensorDimensions(SENSOR_W, SENSOR_H)
+    inference_roi_state = InferenceRoiState()
 
     def apply_inference_roi(region: CropRegion) -> None:
         """Restrict the on-chip DNN input to the detection crop region.
@@ -277,12 +303,19 @@ def build_camera(imx500: IMX500, intrinsics: Any) -> Camera:
         as the classifier. Gated by ``config.restrict_inference_to_crop`` so the
         historic full-FOV behaviour can be restored for comparison.
 
+        Restricting the ROI makes the network return boxes normalized to the
+        ROI, so the exact ROI pushed here is also published to
+        ``inference_roi_state`` for the capture loop's coordinate remap (see
+        :class:`InferenceRoiState`), keeping the two in lockstep.
+
         Args:
             region: The detection crop region to restrict inference to.
         """
         if not app_config.restrict_inference_to_crop:
             return
-        imx500.set_inference_roi_abs(inference_roi_for_crop(region, sensor))
+        roi = inference_roi_for_crop(region, sensor)
+        imx500.set_inference_roi_abs(roi)
+        inference_roi_state.roi = InferenceRoi(*roi, SENSOR_W, SENSOR_H)
 
     apply_inference_roi(crop_region)
 
@@ -297,4 +330,4 @@ def build_camera(imx500: IMX500, intrinsics: Any) -> Camera:
             set_inference_roi=apply_inference_roi,
         ),
     )
-    return Camera(picam2, imx500, intrinsics, crop_controller)
+    return Camera(picam2, imx500, intrinsics, crop_controller, inference_roi_state)

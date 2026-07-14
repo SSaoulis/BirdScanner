@@ -23,6 +23,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import cv2
 import numpy as np
 
+from birdscanner.detector.hardware.crop import SENSOR_H, SENSOR_W
 from birdscanner.ml.object_detection import get_labels
 
 from dev.emulation.frames import FrameSource
@@ -155,16 +156,29 @@ class FakeIMX500:
     def convert_inference_coords(
         self, box: Tuple[float, float, float, float], metadata: dict, picam2: Any
     ) -> Tuple[int, int, int, int]:
-        """Map a normalized ``(y0, x0, y1, x1)`` box to ``main``-stream pixels.
+        """Map a full-sensor-normalized ``(y0, x0, y1, x1)`` box to ``main`` pixels.
 
-        Mirrors the real ``convert_inference_coords`` closely enough for the
-        pipeline: the box is scaled to the fake camera's ``main`` stream size so
-        it aligns with the frame ``process_detections`` reads back.
+        Mirrors the *real* IMX500 mapping: the incoming coordinates are fractions
+        of the **full sensor** (``parse_detections`` has already remapped any
+        ROI-relative network output into this space), so they are scaled to
+        full-sensor pixels, translated into the active ``ScalerCrop`` window, and
+        scaled to the ``main`` stream. Modelling the crop window this way is what
+        lets the emulator reproduce the on-device regression: an *un*-remapped,
+        ROI-relative box scaled against the full sensor lands outside the crop and
+        is clamped to the wrong place — exactly the bug the ROI coordinate remap
+        fixes.
+
+        Falls back to plain ``main``-stream scaling when the ``ScalerCrop`` is
+        degenerate (a bare :class:`FakePicam2` with a zero-area crop), so callers
+        that do not model a crop keep the simple mapping.
 
         Args:
-            box: The decoded ``(y0, x0, y1, x1)`` box in ``[0, 1]`` fractions.
-            metadata: Ignored (no sensor transform to undo off-Pi).
-            picam2: The :class:`FakePicam2` whose ``main`` size the box maps into.
+            box: The decoded ``(y0, x0, y1, x1)`` box in full-sensor ``[0, 1]``
+                fractions.
+            metadata: Ignored (the crop is read from ``picam2``, not metadata —
+                the emulated loop's metadata carries no ``ScalerCrop``).
+            picam2: The :class:`FakePicam2` whose ``main`` size + ``ScalerCrop``
+                the box maps into.
 
         Returns:
             The box as ``(x, y, w, h)`` in ``main``-stream pixel coordinates.
@@ -172,12 +186,24 @@ class FakeIMX500:
         del metadata
         # ``_decode_boxes`` yields per-axis numpy scalars; coerce to plain floats.
         y0, x0, y1, x1 = (float(v) for v in box)
-        width, height = getattr(picam2, "main_size", None) or self._input_size
-        x = int(round(x0 * width))
-        y = int(round(y0 * height))
-        box_w = int(round((x1 - x0) * width))
-        box_h = int(round((y1 - y0) * height))
-        return (max(0, x), max(0, y), max(0, box_w), max(0, box_h))
+        main_w, main_h = getattr(picam2, "main_size", None) or self._input_size
+        scaler = getattr(picam2, "_scaler", None)
+        if not scaler or scaler[2] <= 0 or scaler[3] <= 0:
+            # No crop window to translate through: scale straight to main pixels.
+            return (
+                max(0, int(round(x0 * main_w))),
+                max(0, int(round(y0 * main_h))),
+                max(0, int(round((x1 - x0) * main_w))),
+                max(0, int(round((y1 - y0) * main_h))),
+            )
+        sx, sy, sw, sh = scaler
+        # Full-sensor pixels -> offset within the ScalerCrop window -> main pixels.
+        return (
+            max(0, int(round((x0 * SENSOR_W - sx) * main_w / sw))),
+            max(0, int(round((y0 * SENSOR_H - sy) * main_h / sh))),
+            max(0, int(round((x1 - x0) * SENSOR_W * main_w / sw))),
+            max(0, int(round((y1 - y0) * SENSOR_H * main_h / sh))),
+        )
 
 
 class FakeRequest:
