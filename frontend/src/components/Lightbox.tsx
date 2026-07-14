@@ -247,12 +247,14 @@ export function Lightbox({
    * Navigate on a horizontal-dominant swipe. Fires only when the gesture is
    * clearly sideways (past 50px and more horizontal than vertical), so a plain
    * vertical scroll of the overlay never triggers it. Suppressed while the
-   * correction picker owns interaction; respects null callbacks at the list ends.
+   * correction picker owns interaction, and in video mode — a horizontal drag
+   * there is the user scrubbing the native <video> timeline, not a page swipe.
+   * Respects null callbacks at the list ends.
    */
   function handleTouchEnd(e: TouchEvent) {
     const start = touchStart.current;
     touchStart.current = null;
-    if (!start || correcting) return;
+    if (!start || correcting || mode === "video") return;
     const t = e.changedTouches[0];
     const dx = t.clientX - start.x;
     const dy = t.clientY - start.y;
@@ -421,7 +423,7 @@ export function Lightbox({
               {/* Mobile position chip — the affordance for swipe navigation.
                   Non-interactive; hidden on desktop, where the edge arrows show. */}
               {position && (
-                <span className="pointer-events-none absolute left-1/2 top-2.5 -translate-x-1/2 rounded-full bg-ink/55 px-2.5 py-1 text-xs font-medium tabular-nums text-paper ring-1 ring-paper/25 backdrop-blur lg:hidden">
+                <span className="tnum pointer-events-none absolute left-1/2 top-2.5 -translate-x-1/2 rounded-full bg-ink/55 px-2.5 py-1 text-xs font-medium text-paper ring-1 ring-paper/25 backdrop-blur lg:hidden">
                   {position.index + 1} / {position.total}
                 </span>
               )}
