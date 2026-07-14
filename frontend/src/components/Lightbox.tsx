@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type Ref } from "react";
+import { useEffect, useRef, useState, type TouchEvent } from "react";
 import {
   api,
   timeAgo,
@@ -23,6 +23,11 @@ interface LightboxProps {
   onDelete: (id: number) => void;
   /** Called with the updated detection after its species is corrected. */
   onUpdate: (updated: Detection) => void;
+  /**
+   * Position of this detection within the parent's list, for the mobile counter
+   * chip. `index` is 0-based. Omit to hide the chip (navigation still works).
+   */
+  position?: { index: number; total: number } | null;
 }
 
 /**
@@ -68,39 +73,23 @@ export function Lightbox({
   onNext,
   onDelete,
   onUpdate,
+  position,
 }: LightboxProps) {
-  // The detection whose plate is *currently on screen*. Decoupled from the
-  // incoming `detection` prop so that on prev/next we hold the current plate —
-  // image, box overlay and caption, all mutually consistent — until the next
-  // full-res image has decoded, then swap them together. Otherwise the box and
-  // caption jump to the next sighting a beat before its (network-fetched) image
-  // catches up, which reads as clunky. Everything below is derived from `shown`.
+  // The detection whose plate is *currently on screen*. Kept as its own state
+  // (rather than reading the prop directly) so the rest of the component derives
+  // everything from a single record. We swap to the incoming `detection`
+  // immediately on prev/next; the breathing blur-up loader (a blurred thumbnail)
+  // covers the network fetch of the full-res still until it decodes, so
+  // navigation feels responsive instead of frozen. Everything below derives from
+  // `shown`.
   const [shown, setShown] = useState<Detection>(detection);
 
   useEffect(() => {
-    // Same record (e.g. an in-place species correction): the image bytes are
-    // unchanged, so apply the update immediately — there is nothing to wait for.
-    if (detection.id === shown.id) {
-      setShown(detection);
-      return;
-    }
-    // A different sighting: preload its full image off-screen and only swap the
-    // visible plate once the bytes have decoded, so image + box + caption all
-    // appear together. Falls through on error so a broken image still swaps
-    // (showing its own broken state) instead of trapping the loader.
-    let cancelled = false;
-    const preload = new Image();
-    const settle = () => {
-      if (cancelled) return;
-      setShown(detection);
-    };
-    preload.onload = settle;
-    preload.onerror = settle;
-    preload.src = api.images.fullUrl(detection.id);
-    return () => {
-      cancelled = true;
-    };
-  }, [detection, shown.id]);
+    // Swap immediately for every change — a different sighting (prev/next) or an
+    // in-place species correction (same id, unchanged bytes) alike. The loader
+    // overlay handles the load gap for the different-sighting case.
+    setShown(detection);
+  }, [detection]);
 
   const { id, species, confidence, detection_confidence, timestamp } = shown;
   const corrected = shown.corrected === true;
@@ -115,12 +104,20 @@ export function Lightbox({
   // Which media the main pane shows. Reset to the still whenever the detection
   // changes so navigating to a clip-less sighting never lands on a blank player.
   const [mode, setMode] = useState<"photo" | "video">("photo");
+  // Whether the active media has finished loading. Drives the breathing blur-up
+  // loader: false while the full-res still / clip fetches, flipped true by the
+  // media element's own load event so the loader can fade out. Reset on every
+  // sighting change so navigating shows the loader again for the new record.
+  const [photoReady, setPhotoReady] = useState(false);
+  const [videoReady, setVideoReady] = useState(false);
   // Whether the species-correction picker is open, plus its in-flight/error state.
   const [correcting, setCorrecting] = useState(false);
   const [correctBusy, setCorrectBusy] = useState(false);
   const [correctError, setCorrectError] = useState<string | null>(null);
   useEffect(() => {
     setMode("photo");
+    setPhotoReady(false);
+    setVideoReady(false);
     // Navigating to another sighting closes the picker so it never lingers over
     // the wrong record.
     setCorrecting(false);
@@ -130,6 +127,9 @@ export function Lightbox({
   const confidencePct = (confidence * 100).toFixed(1);
   const detectionPct =
     detection_confidence != null ? (detection_confidence * 100).toFixed(1) : null;
+  // Whether the media the plate is actually showing has finished loading. Drives
+  // the breathing loader's fade-out and the loading footprint lock.
+  const activeReady = mode === "video" && hasVideo ? videoReady : photoReady;
 
   // A persisted detection box (normalized [0, 1]) lets us overlay the bounding
   // box on the otherwise-clean saved image. Legacy rows predate this and have
@@ -226,6 +226,37 @@ export function Lightbox({
     return () => window.removeEventListener("keydown", handleKey);
   }, [onClose, onPrev, onNext, correcting]);
 
+  // Touch-swipe navigation (mobile). The floating arrows are desktop-only, so a
+  // horizontal swipe on the image is the phone affordance for prev/next. Start
+  // coords are stashed on touchstart; the swipe is judged on touchend.
+  const touchStart = useRef<{ x: number; y: number } | null>(null);
+
+  /** Record where a touch began so `handleTouchEnd` can measure the swipe. */
+  function handleTouchStart(e: TouchEvent) {
+    const t = e.changedTouches[0];
+    touchStart.current = { x: t.clientX, y: t.clientY };
+  }
+
+  /**
+   * Navigate on a horizontal-dominant swipe. Fires only when the gesture is
+   * clearly sideways (past 50px and more horizontal than vertical), so a plain
+   * vertical scroll of the overlay never triggers it. Suppressed while the
+   * correction picker owns interaction, and in video mode — a horizontal drag
+   * there is the user scrubbing the native <video> timeline, not a page swipe.
+   * Respects null callbacks at the list ends.
+   */
+  function handleTouchEnd(e: TouchEvent) {
+    const start = touchStart.current;
+    touchStart.current = null;
+    if (!start || correcting || mode === "video") return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - start.x;
+    const dy = t.clientY - start.y;
+    if (Math.abs(dx) <= 50 || Math.abs(dx) <= Math.abs(dy) * 1.5) return;
+    if (dx < 0) onNext?.();
+    else onPrev?.();
+  }
+
   // Prevent body scroll while open
   useEffect(() => {
     document.body.style.overflow = "hidden";
@@ -274,7 +305,7 @@ export function Lightbox({
       {/* Prev arrow */}
       {onPrev && (
         <button
-          className="absolute left-4 top-1/2 -translate-y-1/2 p-3 rounded-full bg-card/90 hover:bg-card text-ink text-2xl shadow-plate transition-colors z-10"
+          className="hidden lg:block absolute left-4 top-1/2 -translate-y-1/2 p-3 rounded-full bg-card/90 hover:bg-card text-ink text-2xl shadow-plate transition-colors z-10"
           onClick={(e) => { e.stopPropagation(); onPrev(); }}
           aria-label="Previous sighting"
         >
@@ -321,7 +352,22 @@ export function Lightbox({
             the image itself. Nothing below can be wider than the image, so the
             plate is never pushed aside and the tab sits flush on its edge. */}
         <div className="flex flex-col items-start gap-3">
-          <div className="relative w-fit">
+          {/* While the active media is still loading, pin the plate to the
+              last-known rendered size so the footprint (and the caption / side
+              panels below) doesn't collapse and jump. `imgSize` still holds the
+              previous sighting's size during the swap; the breathing blur-up
+              loader fills it. Once the media is ready we drop the fixed size and
+              revert to `w-fit` wrapping the media at its natural size. */}
+          <div
+            className="relative w-fit"
+            style={
+              !activeReady && imgSize
+                ? { width: imgSize.w, height: imgSize.h }
+                : undefined
+            }
+            onTouchStart={handleTouchStart}
+            onTouchEnd={handleTouchEnd}
+          >
             {mode === "video" && hasVideo ? (
               <video
                 src={videoUrl}
@@ -330,6 +376,9 @@ export function Lightbox({
                 autoPlay
                 loop
                 muted
+                onCanPlay={() => setVideoReady(true)}
+                onWaiting={() => setVideoReady(false)}
+                onError={() => setVideoReady(true)}
                 // Lock the player to the still's already-measured rendered size.
                 // A bare <video> collapses to its 300×150 intrinsic size until
                 // metadata loads, then jumps to the real aspect ratio — shifting
@@ -341,22 +390,60 @@ export function Lightbox({
                 className="block max-h-[60vh] max-w-full rounded-lg bg-ink object-cover shadow-plate-lift lg:max-h-[80vh] lg:max-w-[44vw]"
               />
             ) : (
-              <PlateImage
-                // Keyed on the shown id so a fresh element mounts on every swap,
-                // resetting its loaded state and replaying the develop-in reveal.
+              <img
+                // Keyed on the shown id so a fresh element mounts on every swap
+                // and the develop-in reveal replays. The full-res bytes are
+                // network-fetched on demand, so the breathing blur-up loader
+                // (below) covers the gap. The plate is held hidden (opacity-0)
+                // while it loads — rather than developing in from the first byte
+                // — so you never watch it paint in top-to-bottom beneath the
+                // blur. onLoad flips `photoReady`, which fades the loader out and
+                // develops in the now fully-decoded sharp plate over it.
                 key={id}
-                imgRef={imgRef}
+                ref={imgRef}
                 src={fullUrl}
                 alt={`Captured ${species}`}
-                className="block max-h-[60vh] max-w-full rounded-lg bg-ink shadow-plate-lift lg:max-h-[80vh] lg:max-w-[44vw]"
+                onLoad={() => setPhotoReady(true)}
+                onError={() => setPhotoReady(true)}
+                className={`block max-h-[60vh] max-w-full rounded-lg bg-ink shadow-plate-lift lg:max-h-[80vh] lg:max-w-[44vw] ${
+                  photoReady ? "animate-plate-develop" : "opacity-0"
+                }`}
               />
             )}
+
+            {/* ── Breathing blur-up loader ──
+                A blurred, gently breathing copy of the low-res thumbnail shown
+                over the plate while the full-res still / clip loads, so a swap
+                never reads as frozen. An outer wrapper fades it out (opacity)
+                once the media is ready; the inner thumbnail carries the breathing
+                animation (kept separate so the fade-out and the pulse don't fight
+                over `opacity`). Click-through and hidden from assistive tech. */}
+            <div
+              className="pointer-events-none absolute inset-0 z-[5] overflow-hidden rounded-lg transition-opacity duration-500 ease-out"
+              style={{ opacity: activeReady ? 0 : 1 }}
+              aria-hidden="true"
+            >
+              <img
+                key={id}
+                src={thumbUrl}
+                alt=""
+                // The breathing (blur) animation only runs while loading; once
+                // ready we drop it (keeping a static blur for the opacity
+                // fade-out) so an infinite filter animation isn't left
+                // compositing behind every open lightbox.
+                className={`h-full w-full rounded-lg bg-ink object-cover blur-[8px] ${
+                  activeReady ? "" : "animate-plate-breathe"
+                }`}
+              />
+            </div>
 
             {/* Detection box overlay — positioned in normalized [0,1] space over
                 the rendered image, so it scales with whatever size the image is
                 capped to. Only meaningful on the still, so it is hidden in video
-                mode, when toggled off, or for legacy boxless rows. */}
-            {mode === "photo" && hasBox && showBox && (
+                mode, when toggled off, or for legacy boxless rows. Gated on
+                `photoReady` so the box fades in with the sharp plate rather than
+                sitting over the blurred loader. */}
+            {mode === "photo" && hasBox && showBox && photoReady && (
               <div
                 className="pointer-events-none absolute rounded-sm border-2 border-gold shadow-[0_0_0_1px_rgba(0,0,0,0.45)]"
                 style={{
@@ -377,6 +464,13 @@ export function Lightbox({
                 bottom. The scrim is click-through; only the controls take pointer
                 events. */}
             <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-start justify-between gap-2 rounded-t-lg bg-gradient-to-b from-ink/80 via-ink/35 to-transparent px-2.5 pb-12 pt-2.5">
+              {/* Mobile position chip — the affordance for swipe navigation.
+                  Non-interactive; hidden on desktop, where the edge arrows show. */}
+              {position && (
+                <span className="tnum pointer-events-none absolute left-1/2 top-2.5 -translate-x-1/2 rounded-full bg-ink/55 px-2.5 py-1 text-xs font-medium text-paper ring-1 ring-paper/25 backdrop-blur lg:hidden">
+                  {position.index + 1} / {position.total}
+                </span>
+              )}
               <div className="pointer-events-auto flex items-center gap-2">
                 {/* Media (Photo / Video) — swaps the still for the clip */}
                 <div
@@ -678,7 +772,7 @@ export function Lightbox({
       {/* Next arrow */}
       {onNext && (
         <button
-          className="absolute right-4 top-1/2 -translate-y-1/2 p-3 rounded-full bg-card/90 hover:bg-card text-ink text-2xl shadow-plate transition-colors z-10"
+          className="hidden lg:block absolute right-4 top-1/2 -translate-y-1/2 p-3 rounded-full bg-card/90 hover:bg-card text-ink text-2xl shadow-plate transition-colors z-10"
           onClick={(e) => { e.stopPropagation(); onNext(); }}
           aria-label="Next sighting"
         >
@@ -686,40 +780,6 @@ export function Lightbox({
         </button>
       )}
     </div>
-  );
-}
-
-interface PlateImageProps {
-  /** URL of the full-resolution detection image. */
-  src: string;
-  /** Alt text describing the captured bird. */
-  alt: string;
-  /** Ref to the underlying <img>, used to measure its rendered size. */
-  imgRef: Ref<HTMLImageElement>;
-  /** Layout/appearance classes shared with the sibling video player. */
-  className: string;
-}
-
-/**
- * Full-resolution detection image that stays hidden until it has fully loaded,
- * then resolves into focus.
- *
- * A bare <img> paints progressively (top-to-bottom) as its bytes arrive, so the
- * time-based blur-in would reveal a half-drawn picture beneath the blur. Instead
- * this holds the image invisible (opacity 0) while it loads and only reveals it
- * — via the develop-in animation — once `onLoad` fires, so the plate always
- * appears whole. Mounted keyed by detection id, so `loaded` resets on each swap.
- */
-function PlateImage({ src, alt, imgRef, className }: PlateImageProps) {
-  const [loaded, setLoaded] = useState(false);
-  return (
-    <img
-      ref={imgRef}
-      src={src}
-      alt={alt}
-      onLoad={() => setLoaded(true)}
-      className={`${className} ${loaded ? "animate-plate-develop" : "opacity-0"}`}
-    />
   );
 }
 
