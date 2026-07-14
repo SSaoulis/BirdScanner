@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Suspense, lazy, useEffect, useRef, useState } from "react";
 import {
   api,
   timeAgo,
@@ -9,6 +9,11 @@ import {
 import { SpeciesPicker } from "./SpeciesPicker";
 import { AdvancedStatsPane } from "./AdvancedStats";
 import { useIsDesktop } from "../hooks/useMediaQuery";
+
+// The mobile swipe filmstrip pulls in `motion`; lazy-load it so desktop and the
+// initial bundle never pay for it. It only mounts once the lightbox is open on
+// a mobile viewport (see the mobile branch below).
+const MobileSwipeStrip = lazy(() => import("./MobileSwipeStrip"));
 
 interface LightboxProps {
   /** The detection currently displayed in the panel. */
@@ -23,6 +28,18 @@ interface LightboxProps {
   onDelete: (id: number) => void;
   /** Called with the updated detection after its species is corrected. */
   onUpdate: (updated: Detection) => void;
+  /**
+   * Position of this detection within the parent's list, for the mobile counter
+   * chip. `index` is 0-based. Omit to hide the chip (navigation still works).
+   */
+  position?: { index: number; total: number } | null;
+  /**
+   * The neighbouring sightings, used to render the mobile swipe filmstrip so a
+   * drag slides the real neighbour plate into frame. Pass null at a list end
+   * (mirrors `onPrev`/`onNext`); the index change still funnels through those.
+   */
+  prevDetection?: Detection | null;
+  nextDetection?: Detection | null;
 }
 
 /**
@@ -60,6 +77,11 @@ type ReferenceState =
  * backdrop-click to close, and locks body scroll while open. Navigating
  * prev/next changes the detection — and therefore its species — so the
  * reference is refetched whenever the displayed species changes.
+ *
+ * On mobile the floating arrows give way to a physical, finger-tracking swipe:
+ * the card is the centre slot of a three-up filmstrip (prev / current / next)
+ * that follows the drag, committing to a neighbour past a distance/velocity
+ * threshold and rubber-banding back otherwise (see `MobileSwipeStrip`).
  */
 export function Lightbox({
   detection,
@@ -68,39 +90,19 @@ export function Lightbox({
   onNext,
   onDelete,
   onUpdate,
+  position,
+  prevDetection,
+  nextDetection,
 }: LightboxProps) {
-  // The detection whose plate is *currently on screen*. Decoupled from the
-  // incoming `detection` prop so that on prev/next we hold the current plate —
-  // image, box overlay and caption, all mutually consistent — until the next
-  // full-res image has decoded, then swap them together. Otherwise the box and
-  // caption jump to the next sighting a beat before its (network-fetched) image
-  // catches up, which reads as clunky. Everything below is derived from `shown`.
-  const [shown, setShown] = useState<Detection>(detection);
-
-  useEffect(() => {
-    // Same record (e.g. an in-place species correction): the image bytes are
-    // unchanged, so apply the update immediately — there is nothing to wait for.
-    if (detection.id === shown.id) {
-      setShown(detection);
-      return;
-    }
-    // A different sighting: preload its full image off-screen and only swap the
-    // visible plate once the bytes have decoded, so image + box + caption all
-    // appear together. Falls through on error so a broken image still swaps
-    // (showing its own broken state) instead of trapping the loader.
-    let cancelled = false;
-    const preload = new Image();
-    const settle = () => {
-      if (cancelled) return;
-      setShown(detection);
-    };
-    preload.onload = settle;
-    preload.onerror = settle;
-    preload.src = api.images.fullUrl(detection.id);
-    return () => {
-      cancelled = true;
-    };
-  }, [detection, shown.id]);
+  // The detection whose plate is *currently on screen*. Derived straight from
+  // the prop (no lag) so that on a committed mobile swipe the centre card, the
+  // neighbour slots and the recentre trigger all update on the *same* render —
+  // a one-render-stale copy would flash the wrong plate as the filmstrip snaps
+  // back to centre. The incoming `detection` covers both a different sighting
+  // (prev/next) and an in-place species correction (same id); the breathing
+  // blur-up loader covers the full-res fetch, so nothing needs holding back.
+  // Everything below derives from `shown`.
+  const shown = detection;
 
   const { id, species, confidence, detection_confidence, timestamp } = shown;
   const corrected = shown.corrected === true;
@@ -115,12 +117,29 @@ export function Lightbox({
   // Which media the main pane shows. Reset to the still whenever the detection
   // changes so navigating to a clip-less sighting never lands on a blank player.
   const [mode, setMode] = useState<"photo" | "video">("photo");
+  // Whether the active media has finished loading. Drives the breathing blur-up
+  // loader: false while the full-res still / clip fetches, flipped true by the
+  // media element's own load event so the loader can fade out. Reset on every
+  // sighting change so navigating shows the loader again for the new record.
+  const [photoReady, setPhotoReady] = useState(false);
+  const [videoReady, setVideoReady] = useState(false);
   // Whether the species-correction picker is open, plus its in-flight/error state.
   const [correcting, setCorrecting] = useState(false);
   const [correctBusy, setCorrectBusy] = useState(false);
   const [correctError, setCorrectError] = useState<string | null>(null);
+  // Live rendered size of the detection image; the reference panel is locked
+  // to these exact pixel dimensions so it always matches the image.
+  const imgRef = useRef<HTMLImageElement | null>(null);
   useEffect(() => {
     setMode("photo");
+    // Reset load-readiness for the new record so the blur-up loader covers its
+    // fetch — unless the freshly-mounted still is already cached (e.g. a mobile
+    // neighbour preview preloaded it during a swipe), in which case treat it as
+    // ready so the loader never flashes over an image we already have.
+    const el = imgRef.current;
+    const cached = el !== null && el.complete && el.naturalWidth > 0;
+    setPhotoReady(cached);
+    setVideoReady(false);
     // Navigating to another sighting closes the picker so it never lingers over
     // the wrong record.
     setCorrecting(false);
@@ -130,6 +149,9 @@ export function Lightbox({
   const confidencePct = (confidence * 100).toFixed(1);
   const detectionPct =
     detection_confidence != null ? (detection_confidence * 100).toFixed(1) : null;
+  // Whether the media the plate is actually showing has finished loading. Drives
+  // the breathing loader's fade-out and the loading footprint lock.
+  const activeReady = mode === "video" && hasVideo ? videoReady : photoReady;
 
   // A persisted detection box (normalized [0, 1]) lets us overlay the bounding
   // box on the otherwise-clean saved image. Legacy rows predate this and have
@@ -153,13 +175,11 @@ export function Lightbox({
   const [showReference, setShowReference] = useState(false);
   // Whether the advanced-stats panel (left) is open. Closed by default.
   const [showStats, setShowStats] = useState(false);
-  // Live rendered size of the detection image; the reference panel is locked
-  // to these exact pixel dimensions so it always matches the image.
-  const imgRef = useRef<HTMLImageElement | null>(null);
   const [imgSize, setImgSize] = useState<{ w: number; h: number } | null>(null);
   // Above `lg` the panels sit *beside* the image, locked to its pixel size;
   // below it they stack full-width beneath the image (a segmented control picks
-  // which one shows), so nothing is crushed into ~44vw on a phone.
+  // which one shows), so nothing is crushed into ~44vw on a phone. Mobile also
+  // trades the floating arrows for the finger-tracking swipe filmstrip.
   const isDesktop = useIsDesktop();
 
   // Track the rendered image size so the reference panel can match it exactly.
@@ -263,409 +283,374 @@ export function Lightbox({
     };
   }, [species]);
 
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto overflow-x-hidden bg-ink/95 p-4 lg:items-center lg:overflow-hidden"
-      onClick={onClose}
-      role="dialog"
-      aria-modal="true"
-      aria-label={`A closer look at ${species}`}
-    >
-      {/* Prev arrow */}
-      {onPrev && (
-        <button
-          className="absolute left-4 top-1/2 -translate-y-1/2 p-3 rounded-full bg-card/90 hover:bg-card text-ink text-2xl shadow-plate transition-colors z-10"
-          onClick={(e) => { e.stopPropagation(); onPrev(); }}
-          aria-label="Previous sighting"
-        >
-          &#8592;
-        </button>
-      )}
-
-      {/* Image + reference row — stops click propagation so interacting inside
-          doesn't close. On mobile it stacks (image, caption, then the chosen
-          panel); on `lg`+ the panels flank the image. */}
+  // ── The interactive detection card ──
+  // The image plate (with its overlays), the specimen-label caption and — on
+  // mobile — the panel switcher. Shared by the desktop side-panel row and the
+  // mobile swipe filmstrip (as its live centre slot), so it is built once here.
+  const card = (
+    <div className="flex flex-col items-start gap-3">
+      {/* While the active media is still loading, pin the plate to the
+          last-known rendered size so the footprint (and the caption / side
+          panels below) doesn't collapse and jump. `imgSize` still holds the
+          previous sighting's size during the swap; the breathing blur-up
+          loader fills it. Once the media is ready we drop the fixed size and
+          revert to `w-fit` wrapping the media at its natural size. */}
       <div
-        className="relative flex flex-col items-center lg:flex-row lg:items-start"
-        onClick={(e) => e.stopPropagation()}
+        className="relative w-fit"
+        style={
+          !activeReady && imgSize
+            ? { width: imgSize.w, height: imgSize.h }
+            : undefined
+        }
       >
-        {/* ── Advanced-stats panel (left) — mirrors the reference panel but folds
-            to the left (animates margin-right). Locked to the image's exact
-            rendered size, content scrolls internally. Mutually exclusive with the
-            reference panel. Desktop only — on mobile it stacks below the image. ── */}
-        {isDesktop && imgSize && (
-          <div
-            className="shrink-0 overflow-hidden transition-[width,margin-right,opacity] duration-300 ease-out motion-reduce:transition-none"
-            style={{
-              width: showStats ? imgSize.w : 0,
-              marginRight: showStats ? "2.5rem" : 0,
-              opacity: showStats ? 1 : 0,
-              pointerEvents: showStats ? "auto" : "none",
-            }}
-            aria-hidden={!showStats}
-          >
-            <div
-              className="overflow-y-auto rounded-lg border border-line bg-card shadow-plate-lift p-4"
-              style={{ width: imgSize.w, height: imgSize.h }}
-            >
-              <h3 className="eyebrow mb-3">Advanced stats</h3>
-              <AdvancedStatsPane detection={shown} />
-            </div>
-          </div>
+        {mode === "video" && hasVideo ? (
+          <video
+            src={videoUrl}
+            poster={thumbUrl}
+            controls
+            autoPlay
+            loop
+            muted
+            onCanPlay={() => setVideoReady(true)}
+            onWaiting={() => setVideoReady(false)}
+            onError={() => setVideoReady(true)}
+            // Lock the player to the still's already-measured rendered size.
+            // A bare <video> collapses to its 300×150 intrinsic size until
+            // metadata loads, then jumps to the real aspect ratio — shifting
+            // the whole layout. The clip comes from the same main-stream frame
+            // as the still, so imgSize matches its aspect ratio: pinning it
+            // holds a stable footprint through loading and after. object-cover
+            // keeps the square poster filling the box (no stretch) meanwhile.
+            style={imgSize ? { width: imgSize.w, height: imgSize.h } : undefined}
+            className="block max-h-[60vh] max-w-full rounded-lg bg-ink object-cover shadow-plate-lift lg:max-h-[80vh] lg:max-w-[44vw]"
+          />
+        ) : (
+          <img
+            // Keyed on the shown id so a fresh element mounts on every swap.
+            // The plate is held hidden (opacity-0) while the full-res bytes
+            // network-fetch, so you never watch it paint in top-to-bottom
+            // beneath the blur loader (below, which covers the gap). Once
+            // loaded, onLoad flips `photoReady`: on desktop the develop-in
+            // reveal replays as the loader fades; on mobile the develop is
+            // dropped because the physical filmstrip slide is already the
+            // transition (a blur re-develop under it would double up).
+            key={id}
+            ref={imgRef}
+            src={fullUrl}
+            alt={`Captured ${species}`}
+            onLoad={() => setPhotoReady(true)}
+            onError={() => setPhotoReady(true)}
+            className={`block max-h-[60vh] max-w-full rounded-lg bg-ink shadow-plate-lift lg:max-h-[80vh] lg:max-w-[44vw] ${
+              photoReady ? (isDesktop ? "animate-plate-develop" : "") : "opacity-0"
+            }`}
+          />
         )}
 
-        {/* ── Captured detection image (with the Field-guide tab on its edge) ──
-            The column and its caption are locked to the image's exact rendered
-            width (`imgSize.w`), and the image plate is `w-fit`, so every overlay
-            — the top control bar, the box, and the Field-guide tab — anchors to
-            the image itself. Nothing below can be wider than the image, so the
-            plate is never pushed aside and the tab sits flush on its edge. */}
-        <div className="flex flex-col items-start gap-3">
-          <div className="relative w-fit">
-            {mode === "video" && hasVideo ? (
-              <video
-                src={videoUrl}
-                poster={thumbUrl}
-                controls
-                autoPlay
-                loop
-                muted
-                // Lock the player to the still's already-measured rendered size.
-                // A bare <video> collapses to its 300×150 intrinsic size until
-                // metadata loads, then jumps to the real aspect ratio — shifting
-                // the whole layout. The clip comes from the same main-stream frame
-                // as the still, so imgSize matches its aspect ratio: pinning it
-                // holds a stable footprint through loading and after. object-cover
-                // keeps the square poster filling the box (no stretch) meanwhile.
-                style={imgSize ? { width: imgSize.w, height: imgSize.h } : undefined}
-                className="block max-h-[60vh] max-w-full rounded-lg bg-ink object-cover shadow-plate-lift lg:max-h-[80vh] lg:max-w-[44vw]"
-              />
-            ) : (
-              <img
-                // Keyed on the shown id so a fresh element mounts on every swap
-                // and the develop-in animation replays. The bytes are already
-                // cached (preloaded before the swap), so it resolves from a soft
-                // blur straight into the sharp plate.
-                key={id}
-                ref={imgRef}
-                src={fullUrl}
-                alt={`Captured ${species}`}
-                className="block max-h-[60vh] max-w-full animate-plate-develop rounded-lg bg-ink shadow-plate-lift lg:max-h-[80vh] lg:max-w-[44vw]"
-              />
-            )}
+        {/* ── Breathing blur-up loader ──
+            A blurred, gently breathing copy of the low-res thumbnail shown
+            over the plate while the full-res still / clip loads, so a swap
+            never reads as frozen. An outer wrapper fades it out (opacity)
+            once the media is ready; the inner thumbnail carries the breathing
+            animation (kept separate so the fade-out and the pulse don't fight
+            over `opacity`). Click-through and hidden from assistive tech. */}
+        <div
+          className="pointer-events-none absolute inset-0 z-[5] overflow-hidden rounded-lg transition-opacity duration-500 ease-out"
+          style={{ opacity: activeReady ? 0 : 1 }}
+          aria-hidden="true"
+        >
+          <img
+            key={id}
+            src={thumbUrl}
+            alt=""
+            // The breathing (blur) animation only runs while loading; once
+            // ready we drop it (keeping a static blur for the opacity
+            // fade-out) so an infinite filter animation isn't left
+            // compositing behind every open lightbox.
+            className={`h-full w-full rounded-lg bg-ink object-cover blur-[8px] ${
+              activeReady ? "" : "animate-plate-breathe"
+            }`}
+          />
+        </div>
 
-            {/* Detection box overlay — positioned in normalized [0,1] space over
-                the rendered image, so it scales with whatever size the image is
-                capped to. Only meaningful on the still, so it is hidden in video
-                mode, when toggled off, or for legacy boxless rows. */}
-            {mode === "photo" && hasBox && showBox && (
-              <div
-                className="pointer-events-none absolute rounded-sm border-2 border-gold shadow-[0_0_0_1px_rgba(0,0,0,0.45)]"
-                style={{
-                  left: `${shown.box_x! * 100}%`,
-                  top: `${shown.box_y! * 100}%`,
-                  width: `${shown.box_w! * 100}%`,
-                  height: `${shown.box_h! * 100}%`,
-                }}
-                aria-hidden="true"
-              />
-            )}
+        {/* Detection box overlay — positioned in normalized [0,1] space over
+            the rendered image, so it scales with whatever size the image is
+            capped to. Only meaningful on the still, so it is hidden in video
+            mode, when toggled off, or for legacy boxless rows. Gated on
+            `photoReady` so the box fades in with the sharp plate rather than
+            sitting over the blurred loader. */}
+        {mode === "photo" && hasBox && showBox && photoReady && (
+          <div
+            className="pointer-events-none absolute rounded-sm border-2 border-gold shadow-[0_0_0_1px_rgba(0,0,0,0.45)]"
+            style={{
+              left: `${shown.box_x! * 100}%`,
+              top: `${shown.box_y! * 100}%`,
+              width: `${shown.box_w! * 100}%`,
+              height: `${shown.box_h! * 100}%`,
+            }}
+            aria-hidden="true"
+          />
+        )}
 
-            {/* ── On-image control bar ──
-                The view controls (media + box) live *on* the image because they
-                change what it shows; Close shares the bar. Grouped at the top
-                under a soft scrim so the bird's usual lower-third stays clear and
-                nothing collides with the native <video> control bar at the
-                bottom. The scrim is click-through; only the controls take pointer
-                events. */}
-            <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-start justify-between gap-2 rounded-t-lg bg-gradient-to-b from-ink/80 via-ink/35 to-transparent px-2.5 pb-12 pt-2.5">
-              <div className="pointer-events-auto flex items-center gap-2">
-                {/* Media (Photo / Video) — swaps the still for the clip */}
-                <div
-                  className="flex rounded-full bg-ink/55 p-0.5 ring-1 ring-paper/25 backdrop-blur"
-                  role="group"
-                  aria-label="Choose media"
-                >
-                  {(["photo", "video"] as const).map((m) => {
-                    // The Video button stays visible even without a clip, but is
-                    // disabled and explains why on hover. aria-disabled (not the
-                    // native `disabled` attribute) keeps the title tooltip firing
-                    // — browsers suppress hover events on natively-disabled
-                    // buttons.
-                    const unavailable = m === "video" && !hasVideo;
-                    return (
-                      <button
-                        key={m}
-                        className={`rounded-full px-3 py-1 text-xs font-medium capitalize transition-colors ${
-                          mode === m ? "bg-gold text-ink" : "text-paper/85 hover:text-paper"
-                        } ${unavailable ? "cursor-not-allowed opacity-40 hover:text-paper/85" : ""}`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (!unavailable) setMode(m);
-                        }}
-                        aria-pressed={mode === m}
-                        aria-disabled={unavailable}
-                        title={
-                          unavailable
-                            ? noVideoReasonText(shown.no_video_reason)
-                            : undefined
-                        }
-                      >
-                        {m}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Box on / off — only meaningful on the still */}
-                {mode === "photo" && hasBox && (
+        {/* ── On-image control bar ──
+            The view controls (media + box) live *on* the image because they
+            change what it shows; Close shares the bar. Grouped at the top
+            under a soft scrim so the bird's usual lower-third stays clear and
+            nothing collides with the native <video> control bar at the
+            bottom. The scrim is click-through; only the controls take pointer
+            events. */}
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-start justify-between gap-2 rounded-t-lg bg-gradient-to-b from-ink/80 via-ink/35 to-transparent px-2.5 pb-12 pt-2.5">
+          {/* Mobile position chip — the affordance for swipe navigation.
+              Non-interactive; hidden on desktop, where the edge arrows show. */}
+          {position && (
+            <span className="tnum pointer-events-none absolute left-1/2 top-2.5 -translate-x-1/2 rounded-full bg-ink/55 px-2.5 py-1 text-xs font-medium text-paper ring-1 ring-paper/25 backdrop-blur lg:hidden">
+              {position.index + 1} / {position.total}
+            </span>
+          )}
+          <div className="pointer-events-auto flex items-center gap-2">
+            {/* Media (Photo / Video) — swaps the still for the clip */}
+            <div
+              className="flex rounded-full bg-ink/55 p-0.5 ring-1 ring-paper/25 backdrop-blur"
+              role="group"
+              aria-label="Choose media"
+            >
+              {(["photo", "video"] as const).map((m) => {
+                // The Video button stays visible even without a clip, but is
+                // disabled and explains why on hover. aria-disabled (not the
+                // native `disabled` attribute) keeps the title tooltip firing
+                // — browsers suppress hover events on natively-disabled
+                // buttons.
+                const unavailable = m === "video" && !hasVideo;
+                return (
                   <button
-                    className={`rounded-full px-3 py-1.5 text-xs font-medium ring-1 backdrop-blur transition-colors ${
-                      showBox
-                        ? "bg-gold text-ink ring-gold"
-                        : "bg-ink/55 text-paper ring-paper/25 hover:bg-ink/70"
-                    }`}
-                    onClick={(e) => { e.stopPropagation(); setShowBox((v) => !v); }}
-                    aria-pressed={showBox}
+                    key={m}
+                    className={`rounded-full px-3 py-1 text-xs font-medium capitalize transition-colors ${
+                      mode === m ? "bg-gold text-ink" : "text-paper/85 hover:text-paper"
+                    } ${unavailable ? "cursor-not-allowed opacity-40 hover:text-paper/85" : ""}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (!unavailable) setMode(m);
+                    }}
+                    aria-pressed={mode === m}
+                    aria-disabled={unavailable}
+                    title={
+                      unavailable
+                        ? noVideoReasonText(shown.no_video_reason)
+                        : undefined
+                    }
                   >
-                    {showBox ? "Box on" : "Box off"}
+                    {m}
                   </button>
-                )}
-              </div>
-
-              {/* Close */}
-              <button
-                className="pointer-events-auto rounded-full bg-ink/55 p-1.5 text-lg leading-none text-paper ring-1 ring-paper/25 backdrop-blur transition-colors hover:bg-ink/70"
-                onClick={onClose}
-                aria-label="Close"
-              >
-                ✕
-              </button>
+                );
+              })}
             </div>
 
-            {/* Vertical Advanced-stats tab on the LEFT edge of the image —
-                mirrors the Field-guide tab; opening it closes the reference
-                panel (the two are mutually exclusive). */}
-            <button
-              className={`absolute right-full top-1/2 z-10 hidden -translate-y-1/2 rounded-l-lg px-2 py-3.5 text-[11px] font-semibold uppercase tracking-[0.15em] shadow-plate [writing-mode:vertical-rl] transition-colors lg:block ${
-                showStats
-                  ? "bg-gold text-ink"
-                  : "bg-card/95 text-ink ring-1 ring-line hover:bg-card"
-              }`}
-              onClick={() => {
-                setShowStats((v) => !v);
-                setShowReference(false);
-              }}
-              aria-pressed={showStats}
-              aria-label={showStats ? "Hide advanced stats" : "Show advanced stats"}
-            >
-              Advanced stats
-            </button>
+            {/* Box on / off — only meaningful on the still */}
+            {mode === "photo" && hasBox && (
+              <button
+                className={`rounded-full px-3 py-1.5 text-xs font-medium ring-1 backdrop-blur transition-colors ${
+                  showBox
+                    ? "bg-gold text-ink ring-gold"
+                    : "bg-ink/55 text-paper ring-paper/25 hover:bg-ink/70"
+                }`}
+                onClick={(e) => { e.stopPropagation(); setShowBox((v) => !v); }}
+                aria-pressed={showBox}
+              >
+                {showBox ? "Box on" : "Box off"}
+              </button>
+            )}
+          </div>
 
-            {/* Vertical Field-guide tab on the right edge of the image */}
+          {/* Close */}
+          <button
+            className="pointer-events-auto rounded-full bg-ink/55 p-1.5 text-lg leading-none text-paper ring-1 ring-paper/25 backdrop-blur transition-colors hover:bg-ink/70"
+            onClick={onClose}
+            aria-label="Close"
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Vertical Advanced-stats tab on the LEFT edge of the image —
+            mirrors the Field-guide tab; opening it closes the reference
+            panel (the two are mutually exclusive). */}
+        <button
+          className={`absolute right-full top-1/2 z-10 hidden -translate-y-1/2 rounded-l-lg px-2 py-3.5 text-[11px] font-semibold uppercase tracking-[0.15em] shadow-plate [writing-mode:vertical-rl] transition-colors lg:block ${
+            showStats
+              ? "bg-gold text-ink"
+              : "bg-card/95 text-ink ring-1 ring-line hover:bg-card"
+          }`}
+          onClick={() => {
+            setShowStats((v) => !v);
+            setShowReference(false);
+          }}
+          aria-pressed={showStats}
+          aria-label={showStats ? "Hide advanced stats" : "Show advanced stats"}
+        >
+          Advanced stats
+        </button>
+
+        {/* Vertical Field-guide tab on the right edge of the image */}
+        <button
+          className={`absolute left-full top-1/2 z-10 hidden -translate-y-1/2 rounded-r-lg px-2 py-3.5 text-[11px] font-semibold uppercase tracking-[0.15em] shadow-plate [writing-mode:vertical-rl] transition-colors lg:block ${
+            showReference
+              ? "bg-gold text-ink"
+              : "bg-card/95 text-ink ring-1 ring-line hover:bg-card"
+          }`}
+          onClick={() => {
+            setShowReference((v) => !v);
+            setShowStats(false);
+          }}
+          aria-pressed={showReference}
+          aria-label={showReference ? "Hide field guide" : "Show field guide"}
+        >
+          Field guide
+        </button>
+      </div>
+
+      {/* ── Specimen label ──
+          A compact caption card, locked to the image's exact width so it can
+          never widen the plate. Reads like a guide's label: the species name
+          and the margin-correction affordance up top, the readings on a quiet
+          tabular line beneath, and the record actions (download / delete) on
+          the right. */}
+      <div
+        className="w-full rounded-xl border border-line bg-card/95 px-4 py-3 shadow-plate"
+        style={{ width: isDesktop && imgSize ? imgSize.w : undefined }}
+      >
+        <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
+          <div className="min-w-0">
+            {/* Species + the margin-correction affordance (picker opens above) */}
+            <div className="relative flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span className="font-display text-lg font-medium leading-tight text-ink">
+                {species}
+              </span>
+              <button
+                className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium text-bark transition-colors hover:bg-paper hover:text-ink"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setCorrecting((v) => !v);
+                  setCorrectError(null);
+                }}
+                aria-expanded={correcting}
+                aria-label="Correct the species"
+                title="Wrong bird? Set the record straight."
+              >
+                <span aria-hidden="true">✎</span>
+                Correct ID
+              </button>
+              {correcting && (
+                <div className="absolute bottom-full left-0 z-20 mb-2">
+                  <SpeciesPicker
+                    current={species}
+                    onConfirm={handleCorrect}
+                    onCancel={() => {
+                      setCorrecting(false);
+                      setCorrectError(null);
+                    }}
+                    busy={correctBusy}
+                    errorMessage={correctError}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Readings */}
+            <div className="mt-1 flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5 text-xs">
+              {corrected ? (
+                <span className="flex items-baseline gap-1.5" title="Species set by you">
+                  <span className="font-display text-sm italic text-gold-deep">
+                    ✎ Corrected by you
+                  </span>
+                  {originalSpecies && (
+                    <span className="text-[11px] text-bark">
+                      model saw <span className="tnum">{confidencePct}%</span>{" "}
+                      {originalSpecies}
+                    </span>
+                  )}
+                </span>
+              ) : (
+                <span
+                  className="tnum font-medium text-gold-deep"
+                  title="Species-classification confidence"
+                >
+                  {confidencePct}% match
+                </span>
+              )}
+              {detectionPct !== null && (
+                <span
+                  className="tnum text-bark"
+                  title="Object-detection confidence (YOLO)"
+                >
+                  {detectionPct}% spotted
+                </span>
+              )}
+              <span className="text-bark">{timeAgo(timestamp)}</span>
+            </div>
+          </div>
+
+          {/* Record actions */}
+          <div className="flex shrink-0 items-center gap-2">
+            <a
+              href={mode === "video" && hasVideo ? videoUrl : fullUrl}
+              download
+              className="rounded-md border border-line bg-paper px-3 py-1.5 text-xs font-medium text-ink transition-colors hover:bg-card"
+              onClick={(e) => e.stopPropagation()}
+            >
+              Download
+            </a>
             <button
-              className={`absolute left-full top-1/2 z-10 hidden -translate-y-1/2 rounded-r-lg px-2 py-3.5 text-[11px] font-semibold uppercase tracking-[0.15em] shadow-plate [writing-mode:vertical-rl] transition-colors lg:block ${
-                showReference
-                  ? "bg-gold text-ink"
-                  : "bg-card/95 text-ink ring-1 ring-line hover:bg-card"
+              className="rounded-md bg-rust px-3 py-1.5 text-xs font-medium text-card transition-colors hover:brightness-110 disabled:opacity-50"
+              onClick={(e) => { e.stopPropagation(); handleDelete(); }}
+              disabled={deleting}
+            >
+              {deleting ? "Deleting…" : "Delete"}
+            </button>
+          </div>
+        </div>
+        {deleteError && <p className="mt-2 text-xs text-rust">{deleteError}</p>}
+      </div>
+
+      {/* ── Mobile panel switcher ──
+          Below `lg` the two side panels can't flank the image, so they stack
+          here as full-width sections. A segmented control (mirroring the
+          History tabs) picks which one shows; picking the active one again
+          closes it. Hidden on desktop, where the edge tabs + side panels
+          take over. */}
+      {!isDesktop && (
+        <div className="w-full">
+          <div
+            className="flex gap-1 rounded-xl border border-line bg-card p-1"
+            role="group"
+            aria-label="More about this sighting"
+          >
+            <button
+              className={`flex-1 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                showReference ? "bg-gold text-ink" : "text-bark hover:text-ink"
               }`}
               onClick={() => {
                 setShowReference((v) => !v);
                 setShowStats(false);
               }}
               aria-pressed={showReference}
-              aria-label={showReference ? "Hide field guide" : "Show field guide"}
             >
               Field guide
             </button>
-          </div>
-
-          {/* ── Specimen label ──
-              A compact caption card, locked to the image's exact width so it can
-              never widen the plate. Reads like a guide's label: the species name
-              and the margin-correction affordance up top, the readings on a quiet
-              tabular line beneath, and the record actions (download / delete) on
-              the right. */}
-          <div
-            className="w-full rounded-xl border border-line bg-card/95 px-4 py-3 shadow-plate"
-            style={{ width: isDesktop && imgSize ? imgSize.w : undefined }}
-          >
-            <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
-              <div className="min-w-0">
-                {/* Species + the margin-correction affordance (picker opens above) */}
-                <div className="relative flex flex-wrap items-center gap-x-2 gap-y-1">
-                  <span className="font-display text-lg font-medium leading-tight text-ink">
-                    {species}
-                  </span>
-                  <button
-                    className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium text-bark transition-colors hover:bg-paper hover:text-ink"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setCorrecting((v) => !v);
-                      setCorrectError(null);
-                    }}
-                    aria-expanded={correcting}
-                    aria-label="Correct the species"
-                    title="Wrong bird? Set the record straight."
-                  >
-                    <span aria-hidden="true">✎</span>
-                    Correct ID
-                  </button>
-                  {correcting && (
-                    <div className="absolute bottom-full left-0 z-20 mb-2">
-                      <SpeciesPicker
-                        current={species}
-                        onConfirm={handleCorrect}
-                        onCancel={() => {
-                          setCorrecting(false);
-                          setCorrectError(null);
-                        }}
-                        busy={correctBusy}
-                        errorMessage={correctError}
-                      />
-                    </div>
-                  )}
-                </div>
-
-                {/* Readings */}
-                <div className="mt-1 flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5 text-xs">
-                  {corrected ? (
-                    <span className="flex items-baseline gap-1.5" title="Species set by you">
-                      <span className="font-display text-sm italic text-gold-deep">
-                        ✎ Corrected by you
-                      </span>
-                      {originalSpecies && (
-                        <span className="text-[11px] text-bark">
-                          model saw <span className="tnum">{confidencePct}%</span>{" "}
-                          {originalSpecies}
-                        </span>
-                      )}
-                    </span>
-                  ) : (
-                    <span
-                      className="tnum font-medium text-gold-deep"
-                      title="Species-classification confidence"
-                    >
-                      {confidencePct}% match
-                    </span>
-                  )}
-                  {detectionPct !== null && (
-                    <span
-                      className="tnum text-bark"
-                      title="Object-detection confidence (YOLO)"
-                    >
-                      {detectionPct}% spotted
-                    </span>
-                  )}
-                  <span className="text-bark">{timeAgo(timestamp)}</span>
-                </div>
-              </div>
-
-              {/* Record actions */}
-              <div className="flex shrink-0 items-center gap-2">
-                <a
-                  href={mode === "video" && hasVideo ? videoUrl : fullUrl}
-                  download
-                  className="rounded-md border border-line bg-paper px-3 py-1.5 text-xs font-medium text-ink transition-colors hover:bg-card"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  Download
-                </a>
-                <button
-                  className="rounded-md bg-rust px-3 py-1.5 text-xs font-medium text-card transition-colors hover:brightness-110 disabled:opacity-50"
-                  onClick={(e) => { e.stopPropagation(); handleDelete(); }}
-                  disabled={deleting}
-                >
-                  {deleting ? "Deleting…" : "Delete"}
-                </button>
-              </div>
-            </div>
-            {deleteError && <p className="mt-2 text-xs text-rust">{deleteError}</p>}
-          </div>
-
-          {/* ── Mobile panel switcher ──
-              Below `lg` the two side panels can't flank the image, so they stack
-              here as full-width sections. A segmented control (mirroring the
-              History tabs) picks which one shows; picking the active one again
-              closes it. Hidden on desktop, where the edge tabs + side panels
-              take over. */}
-          {!isDesktop && (
-            <div className="w-full">
-              <div
-                className="flex gap-1 rounded-xl border border-line bg-card p-1"
-                role="group"
-                aria-label="More about this sighting"
-              >
-                <button
-                  className={`flex-1 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-                    showReference ? "bg-gold text-ink" : "text-bark hover:text-ink"
-                  }`}
-                  onClick={() => {
-                    setShowReference((v) => !v);
-                    setShowStats(false);
-                  }}
-                  aria-pressed={showReference}
-                >
-                  Field guide
-                </button>
-                <button
-                  className={`flex-1 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-                    showStats ? "bg-gold text-ink" : "text-bark hover:text-ink"
-                  }`}
-                  onClick={() => {
-                    setShowStats((v) => !v);
-                    setShowReference(false);
-                  }}
-                  aria-pressed={showStats}
-                >
-                  Advanced stats
-                </button>
-              </div>
-
-              {showReference && (
-                <div className="mt-3 rounded-lg border border-line bg-card p-4 shadow-plate">
-                  <h3 className="eyebrow mb-3">Field guide</h3>
-                  <ReferencePane
-                    state={refState}
-                    activeImageIndex={activeImageIndex}
-                    onSelectImage={setActiveImageIndex}
-                  />
-                </div>
-              )}
-
-              {showStats && (
-                <div className="mt-3 rounded-lg border border-line bg-card p-4 shadow-plate">
-                  <h3 className="eyebrow mb-3">Advanced stats</h3>
-                  <AdvancedStatsPane detection={shown} />
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* ── Reference panel — locked to the image's exact rendered size ──
-            Stays mounted (once the image size is known) so it can unfold and
-            fold away smoothly: the outer wrapper animates its width, left
-            margin (the gap to the image) and opacity, clipping the fixed-size
-            inner card so its content never reflows mid-animation. The image is
-            centred in the row, so it glides aside as the panel grows. The
-            global prefers-reduced-motion guard zeroes these durations. Desktop
-            only — on mobile the guide stacks below the image. */}
-        {isDesktop && imgSize && (
-          <div
-            className="shrink-0 overflow-hidden transition-[width,margin-left,opacity] duration-300 ease-out motion-reduce:transition-none"
-            style={{
-              width: showReference ? imgSize.w : 0,
-              marginLeft: showReference ? "2.5rem" : 0,
-              opacity: showReference ? 1 : 0,
-              pointerEvents: showReference ? "auto" : "none",
-            }}
-            aria-hidden={!showReference}
-          >
-            <div
-              className="overflow-y-auto rounded-lg border border-line bg-card shadow-plate-lift p-4"
-              style={{ width: imgSize.w, height: imgSize.h }}
+            <button
+              className={`flex-1 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                showStats ? "bg-gold text-ink" : "text-bark hover:text-ink"
+              }`}
+              onClick={() => {
+                setShowStats((v) => !v);
+                setShowReference(false);
+              }}
+              aria-pressed={showStats}
             >
+              Advanced stats
+            </button>
+          </div>
+
+          {showReference && (
+            <div className="mt-3 rounded-lg border border-line bg-card p-4 shadow-plate">
               <h3 className="eyebrow mb-3">Field guide</h3>
               <ReferencePane
                 state={refState}
@@ -673,14 +658,133 @@ export function Lightbox({
                 onSelectImage={setActiveImageIndex}
               />
             </div>
-          </div>
-        )}
-      </div>
+          )}
 
-      {/* Next arrow */}
+          {showStats && (
+            <div className="mt-3 rounded-lg border border-line bg-card p-4 shadow-plate">
+              <h3 className="eyebrow mb-3">Advanced stats</h3>
+              <AdvancedStatsPane detection={shown} />
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+
+  // ── Desktop-only side panels ──
+  // Locked to the image's exact rendered size, folding open/closed. Only built
+  // once the image size is known; rendered solely in the desktop row.
+  const statsPanel = imgSize ? (
+    <div
+      className="shrink-0 overflow-hidden transition-[width,margin-right,opacity] duration-300 ease-out motion-reduce:transition-none"
+      style={{
+        width: showStats ? imgSize.w : 0,
+        marginRight: showStats ? "2.5rem" : 0,
+        opacity: showStats ? 1 : 0,
+        pointerEvents: showStats ? "auto" : "none",
+      }}
+      aria-hidden={!showStats}
+    >
+      <div
+        className="overflow-y-auto rounded-lg border border-line bg-card shadow-plate-lift p-4"
+        style={{ width: imgSize.w, height: imgSize.h }}
+      >
+        <h3 className="eyebrow mb-3">Advanced stats</h3>
+        <AdvancedStatsPane detection={shown} />
+      </div>
+    </div>
+  ) : null;
+
+  const referencePanel = imgSize ? (
+    <div
+      className="shrink-0 overflow-hidden transition-[width,margin-left,opacity] duration-300 ease-out motion-reduce:transition-none"
+      style={{
+        width: showReference ? imgSize.w : 0,
+        marginLeft: showReference ? "2.5rem" : 0,
+        opacity: showReference ? 1 : 0,
+        pointerEvents: showReference ? "auto" : "none",
+      }}
+      aria-hidden={!showReference}
+    >
+      <div
+        className="overflow-y-auto rounded-lg border border-line bg-card shadow-plate-lift p-4"
+        style={{ width: imgSize.w, height: imgSize.h }}
+      >
+        <h3 className="eyebrow mb-3">Field guide</h3>
+        <ReferencePane
+          state={refState}
+          activeImageIndex={activeImageIndex}
+          onSelectImage={setActiveImageIndex}
+        />
+      </div>
+    </div>
+  ) : null;
+
+  return (
+    <div
+      className={
+        isDesktop
+          ? "fixed inset-0 z-50 flex items-center justify-center overflow-hidden bg-ink/95 p-4"
+          : "fixed inset-0 z-50 overflow-y-auto overflow-x-hidden bg-ink/95"
+      }
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label={`A closer look at ${species}`}
+    >
+      {/* Prev arrow — desktop only; mobile uses the swipe filmstrip. */}
+      {onPrev && (
+        <button
+          className="hidden lg:block absolute left-4 top-1/2 -translate-y-1/2 p-3 rounded-full bg-card/90 hover:bg-card text-ink text-2xl shadow-plate transition-colors z-10"
+          onClick={(e) => { e.stopPropagation(); onPrev(); }}
+          aria-label="Previous sighting"
+        >
+          &#8592;
+        </button>
+      )}
+
+      {isDesktop ? (
+        // Desktop: the panels flank the image. Stops click propagation so
+        // interacting inside doesn't close.
+        <div
+          className="relative flex flex-row items-start"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {statsPanel}
+          {card}
+          {referencePanel}
+        </div>
+      ) : (
+        // Mobile: the card is the live centre slot of a finger-tracking
+        // three-up filmstrip that slides in the neighbouring plates. While the
+        // (lazy) strip chunk loads, the card shows centred without swipe.
+        <Suspense
+          fallback={
+            <div
+              className="flex w-full items-start justify-center px-4 py-4"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {card}
+            </div>
+          }
+        >
+          <MobileSwipeStrip
+            currentId={id}
+            prevDetection={prevDetection ?? null}
+            nextDetection={nextDetection ?? null}
+            onPrev={onPrev}
+            onNext={onNext}
+            enabled={mode !== "video" && !correcting}
+          >
+            {card}
+          </MobileSwipeStrip>
+        </Suspense>
+      )}
+
+      {/* Next arrow — desktop only; mobile uses the swipe filmstrip. */}
       {onNext && (
         <button
-          className="absolute right-4 top-1/2 -translate-y-1/2 p-3 rounded-full bg-card/90 hover:bg-card text-ink text-2xl shadow-plate transition-colors z-10"
+          className="hidden lg:block absolute right-4 top-1/2 -translate-y-1/2 p-3 rounded-full bg-card/90 hover:bg-card text-ink text-2xl shadow-plate transition-colors z-10"
           onClick={(e) => { e.stopPropagation(); onNext(); }}
           aria-label="Next sighting"
         >

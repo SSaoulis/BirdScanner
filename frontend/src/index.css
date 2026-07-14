@@ -55,11 +55,11 @@
   }
 }
 
-/* ── Lightbox: the next plate resolves into focus ──
-   When the viewer moves to the next sighting, the current image is held on
-   screen while the next one preloads off-screen, then swaps in and quietly
-   resolves out of a soft focus — a gentle cross-fade so the picture, its box
-   and its label all land together, with no scrim or moving highlight. */
+/* ── Lightbox: the plate resolves into focus ──
+   The sharp full-res still develops in over the breathing blur-up loader (see
+   plate-breathe below): as it decodes it quietly resolves out of a soft focus,
+   a gentle blur-to-sharp so the picture lands without a scrim or moving
+   highlight. */
 @keyframes plate-develop {
   0% {
     opacity: 0;
@@ -72,6 +72,26 @@
 }
 .animate-plate-develop {
   animation: plate-develop 0.4s ease-out both;
+}
+
+/* ── Lightbox: a plate still "developing" ──
+   The soft breathing state shown over a blurred low-res thumbnail while the
+   full-res still (or the clip) loads — a gentle pulse of blur + opacity so the
+   viewer can see the next picture is on its way. Held static under
+   prefers-reduced-motion by the global guard below. */
+@keyframes plate-breathe {
+  0%,
+  100% {
+    opacity: 0.65;
+    filter: blur(8px);
+  }
+  50% {
+    opacity: 1;
+    filter: blur(14px);
+  }
+}
+.animate-plate-breathe {
+  animation: plate-breathe 1.9s ease-in-out infinite;
 }
 
 /* Warm, slim scrollbars so the horizontal strips don't show a cold grey bar. */

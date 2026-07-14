@@ -86,6 +86,21 @@ export function Timeline({
           }
           onDelete={onDeleteDetection}
           onUpdate={onUpdateDetection}
+          position={
+            lightboxIndex !== null
+              ? { index: lightboxIndex, total: detections.length }
+              : null
+          }
+          prevDetection={
+            lightboxIndex !== null && lightboxIndex > 0
+              ? detections[lightboxIndex - 1] ?? null
+              : null
+          }
+          nextDetection={
+            lightboxIndex !== null && lightboxIndex < detections.length - 1
+              ? detections[lightboxIndex + 1] ?? null
+              : null
+          }
         />
       )}
 
