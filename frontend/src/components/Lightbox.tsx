@@ -1,13 +1,8 @@
 import { Suspense, lazy, useEffect, useRef, useState } from "react";
-import {
-  api,
-  timeAgo,
-  ApiError,
-  type Detection,
-  type SpeciesReference,
-} from "../api";
+import { api, ApiError, type Detection, type SpeciesReference } from "../api";
 import { SpeciesPicker } from "./SpeciesPicker";
 import { AdvancedStatsPane } from "./AdvancedStats";
+import { PlateControlBar, SpecimenLabel, MobilePanelTabs } from "./LightboxChrome";
 import { useIsDesktop } from "../hooks/useMediaQuery";
 
 // The mobile swipe filmstrip pulls in `motion`; lazy-load it so desktop and the
@@ -40,22 +35,6 @@ interface LightboxProps {
    */
   prevDetection?: Detection | null;
   nextDetection?: Detection | null;
-}
-
-/**
- * Human-readable explanation for why a sighting has no video clip, shown as the
- * tooltip on the disabled Video toggle. Mirrors the `no_video_reason` values the
- * detector persists (see `birdscanner/ml/classification_pipeline.py`).
- */
-function noVideoReasonText(reason: string | null): string {
-  switch (reason) {
-    case "recorder_busy":
-      return "No clip — the recorder was busy saving another sighting's video. Only one clip records at a time to spare the Pi's CPU, so this sighting overlapped another recording.";
-    case "disabled":
-      return "No clip — video recording is turned off.";
-    default:
-      return "No clip available for this sighting.";
-  }
 }
 
 /** Status of the reference fetch for the current species. */
@@ -181,6 +160,18 @@ export function Lightbox({
   // which one shows), so nothing is crushed into ~44vw on a phone. Mobile also
   // trades the floating arrows for the finger-tracking swipe filmstrip.
   const isDesktop = useIsDesktop();
+
+  // Positions of the swipe neighbours, so their preview chips read the right
+  // "n / total" as they slide in (and don't flicker the number on commit). Null
+  // at a list end, mirroring prevDetection/nextDetection.
+  const prevPosition =
+    position && position.index > 0
+      ? { index: position.index - 1, total: position.total }
+      : null;
+  const nextPosition =
+    position && position.index < position.total - 1
+      ? { index: position.index + 1, total: position.total }
+      : null;
 
   // Track the rendered image size so the reference panel can match it exactly.
   // A ResizeObserver catches both the initial load (0 → natural size) and any
@@ -393,86 +384,20 @@ export function Lightbox({
 
         {/* ── On-image control bar ──
             The view controls (media + box) live *on* the image because they
-            change what it shows; Close shares the bar. Grouped at the top
-            under a soft scrim so the bird's usual lower-third stays clear and
-            nothing collides with the native <video> control bar at the
-            bottom. The scrim is click-through; only the controls take pointer
-            events. */}
-        <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-start justify-between gap-2 rounded-t-lg bg-gradient-to-b from-ink/80 via-ink/35 to-transparent px-2.5 pb-12 pt-2.5">
-          <div className="pointer-events-auto flex items-center gap-2">
-            {/* Media (Photo / Video) — swaps the still for the clip */}
-            <div
-              className="flex rounded-full bg-ink/55 p-0.5 ring-1 ring-paper/25 backdrop-blur"
-              role="group"
-              aria-label="Choose media"
-            >
-              {(["photo", "video"] as const).map((m) => {
-                // The Video button stays visible even without a clip, but is
-                // disabled and explains why on hover. aria-disabled (not the
-                // native `disabled` attribute) keeps the title tooltip firing
-                // — browsers suppress hover events on natively-disabled
-                // buttons.
-                const unavailable = m === "video" && !hasVideo;
-                return (
-                  <button
-                    key={m}
-                    className={`rounded-full px-3 py-1 text-xs font-medium capitalize transition-colors ${
-                      mode === m ? "bg-gold text-ink" : "text-paper/85 hover:text-paper"
-                    } ${unavailable ? "cursor-not-allowed opacity-40 hover:text-paper/85" : ""}`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (!unavailable) setMode(m);
-                    }}
-                    aria-pressed={mode === m}
-                    aria-disabled={unavailable}
-                    title={
-                      unavailable
-                        ? noVideoReasonText(shown.no_video_reason)
-                        : undefined
-                    }
-                  >
-                    {m}
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Box on / off — only meaningful on the still */}
-            {mode === "photo" && hasBox && (
-              <button
-                className={`rounded-full px-3 py-1.5 text-xs font-medium ring-1 backdrop-blur transition-colors ${
-                  showBox
-                    ? "bg-gold text-ink ring-gold"
-                    : "bg-ink/55 text-paper ring-paper/25 hover:bg-ink/70"
-                }`}
-                onClick={(e) => { e.stopPropagation(); setShowBox((v) => !v); }}
-                aria-pressed={showBox}
-              >
-                {showBox ? "Box on" : "Box off"}
-              </button>
-            )}
-          </div>
-
-          {/* Right group: the mobile position chip (the swipe-navigation
-              affordance — non-interactive, hidden on desktop where the edge
-              arrows show) tucked immediately left of Close, so it stays clear
-              of the left-hand view controls. */}
-          <div className="flex items-center gap-2">
-            {position && (
-              <span className="tnum pointer-events-none rounded-full bg-ink/55 px-2.5 py-1 text-xs font-medium text-paper ring-1 ring-paper/25 backdrop-blur lg:hidden">
-                {position.index + 1} / {position.total}
-              </span>
-            )}
-            {/* Close */}
-            <button
-              className="pointer-events-auto rounded-full bg-ink/55 p-1.5 text-lg leading-none text-paper ring-1 ring-paper/25 backdrop-blur transition-colors hover:bg-ink/70"
-              onClick={onClose}
-              aria-label="Close"
-            >
-              ✕
-            </button>
-          </div>
-        </div>
+            change what it shows; Close shares the bar. Shared with the swipe
+            neighbour preview (see `LightboxChrome`) so the chrome is visible as
+            a plate slides in rather than popping in after the swipe commits. */}
+        <PlateControlBar
+          position={position}
+          mode={mode}
+          hasVideo={hasVideo}
+          hasBox={hasBox}
+          showBox={showBox}
+          noVideoReason={shown.no_video_reason}
+          onSelectMode={setMode}
+          onToggleBox={() => setShowBox((v) => !v)}
+          onClose={onClose}
+        />
 
         {/* Vertical Advanced-stats tab on the LEFT edge of the image —
             mirrors the Field-guide tab; opening it closes the reference
@@ -513,106 +438,41 @@ export function Lightbox({
 
       {/* ── Specimen label ──
           A compact caption card, locked to the image's exact width so it can
-          never widen the plate. Reads like a guide's label: the species name
-          and the margin-correction affordance up top, the readings on a quiet
-          tabular line beneath, and the record actions (download / delete) on
-          the right. */}
-      <div
-        className="w-full rounded-xl border border-line bg-card/95 px-4 py-3 shadow-plate"
-        style={{ width: isDesktop && imgSize ? imgSize.w : undefined }}
-      >
-        <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
-          <div className="min-w-0">
-            {/* Species + the margin-correction affordance (picker opens above) */}
-            <div className="relative flex flex-wrap items-center gap-x-2 gap-y-1">
-              <span className="font-display text-lg font-medium leading-tight text-ink">
-                {species}
-              </span>
-              <button
-                className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium text-bark transition-colors hover:bg-paper hover:text-ink"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setCorrecting((v) => !v);
-                  setCorrectError(null);
-                }}
-                aria-expanded={correcting}
-                aria-label="Correct the species"
-                title="Wrong bird? Set the record straight."
-              >
-                <span aria-hidden="true">✎</span>
-                Correct ID
-              </button>
-              {correcting && (
-                <div className="absolute bottom-full left-0 z-20 mb-2">
-                  <SpeciesPicker
-                    current={species}
-                    onConfirm={handleCorrect}
-                    onCancel={() => {
-                      setCorrecting(false);
-                      setCorrectError(null);
-                    }}
-                    busy={correctBusy}
-                    errorMessage={correctError}
-                  />
-                </div>
-              )}
-            </div>
-
-            {/* Readings */}
-            <div className="mt-1 flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5 text-xs">
-              {corrected ? (
-                <span className="flex items-baseline gap-1.5" title="Species set by you">
-                  <span className="font-display text-sm italic text-gold-deep">
-                    ✎ Corrected by you
-                  </span>
-                  {originalSpecies && (
-                    <span className="text-[11px] text-bark">
-                      model saw <span className="tnum">{confidencePct}%</span>{" "}
-                      {originalSpecies}
-                    </span>
-                  )}
-                </span>
-              ) : (
-                <span
-                  className="tnum font-medium text-gold-deep"
-                  title="Species-classification confidence"
-                >
-                  {confidencePct}% match
-                </span>
-              )}
-              {detectionPct !== null && (
-                <span
-                  className="tnum text-bark"
-                  title="Object-detection confidence (YOLO)"
-                >
-                  {detectionPct}% spotted
-                </span>
-              )}
-              <span className="text-bark">{timeAgo(timestamp)}</span>
-            </div>
-          </div>
-
-          {/* Record actions */}
-          <div className="flex shrink-0 items-center gap-2">
-            <a
-              href={mode === "video" && hasVideo ? videoUrl : fullUrl}
-              download
-              className="rounded-md border border-line bg-paper px-3 py-1.5 text-xs font-medium text-ink transition-colors hover:bg-card"
-              onClick={(e) => e.stopPropagation()}
-            >
-              Download
-            </a>
-            <button
-              className="rounded-md bg-rust px-3 py-1.5 text-xs font-medium text-card transition-colors hover:brightness-110 disabled:opacity-50"
-              onClick={(e) => { e.stopPropagation(); handleDelete(); }}
-              disabled={deleting}
-            >
-              {deleting ? "Deleting…" : "Delete"}
-            </button>
-          </div>
-        </div>
-        {deleteError && <p className="mt-2 text-xs text-rust">{deleteError}</p>}
-      </div>
+          never widen the plate. Shared with the swipe neighbour preview (see
+          `LightboxChrome`); the live card wires the correction picker + record
+          actions, the preview renders the same caption inert. */}
+      <SpecimenLabel
+        species={species}
+        confidencePct={confidencePct}
+        detectionPct={detectionPct}
+        corrected={corrected}
+        originalSpecies={originalSpecies}
+        timestamp={timestamp}
+        downloadUrl={mode === "video" && hasVideo ? videoUrl : fullUrl}
+        width={isDesktop && imgSize ? imgSize.w : undefined}
+        correcting={correcting}
+        onToggleCorrect={() => {
+          setCorrecting((v) => !v);
+          setCorrectError(null);
+        }}
+        deleting={deleting}
+        onDelete={handleDelete}
+        deleteError={deleteError}
+        picker={
+          correcting ? (
+            <SpeciesPicker
+              current={species}
+              onConfirm={handleCorrect}
+              onCancel={() => {
+                setCorrecting(false);
+                setCorrectError(null);
+              }}
+              busy={correctBusy}
+              errorMessage={correctError}
+            />
+          ) : null
+        }
+      />
 
       {/* ── Mobile panel switcher ──
           Below `lg` the two side panels can't flank the image, so they stack
@@ -622,36 +482,18 @@ export function Lightbox({
           take over. */}
       {!isDesktop && (
         <div className="w-full">
-          <div
-            className="flex gap-1 rounded-xl border border-line bg-card p-1"
-            role="group"
-            aria-label="More about this sighting"
-          >
-            <button
-              className={`flex-1 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-                showReference ? "bg-gold text-ink" : "text-bark hover:text-ink"
-              }`}
-              onClick={() => {
-                setShowReference((v) => !v);
-                setShowStats(false);
-              }}
-              aria-pressed={showReference}
-            >
-              Field guide
-            </button>
-            <button
-              className={`flex-1 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-                showStats ? "bg-gold text-ink" : "text-bark hover:text-ink"
-              }`}
-              onClick={() => {
-                setShowStats((v) => !v);
-                setShowReference(false);
-              }}
-              aria-pressed={showStats}
-            >
-              Advanced stats
-            </button>
-          </div>
+          <MobilePanelTabs
+            showReference={showReference}
+            showStats={showStats}
+            onSelectReference={() => {
+              setShowReference((v) => !v);
+              setShowStats(false);
+            }}
+            onSelectStats={() => {
+              setShowStats((v) => !v);
+              setShowReference(false);
+            }}
+          />
 
           {showReference && (
             <div className="mt-3 rounded-lg border border-line bg-card p-4 shadow-plate">
@@ -776,6 +618,8 @@ export function Lightbox({
             currentId={id}
             prevDetection={prevDetection ?? null}
             nextDetection={nextDetection ?? null}
+            prevPosition={prevPosition}
+            nextPosition={nextPosition}
             onPrev={onPrev}
             onNext={onNext}
             enabled={mode !== "video" && !correcting}

@@ -9,7 +9,8 @@ import {
   useReducedMotion,
   type PanInfo,
 } from "motion/react";
-import { api, timeAgo, type Detection } from "../api";
+import { api, type Detection } from "../api";
+import { PlateControlBar, SpecimenLabel, MobilePanelTabs } from "./LightboxChrome";
 
 interface MobileSwipeStripProps {
   /** The live, interactive centre card (the current sighting). */
@@ -19,6 +20,9 @@ interface MobileSwipeStripProps {
   /** Neighbour sightings shown in the side slots. Null at a list end. */
   prevDetection: Detection | null;
   nextDetection: Detection | null;
+  /** Neighbour positions, for the "n / total" chip on each preview. Null ends. */
+  prevPosition: { index: number; total: number } | null;
+  nextPosition: { index: number; total: number } | null;
   /** Commit funnels — navigate the parent's list. Null at a list end. */
   onPrev: (() => void) | null;
   onNext: (() => void) | null;
@@ -44,6 +48,8 @@ export default function MobileSwipeStrip({
   currentId,
   prevDetection,
   nextDetection,
+  prevPosition,
+  nextPosition,
   onPrev,
   onNext,
   enabled,
@@ -66,12 +72,21 @@ export default function MobileSwipeStrip({
     x.jump(0);
   }, [currentId, x]);
 
-  /** Animate `x` to `target`; on arrival, run `commit` (the nav callback). */
+  /**
+   * Animate `x` to `target`; on arrival, run `commit` (the nav callback). A
+   * *committing* settle uses a short, bounded tween so `onComplete` — which
+   * swaps the real interactive card in for the inert neighbour preview — fires
+   * promptly (a full-width spring's long settle tail left the controls
+   * un-tappable for ~1s). The rubber-band-back (no commit) keeps the spring so a
+   * cancelled half-swipe still feels elastic.
+   */
   function settle(target: number, commit: (() => void) | null) {
     animate(x, target, {
       ...(reduceMotion
         ? { duration: 0 }
-        : { type: "spring", stiffness: 550, damping: 45 }),
+        : commit
+          ? { type: "tween", duration: 0.26, ease: "easeOut" }
+          : { type: "spring", stiffness: 550, damping: 45 }),
       onComplete: commit ?? undefined,
     });
   }
@@ -119,7 +134,13 @@ export default function MobileSwipeStrip({
           className="flex w-screen shrink-0 items-start justify-center px-4 py-4"
           aria-hidden="true"
         >
-          {prevDetection && <NeighborPreview detection={prevDetection} hires={hires} />}
+          {prevDetection && (
+            <NeighborPreview
+              detection={prevDetection}
+              position={prevPosition}
+              hires={hires}
+            />
+          )}
         </div>
         <div className="flex w-screen shrink-0 items-start justify-center px-4 py-4">
           {/* Stop propagation so a tap on the card never closes; taps in the
@@ -130,7 +151,13 @@ export default function MobileSwipeStrip({
           className="flex w-screen shrink-0 items-start justify-center px-4 py-4"
           aria-hidden="true"
         >
-          {nextDetection && <NeighborPreview detection={nextDetection} hires={hires} />}
+          {nextDetection && (
+            <NeighborPreview
+              detection={nextDetection}
+              position={nextPosition}
+              hires={hires}
+            />
+          )}
         </div>
       </m.div>
     </LazyMotion>
@@ -140,18 +167,25 @@ export default function MobileSwipeStrip({
 interface NeighborPreviewProps {
   /** The neighbouring sighting to preview. */
   detection: Detection;
+  /** The neighbour's position, for the "n / total" chip. Null at a list end. */
+  position: { index: number; total: number } | null;
   /** When true, load the full-res still instead of the cached thumbnail. */
   hires: boolean;
 }
 
 /**
- * A lightweight, non-interactive preview of a neighbouring sighting for the
- * swipe filmstrip: the image plate (with its box overlay) and a read-only
- * specimen-label caption, styled to match the resting card. It carries no
- * controls, panels or network fetches — the neighbour only "wakes up" into the
- * full interactive card once a swipe commits it to the centre.
+ * A non-interactive preview of a neighbouring sighting for the swipe filmstrip.
+ * It mirrors the *live mobile card's* full layout — the image plate with its
+ * control bar (Photo/Video, box, Close), the specimen-label caption (Correct-ID,
+ * Download, Delete) and the Field-guide / Advanced-stats switcher — rendered
+ * inert (`interactive={false}`, whole subtree `pointer-events-none`) in each
+ * control's default state. Because a freshly-committed card resets to those same
+ * defaults, the overlay chrome is already on screen as the plate slides in and
+ * the inert→live swap on commit shows no pop-in. It still carries no panels or
+ * network fetches; the neighbour only "wakes up" into the full interactive card
+ * once a swipe commits it to the centre.
  */
-function NeighborPreview({ detection, hires }: NeighborPreviewProps) {
+function NeighborPreview({ detection, position, hires }: NeighborPreviewProps) {
   const src = hires
     ? api.images.fullUrl(detection.id)
     : api.images.thumbnailUrl(detection.id);
@@ -160,8 +194,6 @@ function NeighborPreview({ detection, hires }: NeighborPreviewProps) {
     detection.box_y !== null &&
     detection.box_w !== null &&
     detection.box_h !== null;
-  const corrected = detection.corrected === true;
-  const confidencePct = (detection.confidence * 100).toFixed(1);
   const detectionPct =
     detection.detection_confidence != null
       ? (detection.detection_confidence * 100).toFixed(1)
@@ -189,24 +221,28 @@ function NeighborPreview({ detection, hires }: NeighborPreviewProps) {
             }}
           />
         )}
+        <PlateControlBar
+          position={position}
+          mode="photo"
+          hasVideo={detection.video_path !== null}
+          hasBox={hasBox}
+          showBox
+          noVideoReason={detection.no_video_reason}
+          interactive={false}
+        />
       </div>
-      <div className="w-full rounded-xl border border-line bg-card/95 px-4 py-3 shadow-plate">
-        <span className="font-display text-lg font-medium leading-tight text-ink">
-          {detection.species}
-        </span>
-        <div className="mt-1 flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5 text-xs">
-          {corrected ? (
-            <span className="font-display text-sm italic text-gold-deep">
-              ✎ Corrected by you
-            </span>
-          ) : (
-            <span className="tnum font-medium text-gold-deep">{confidencePct}% match</span>
-          )}
-          {detectionPct !== null && (
-            <span className="tnum text-bark">{detectionPct}% spotted</span>
-          )}
-          <span className="text-bark">{timeAgo(detection.timestamp)}</span>
-        </div>
+      <SpecimenLabel
+        species={detection.species}
+        confidencePct={(detection.confidence * 100).toFixed(1)}
+        detectionPct={detectionPct}
+        corrected={detection.corrected === true}
+        originalSpecies={detection.original_species}
+        timestamp={detection.timestamp}
+        downloadUrl={api.images.fullUrl(detection.id)}
+        interactive={false}
+      />
+      <div className="w-full">
+        <MobilePanelTabs showReference={false} showStats={false} interactive={false} />
       </div>
     </div>
   );
