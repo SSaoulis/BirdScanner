@@ -94,21 +94,15 @@ export function Lightbox({
   prevDetection,
   nextDetection,
 }: LightboxProps) {
-  // The detection whose plate is *currently on screen*. Kept as its own state
-  // (rather than reading the prop directly) so the rest of the component derives
-  // everything from a single record. We swap to the incoming `detection`
-  // immediately on prev/next; the breathing blur-up loader (a blurred thumbnail)
-  // covers the network fetch of the full-res still until it decodes, so
-  // navigation feels responsive instead of frozen. Everything below derives from
-  // `shown`.
-  const [shown, setShown] = useState<Detection>(detection);
-
-  useEffect(() => {
-    // Swap immediately for every change — a different sighting (prev/next) or an
-    // in-place species correction (same id, unchanged bytes) alike. The loader
-    // overlay handles the load gap for the different-sighting case.
-    setShown(detection);
-  }, [detection]);
+  // The detection whose plate is *currently on screen*. Derived straight from
+  // the prop (no lag) so that on a committed mobile swipe the centre card, the
+  // neighbour slots and the recentre trigger all update on the *same* render —
+  // a one-render-stale copy would flash the wrong plate as the filmstrip snaps
+  // back to centre. The incoming `detection` covers both a different sighting
+  // (prev/next) and an in-place species correction (same id); the breathing
+  // blur-up loader covers the full-res fetch, so nothing needs holding back.
+  // Everything below derives from `shown`.
+  const shown = detection;
 
   const { id, species, confidence, detection_confidence, timestamp } = shown;
   const corrected = shown.corrected === true;

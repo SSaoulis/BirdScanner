@@ -76,15 +76,22 @@ export default function MobileSwipeStrip({
     });
   }
 
-  /** Decide commit-vs-rubber-band from the release distance and velocity. */
+  /**
+   * Decide commit-vs-rubber-band from the release distance and velocity. Both
+   * the distance and the flick tests also require the plate to actually be on
+   * that side (`offset.x` sign), so a drag-partway-then-flick-back gesture
+   * cancels instead of committing to the opposite neighbour.
+   */
   function handleDragEnd(_: PointerEvent, info: PanInfo) {
     const width = window.innerWidth;
     const distance = width * 0.35;
     const speed = 450;
     const { offset, velocity } = info;
-    if ((offset.x <= -distance || velocity.x <= -speed) && canNext) {
+    const wantsNext = offset.x < 0 && (offset.x <= -distance || velocity.x <= -speed);
+    const wantsPrev = offset.x > 0 && (offset.x >= distance || velocity.x >= speed);
+    if (wantsNext && canNext) {
       settle(-width, onNext);
-    } else if ((offset.x >= distance || velocity.x >= speed) && canPrev) {
+    } else if (wantsPrev && canPrev) {
       settle(width, onPrev);
     } else {
       settle(0, null);
@@ -169,7 +176,9 @@ function NeighborPreview({ detection, hires }: NeighborPreviewProps) {
           decoding="async"
           className="block max-h-[60vh] max-w-full rounded-lg bg-ink shadow-plate-lift"
         />
-        {hasBox && (
+        {/* Box coords are full-frame; the resting thumbnail is a crop of the
+            bird ROI, so the box only lines up once the full still is showing. */}
+        {hasBox && hires && (
           <div
             className="pointer-events-none absolute rounded-sm border-2 border-gold shadow-[0_0_0_1px_rgba(0,0,0,0.45)]"
             style={{
