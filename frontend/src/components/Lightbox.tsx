@@ -626,7 +626,7 @@ export function Lightbox({
               </div>
 
               {showReference && (
-                <div className="mt-3 rounded-lg border border-line bg-card p-4 shadow-plate">
+                <div className="mt-3 overflow-x-hidden rounded-lg border border-line bg-card p-4 shadow-plate">
                   <h3 className="eyebrow mb-3">Field guide</h3>
                   <ReferencePane
                     state={refState}
@@ -637,7 +637,7 @@ export function Lightbox({
               )}
 
               {showStats && (
-                <div className="mt-3 rounded-lg border border-line bg-card p-4 shadow-plate">
+                <div className="mt-3 overflow-x-hidden rounded-lg border border-line bg-card p-4 shadow-plate">
                   <h3 className="eyebrow mb-3">Advanced stats</h3>
                   <AdvancedStatsPane detection={shown} />
                 </div>
